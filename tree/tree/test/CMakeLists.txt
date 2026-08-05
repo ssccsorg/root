@@ -39,6 +39,7 @@ ROOT_ADD_GTEST(entrylist_enterrange entrylist_enterrange.cxx LIBRARIES RIO Tree)
 ROOT_ADD_GTEST(friendinfo friendinfo.cxx LIBRARIES RIO Tree)
 ROOT_ADD_GTEST(testTTreeCompression TTreeCompression.cxx LIBRARIES RIO Tree MathCore)
 ROOT_ADD_GTEST(evolution evolution.cxx LIBRARIES RIO Tree)
+ROOT_ADD_GTEST(tagma_store tagma_store.cxx LIBRARIES RIO Tree)
 ROOT_GENERATE_DICTIONARY(EvolutionStruct ${CMAKE_CURRENT_SOURCE_DIR}/EvolutionStruct.hxx
                          MODULE evolution
                          LINKDEF EvolutionStructLinkDef.h
