@@ -1994,6 +1994,14 @@ Int_t TFile::ReadBufferViaCache(char *buf, Int_t len)
 /// the record index decomposes inside the layout bounds. Served requests
 /// bypass the read cache and are counted separately from ordinary reads.
 ///
+/// This hook establishes the coordinate seam at the byte source: the
+/// request is served with the same single read as the ordinary path, so
+/// the per-request syscall count is unchanged here. The read-count
+/// reduction comes from the entry layer (TTree::GetTagmaRecord), which
+/// collapses the scattered per-branch reads of one event into one record
+/// read. A memory-backed store can later serve this path without a
+/// syscall at all.
+///
 /// Returns 1 when the request was served, -1 when the request was covered
 /// but the read failed, and 0 when the request falls through to the
 /// ordinary read path.

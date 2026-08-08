@@ -65,6 +65,10 @@ TEST(TTagmaRecord, GetTagmaRecordReadsOneRecordPerEntry)
    EXPECT_EQ(tree->GetTagmaRecord(0, buf, 32), -2);
    EXPECT_EQ(file.GetReadCalls(), calls0 + 2);
 
+   // A negative caller buffer size is rejected without reading.
+   EXPECT_EQ(tree->GetTagmaRecord(0, buf, -1), -2);
+   EXPECT_EQ(file.GetReadCalls(), calls0 + 2);
+
    // A tree without a store falls through: a plain detached tree has
    // neither a store nor a directory, so the record read is rejected.
    TTree plain("p", "p");

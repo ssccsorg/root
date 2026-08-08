@@ -6030,7 +6030,7 @@ Int_t TTree::GetTagmaRecord(Long64_t entry, char *buf, Int_t bufsize)
    if (!fTagmaStore || entry < 0)
       return -1;
    const ROOT::TTagmaStore::Layout &layout = fTagmaStore->GetLayout();
-   if (static_cast<std::uint64_t>(bufsize) < layout.fRecordSize)
+   if (bufsize < 0 || static_cast<std::uint64_t>(bufsize) < layout.fRecordSize)
       return -2;
    const auto [run, lumi, event] =
       fTagmaStore->Decompose(static_cast<std::uint64_t>(entry));
