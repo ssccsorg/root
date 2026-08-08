@@ -9,12 +9,19 @@
  *************************************************************************/
 
 // Verifies the coordinate-indexed store extension: composition and
-// decomposition round trip, byte offsets, record count, extent, and axis
-// bounds. The store is self-contained C++17 and does not depend on ROOT.
+// decomposition round trip, byte offsets, record count, extent, axis
+// bounds, and the TFile read-path hook that serves aligned fixed-width
+// records through the coordinate path. The store itself is
+// self-contained C++17 and does not depend on ROOT.
 
 #include "ROOT/TTagmaStore.hxx"
 
+#include "TFile.h"
+#include "TNamed.h"
+
 #include "gtest/gtest.h"
+
+#include <memory>
 
 namespace {
 
@@ -75,4 +82,47 @@ TEST(TTagmaStore, AxisBounds)
    EXPECT_FALSE(store.Contains(1000, 0, 0));
    EXPECT_FALSE(store.Contains(0, 128, 0));
    EXPECT_FALSE(store.Contains(0, 0, 10000));
+}
+
+TEST(TTagmaStore, TFileReadBufferServesAlignedRecords)
+{
+   // A ROOT file provides the byte source; the hook serves aligned
+   // fixed-width record requests through the coordinate path regardless
+   // of the payload bytes, and everything else falls through to the
+   // ordinary read path.
+   {
+      TFile file("tagma_file_hook.root", "RECREATE");
+      TNamed first("key", "value");
+      first.Write();
+      TNamed second("key2", "value2");
+      second.Write();
+      file.Close();
+   }
+
+   TFile file("tagma_file_hook.root");
+   ROOT::TTagmaStore::Layout layout;
+   layout.fRunMax = 1;
+   layout.fLumiMax = 1;
+   layout.fEventMax = 2;
+   layout.fRecordSize = 64;
+   file.SetTagmaStore(std::make_shared<ROOT::TTagmaStore>(layout));
+
+   char buf[64];
+   const Int_t calls0 = file.GetReadCalls();
+   EXPECT_FALSE(file.ReadBuffer(buf, 0, 64));    // record 0, covered
+   EXPECT_EQ(file.GetTagmaReadCalls(), 1);
+   EXPECT_EQ(file.GetReadCalls(), calls0 + 1);
+   EXPECT_FALSE(file.ReadBuffer(buf, 64, 64));   // record 1, covered
+   EXPECT_EQ(file.GetTagmaReadCalls(), 2);
+   EXPECT_EQ(file.GetReadCalls(), calls0 + 2);
+
+   EXPECT_FALSE(file.ReadBuffer(buf, 100, 64));  // misaligned: ordinary path
+   EXPECT_EQ(file.GetTagmaReadCalls(), 2);
+   EXPECT_EQ(file.GetReadCalls(), calls0 + 3);
+   EXPECT_FALSE(file.ReadBuffer(buf, 128, 64));  // index 2 outside layout
+   EXPECT_EQ(file.GetTagmaReadCalls(), 2);
+   EXPECT_EQ(file.GetReadCalls(), calls0 + 4);
+   EXPECT_FALSE(file.ReadBuffer(buf, 0, 32));    // wrong size: ordinary path
+   EXPECT_EQ(file.GetTagmaReadCalls(), 2);
+   EXPECT_EQ(file.GetReadCalls(), calls0 + 5);
 }

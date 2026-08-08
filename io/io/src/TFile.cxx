@@ -1786,6 +1786,14 @@ Bool_t TFile::ReadBuffer(char *buf, Long64_t pos, Int_t len)
 
       SetOffset(pos);
 
+      // Coordinate-indexed store path: requests that resolve to exactly
+      // one fixed-width record are served directly from the byte source,
+      // bypassing the read cache. Everything else falls through to the
+      // ordinary read path unchanged.
+      const Int_t tagma = ReadBufferViaTagma(buf, pos, len);
+      if (tagma != 0)
+         return tagma < 0 ? kTRUE : kFALSE;
+
       Int_t st;
       Double_t start = 0;
       if (gPerfStats) start = TTimeStamp();
@@ -1975,6 +1983,67 @@ Int_t TFile::ReadBufferViaCache(char *buf, Int_t len)
    }
 
    return 0;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Serve an aligned fixed-width record request from the coordinate-indexed
+/// store attached with SetTagmaStore.
+///
+/// A request is served when the store layout covers exactly one record:
+/// the position is record-aligned, the length equals the record size, and
+/// the record index decomposes inside the layout bounds. Served requests
+/// bypass the read cache and are counted separately from ordinary reads.
+///
+/// Returns 1 when the request was served, -1 when the request was covered
+/// but the read failed, and 0 when the request falls through to the
+/// ordinary read path.
+
+Int_t TFile::ReadBufferViaTagma(char *buf, Long64_t pos, Int_t len)
+{
+   if (!fTagmaStore)
+      return 0;
+   const ROOT::TTagmaStore::Layout &layout = fTagmaStore->GetLayout();
+   if (layout.fRecordSize == 0)
+      return 0;
+   if (pos < 0 || static_cast<std::uint64_t>(len) != layout.fRecordSize)
+      return 0;
+   if (static_cast<std::uint64_t>(pos) % layout.fRecordSize != 0)
+      return 0;
+   const std::uint64_t index = static_cast<std::uint64_t>(pos) / layout.fRecordSize;
+   const auto [run, lumi, event] = fTagmaStore->Decompose(index);
+   if (!fTagmaStore->Contains(run, lumi, event))
+      return 0;
+
+   Double_t start = 0;
+   if (gPerfStats)
+      start = TTimeStamp();
+
+   Seek(pos);
+   ssize_t siz;
+   while ((siz = SysRead(fD, buf, len)) < 0 && GetErrno() == EINTR)
+      ResetErrno();
+
+   if (siz < 0) {
+      SysError("ReadBuffer", "error reading from file %s", GetName());
+      return -1;
+   }
+   if (siz != len) {
+      Error("ReadBuffer", "error reading all requested bytes from file %s, got %ld of %d",
+            GetName(), (Long_t)siz, len);
+      return -1;
+   }
+   fBytesRead += siz;
+   fgBytesRead += siz;
+   fReadCalls++;
+   fgReadCalls++;
+   fTagmaReadCalls++;
+
+   if (gMonitoringWriter)
+      gMonitoringWriter->SendFileReadProgress(this);
+   if (gPerfStats) {
+      gPerfStats->FileReadEvent(this, len, start);
+   }
+   return 1;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

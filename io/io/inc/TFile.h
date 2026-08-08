@@ -22,6 +22,7 @@
 //////////////////////////////////////////////////////////////////////////
 
 #include <atomic>
+#include <memory>
 #include <string>
 #include <cstdint>
 
@@ -29,6 +30,7 @@
 #include "TDirectoryFile.h"
 #include "TUrl.h"
 #include "ROOT/RConcurrentHashColl.hxx"
+#include "ROOT/TTagmaStore.hxx"
 #include <optional>
 
 // Not a part of TFile interface; provide a forward declaration instead of #include.
@@ -165,6 +167,8 @@ protected:
    Int_t            fWritten{0};              ///<Number of objects written so far
    Int_t            fNProcessIDs{0};          ///<Number of TProcessID written to this file
    Int_t            fReadCalls{0};            ///<Number of read calls ( not counting the cache calls )
+   Int_t            fTagmaReadCalls{0};       ///<Number of reads served from the coordinate-indexed store
+   std::shared_ptr<ROOT::TTagmaStore> fTagmaStore{nullptr}; ///<!Coordinate-indexed store layout (if any)
    TString          fRealName;                ///<Effective real file name (not original url)
    TString          fOption;                  ///<File options
    Char_t           fUnits{0};                ///<Number of bytes for file pointers
@@ -216,6 +220,7 @@ protected:
    virtual void        Init(Bool_t create);
            Bool_t      FlushWriteCache();
            Int_t       ReadBufferViaCache(char *buf, Int_t len);
+           Int_t       ReadBufferViaTagma(char *buf, Long64_t pos, Int_t len);
            Int_t       WriteBufferViaCache(const char *buf, Int_t len);
 
    ////////////////////////////////////////////////////////////////////////////////
@@ -330,6 +335,9 @@ public:
    virtual Long64_t    GetBytesReadExtra() const { return fBytesReadExtra; }
    virtual Long64_t    GetBytesWritten() const;
    virtual Int_t       GetReadCalls() const { return fReadCalls; }
+   virtual Int_t       GetTagmaReadCalls() const { return fTagmaReadCalls; }
+   virtual void        SetTagmaStore(std::shared_ptr<ROOT::TTagmaStore> store) { fTagmaStore = store; }
+   virtual std::shared_ptr<ROOT::TTagmaStore> GetTagmaStore() const { return fTagmaStore; }
            Int_t       GetVersion() const { return fVersion; }
            Int_t       GetRecordHeader(char *buf, Long64_t first, Int_t maxbytes,
                                        Int_t &nbytes, Int_t &objlen, Int_t &keylen);

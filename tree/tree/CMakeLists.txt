@@ -68,7 +68,6 @@ ROOT_STANDARD_LIBRARY_PACKAGE(Tree
     ROOT/InternalTreeUtils.hxx
     ROOT/RFriendInfo.hxx
     ROOT/TIOFeatures.hxx
-    ROOT/TTagmaStore.hxx
   SOURCES
     src/InternalTreeUtils.cxx
     src/RFriendInfo.cxx
@@ -93,7 +92,6 @@ ROOT_STANDARD_LIBRARY_PACKAGE(Tree
     src/TEventList.cxx
     src/TFriendElement.cxx
     src/TIOFeatures.cxx
-    src/TTagmaStore.cxx
     src/TLeafB.cxx
     src/TLeafC.cxx
     src/TLeaf.cxx
