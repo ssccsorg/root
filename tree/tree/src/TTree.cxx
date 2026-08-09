@@ -5737,13 +5737,15 @@ Int_t TTree::GetEntry(Long64_t entry, Int_t getall)
          fTagmaStore->Decompose(static_cast<std::uint64_t>(entry));
       if (fTagmaStore->Contains(run, lumi, event)) {
          const ROOT::TTagmaStore::Layout &layout = fTagmaStore->GetLayout();
+         fReadEntry = entry;
          fTagmaRecord.resize(layout.fRecordSize);
          const Int_t nbytes =
             GetTagmaRecord(entry, fTagmaRecord.data(),
                            static_cast<Int_t>(fTagmaRecord.size()));
-         if (nbytes < 0)
+         if (nbytes < 0) {
+            fTagmaRecord.resize(0);
             return 0;
-         fReadEntry = entry;
+         }
          return nbytes;
       }
    }
@@ -6055,6 +6057,8 @@ Int_t TTree::GetTagmaRecord(Long64_t entry, char *buf, Int_t bufsize)
    if (!fTagmaStore || entry < 0)
       return -1;
    const ROOT::TTagmaStore::Layout &layout = fTagmaStore->GetLayout();
+   if (layout.fRecordSize == 0)
+      return -1;
    if (bufsize < 0 || static_cast<std::uint64_t>(bufsize) < layout.fRecordSize)
       return -2;
    const auto [run, lumi, event] =

@@ -699,7 +699,13 @@ public:
    virtual Int_t           SetCacheSize(Long64_t cachesize = -1);
    virtual void            SetTagmaStore(std::shared_ptr<ROOT::TTagmaStore> store);
    virtual std::shared_ptr<ROOT::TTagmaStore> GetTagmaStore() const { return fTagmaStore; }
+   /// Pointer to the last record served by the coordinate read path, or
+   /// nullptr before the first coordinate-served entry. The buffer stays
+   /// valid until the next GetEntry or GetTagmaRecord call on this tree.
    const char              *GetTagmaRecordBuffer() const { return fTagmaRecord.empty() ? nullptr : fTagmaRecord.data(); }
+   /// Size in bytes of the last record served by the coordinate read
+   /// path; 0 before the first coordinate-served entry or after a failed
+   /// covered read.
    Int_t                    GetTagmaRecordSize() const { return static_cast<Int_t>(fTagmaRecord.size()); }
    virtual Int_t           SetCacheEntryRange(Long64_t first, Long64_t last);
    virtual void            SetCacheLearnEntries(Int_t n=10);

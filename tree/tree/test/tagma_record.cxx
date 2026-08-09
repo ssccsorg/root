@@ -121,3 +121,18 @@ TEST(TTagmaRecord, GetEntryServesCoveredEntriesFromTheStore)
    EXPECT_GT(file.GetReadCalls(), calls0 + 2);
    EXPECT_EQ(tree->GetTagmaRecordSize(), 64);
 }
+
+TEST(TTagmaRecord, ZeroRecordSizeLayoutIsRejected)
+{
+   // A degenerate layout with a zero record size is rejected before any
+   // read is attempted.
+   ROOT::TTagmaStore::Layout layout;
+   layout.fRunMax = 1;
+   layout.fLumiMax = 1;
+   layout.fEventMax = 1;
+   layout.fRecordSize = 0;
+   TTree tree("p", "p");
+   tree.SetTagmaStore(std::make_shared<ROOT::TTagmaStore>(layout));
+   char buf[64];
+   EXPECT_EQ(tree.GetTagmaRecord(0, buf, 64), -1);
+}
