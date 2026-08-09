@@ -5723,6 +5723,31 @@ Int_t TTree::GetEntry(Long64_t entry, Int_t getall)
    if (kGetEntry & fFriendLockStatus) return 0;
 
    if (entry < 0 || entry >= fEntries) return 0;
+
+   // Coordinate-indexed store path: for entries covered by the attached
+   // layout, the fixed-width record is served with a single read through
+   // the store's closed-form arithmetic, bypassing the branch, basket,
+   // and read-cache machinery. The record bytes are kept in
+   // fTagmaRecord; GetTagmaRecordBuffer and GetTagmaRecordSize expose
+   // them. The getall argument is moot here because branches are not
+   // filled. Everything else falls through to the ordinary path
+   // unchanged.
+   if (fTagmaStore) {
+      const auto [run, lumi, event] =
+         fTagmaStore->Decompose(static_cast<std::uint64_t>(entry));
+      if (fTagmaStore->Contains(run, lumi, event)) {
+         const ROOT::TTagmaStore::Layout &layout = fTagmaStore->GetLayout();
+         fTagmaRecord.resize(layout.fRecordSize);
+         const Int_t nbytes =
+            GetTagmaRecord(entry, fTagmaRecord.data(),
+                           static_cast<Int_t>(fTagmaRecord.size()));
+         if (nbytes < 0)
+            return 0;
+         fReadEntry = entry;
+         return nbytes;
+      }
+   }
+
    Int_t i;
    Int_t nbytes = 0;
    fReadEntry = entry;

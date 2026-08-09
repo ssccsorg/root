@@ -133,6 +133,7 @@ protected:
    TObject       *fNotify;                ///<!
    TDirectory    *fDirectory;             ///<! Pointer to directory holding this tree
    std::shared_ptr<ROOT::TTagmaStore> fTagmaStore; ///<! Coordinate-indexed store layout (if any)
+   std::vector<char> fTagmaRecord;       ///<! Last record served by the coordinate read path
    TObjArray      fBranches;              ///<  List of Branches
    TObjArray      fLeaves;                ///<  Direct pointers to individual branch leaves
    TList         *fAliases;               ///<  List of aliases for expressions based on the tree branches.
@@ -698,6 +699,8 @@ public:
    virtual Int_t           SetCacheSize(Long64_t cachesize = -1);
    virtual void            SetTagmaStore(std::shared_ptr<ROOT::TTagmaStore> store);
    virtual std::shared_ptr<ROOT::TTagmaStore> GetTagmaStore() const { return fTagmaStore; }
+   const char              *GetTagmaRecordBuffer() const { return fTagmaRecord.empty() ? nullptr : fTagmaRecord.data(); }
+   Int_t                    GetTagmaRecordSize() const { return static_cast<Int_t>(fTagmaRecord.size()); }
    virtual Int_t           SetCacheEntryRange(Long64_t first, Long64_t last);
    virtual void            SetCacheLearnEntries(Int_t n=10);
    virtual void            SetChainOffset(Long64_t offset = 0) { fChainOffset=offset; }

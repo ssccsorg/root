@@ -74,3 +74,50 @@ TEST(TTagmaRecord, GetTagmaRecordReadsOneRecordPerEntry)
    TTree plain("p", "p");
    EXPECT_EQ(plain.GetTagmaRecord(0, buf, 64), -1);
 }
+
+TEST(TTagmaRecord, GetEntryServesCoveredEntriesFromTheStore)
+{
+   {
+      TFile file("tagma_getentry_test.root", "RECREATE");
+      TTree tree("t", "t");
+      double x = 0;
+      tree.Branch("x", &x);
+      for (int i = 0; i < 20000; ++i) {
+         x = i;
+         tree.Fill();
+      }
+      tree.Write();
+      file.Close();
+   }
+
+   TFile file("tagma_getentry_test.root");
+   auto *tree = file.Get<TTree>("t");
+   ASSERT_NE(tree, nullptr);
+
+   ROOT::TTagmaStore::Layout layout;
+   layout.fRunMax = 1;
+   layout.fLumiMax = 1;
+   layout.fEventMax = 100;
+   layout.fRecordSize = 64;
+   tree->SetTagmaStore(std::make_shared<ROOT::TTagmaStore>(layout));
+
+   // Covered entries: GetEntry serves the record with exactly one read
+   // and exposes it through the record buffer accessors.
+   const Int_t calls0 = file.GetReadCalls();
+   EXPECT_EQ(tree->GetEntry(0), 64);
+   EXPECT_EQ(file.GetReadCalls(), calls0 + 1);
+   EXPECT_NE(tree->GetTagmaRecordBuffer(), nullptr);
+   EXPECT_EQ(tree->GetTagmaRecordSize(), 64);
+
+   EXPECT_EQ(tree->GetEntry(99), 64);
+   EXPECT_EQ(file.GetReadCalls(), calls0 + 2);
+
+   // Entries outside the layout fall through to the ordinary branch
+   // path: the real branch payload is read and the record buffer is
+   // left untouched.
+   const Int_t fallthrough = tree->GetEntry(100);
+   EXPECT_GT(fallthrough, 0);
+   EXPECT_NE(fallthrough, 64);
+   EXPECT_GT(file.GetReadCalls(), calls0 + 2);
+   EXPECT_EQ(tree->GetTagmaRecordSize(), 64);
+}
