@@ -168,6 +168,7 @@ protected:
    Int_t            fNProcessIDs{0};          ///<Number of TProcessID written to this file
    Int_t            fReadCalls{0};            ///<Number of read calls ( not counting the cache calls )
    Int_t            fTagmaReadCalls{0};       ///<Number of reads served from the coordinate-indexed store
+   Int_t            fSysReadCalls{0};         ///<Number of read system calls issued to the byte source
    std::shared_ptr<ROOT::TTagmaStore> fTagmaStore{nullptr}; ///<!Coordinate-indexed store layout (if any)
    TString          fRealName;                ///<Effective real file name (not original url)
    TString          fOption;                  ///<File options
@@ -336,6 +337,7 @@ public:
    virtual Long64_t    GetBytesWritten() const;
    virtual Int_t       GetReadCalls() const { return fReadCalls; }
    virtual Int_t       GetTagmaReadCalls() const { return fTagmaReadCalls; }
+   virtual Int_t       GetSysReadCalls() const { return fSysReadCalls; }
    virtual void        SetTagmaStore(std::shared_ptr<ROOT::TTagmaStore> store) { fTagmaStore = store; }
    virtual std::shared_ptr<ROOT::TTagmaStore> GetTagmaStore() const { return fTagmaStore; }
            Int_t       GetVersion() const { return fVersion; }

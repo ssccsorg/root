@@ -119,6 +119,42 @@ TEST(TTagmaStore, LayoutValidation)
    EXPECT_THROW(ROOT::TTagmaStore store(overflow), std::invalid_argument);
 }
 
+TEST(TTagmaStore, SysReadCounterTracksEveryByteSourceRead)
+{
+   // The M5 benchmark reports the system call count per path. Every
+   // byte-source read, ordinary or coordinate-served, issues exactly one
+   // read system call, and GetSysReadCalls must count them all.
+   {
+      TFile file("tagma_sysread_test.root", "RECREATE");
+      TNamed first("key", "value");
+      first.Write();
+      file.Close();
+   }
+
+   TFile file("tagma_sysread_test.root");
+   const Int_t sys0 = file.GetSysReadCalls();
+
+   // Ordinary path: one system call per ReadBuffer request.
+   char buf[64];
+   EXPECT_FALSE(file.ReadBuffer(buf, 0, 64));
+   EXPECT_EQ(file.GetSysReadCalls(), sys0 + 1);
+
+   // Coordinate path: each aligned fixed-width record read issues one
+   // system call as well, so the per-event count is exactly one.
+   ROOT::TTagmaStore::Layout layout;
+   layout.fRunMax = 1;
+   layout.fLumiMax = 1;
+   layout.fEventMax = 2;
+   layout.fRecordSize = 64;
+   file.SetTagmaStore(std::make_shared<ROOT::TTagmaStore>(layout));
+   EXPECT_FALSE(file.ReadBuffer(buf, 64, 64));
+   EXPECT_EQ(file.GetSysReadCalls(), sys0 + 2);
+
+   // The counter is cumulative and monotonic across both paths.
+   EXPECT_FALSE(file.ReadBuffer(buf, 0, 32));  // misaligned: ordinary path
+   EXPECT_EQ(file.GetSysReadCalls(), sys0 + 3);
+}
+
 TEST(TTagmaStore, TFileReadBufferServesAlignedRecords)
 {
    // A ROOT file provides the byte source; the hook serves aligned

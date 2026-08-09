@@ -4295,6 +4295,7 @@ Int_t TFile::SysClose(Int_t fd)
 
 Int_t TFile::SysRead(Int_t fd, void *buf, Int_t len)
 {
+   fSysReadCalls++;
    return ::read(fd, buf, len);
 }
 
