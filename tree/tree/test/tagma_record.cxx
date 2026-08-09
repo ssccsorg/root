@@ -124,17 +124,14 @@ TEST(TTagmaRecord, GetEntryServesCoveredEntriesFromTheStore)
 
 TEST(TTagmaRecord, ZeroRecordSizeLayoutIsRejected)
 {
-   // A degenerate layout with a zero record size is rejected before any
-   // read is attempted.
+   // A degenerate layout with a zero record size is rejected by the
+   // store constructor before it can be attached to a tree.
    ROOT::TTagmaStore::Layout layout;
    layout.fRunMax = 1;
    layout.fLumiMax = 1;
    layout.fEventMax = 1;
    layout.fRecordSize = 0;
-   TTree tree("p", "p");
-   tree.SetTagmaStore(std::make_shared<ROOT::TTagmaStore>(layout));
-   char buf[64];
-   EXPECT_EQ(tree.GetTagmaRecord(0, buf, 64), -1);
+   EXPECT_THROW(ROOT::TTagmaStore store(layout), std::invalid_argument);
 }
 
 TEST(TTagmaRecord, OversizedRecordSizeLayoutIsRejected)

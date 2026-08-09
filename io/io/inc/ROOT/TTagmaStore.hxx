@@ -28,6 +28,7 @@
 // dependencies.
 
 #include <cstdint>
+#include <stdexcept>
 #include <tuple>
 
 namespace ROOT {
@@ -41,7 +42,12 @@ public:
       std::uint64_t fRecordSize = 0;  // bytes per fixed-width event record
    };
 
-   explicit TTagmaStore(const Layout &layout) : fLayout(layout) {}
+   // Validates the layout: every axis and the record size must be
+   // nonzero, the record count must fit in uint64, and the total store
+   // extent must fit in uint64. Violations throw std::invalid_argument
+   // so that Compose and Offset can never overflow for in-bounds
+   // coordinates.
+   explicit TTagmaStore(const Layout &layout);
 
    // Compose (run, lumi, event) into the linear coordinate index.
    std::uint64_t Compose(std::uint64_t run, std::uint64_t lumi,

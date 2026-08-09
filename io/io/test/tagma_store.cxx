@@ -21,6 +21,7 @@
 
 #include "gtest/gtest.h"
 
+#include <limits>
 #include <memory>
 
 namespace {
@@ -82,6 +83,40 @@ TEST(TTagmaStore, AxisBounds)
    EXPECT_FALSE(store.Contains(1000, 0, 0));
    EXPECT_FALSE(store.Contains(0, 128, 0));
    EXPECT_FALSE(store.Contains(0, 0, 10000));
+}
+
+TEST(TTagmaStore, LayoutValidation)
+{
+   ROOT::TTagmaStore::Layout base;
+   base.fRunMax = 1000;
+   base.fLumiMax = 128;
+   base.fEventMax = 10000;
+   base.fRecordSize = 128;
+   EXPECT_NO_THROW(ROOT::TTagmaStore store(base));
+
+   ROOT::TTagmaStore::Layout zero = base;
+   zero.fRunMax = 0;
+   EXPECT_THROW(ROOT::TTagmaStore store(zero), std::invalid_argument);
+
+   zero = base;
+   zero.fRecordSize = 0;
+   EXPECT_THROW(ROOT::TTagmaStore store(zero), std::invalid_argument);
+
+   ROOT::TTagmaStore::Layout overflow = base;
+   overflow.fRunMax = std::numeric_limits<std::uint64_t>::max();
+   EXPECT_THROW(ROOT::TTagmaStore store(overflow), std::invalid_argument);
+
+   overflow = base;
+   overflow.fLumiMax = std::numeric_limits<std::uint64_t>::max();
+   EXPECT_THROW(ROOT::TTagmaStore store(overflow), std::invalid_argument);
+
+   overflow = base;
+   overflow.fEventMax = std::numeric_limits<std::uint64_t>::max();
+   EXPECT_THROW(ROOT::TTagmaStore store(overflow), std::invalid_argument);
+
+   overflow = base;
+   overflow.fRecordSize = std::numeric_limits<std::uint64_t>::max();
+   EXPECT_THROW(ROOT::TTagmaStore store(overflow), std::invalid_argument);
 }
 
 TEST(TTagmaStore, TFileReadBufferServesAlignedRecords)
