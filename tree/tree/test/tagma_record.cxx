@@ -136,3 +136,33 @@ TEST(TTagmaRecord, ZeroRecordSizeLayoutIsRejected)
    char buf[64];
    EXPECT_EQ(tree.GetTagmaRecord(0, buf, 64), -1);
 }
+
+TEST(TTagmaRecord, OversizedRecordSizeLayoutIsRejected)
+{
+   // A layout whose record size exceeds the sanity bound is rejected
+   // before any allocation or read: resize() would throw and the size
+   // would not fit the Int_t length argument of ReadBuffer.
+   {
+      TFile file("tagma_oversized_test.root", "RECREATE");
+      TTree tree("t", "t");
+      double x = 0;
+      tree.Branch("x", &x);
+      tree.Fill();
+      tree.Write();
+      file.Close();
+   }
+   TFile file("tagma_oversized_test.root");
+   auto *tree = file.Get<TTree>("t");
+   ASSERT_NE(tree, nullptr);
+
+   ROOT::TTagmaStore::Layout layout;
+   layout.fRunMax = 1;
+   layout.fLumiMax = 1;
+   layout.fEventMax = 1;
+   layout.fRecordSize = (1ull << 31);  // 2 GiB, beyond the 1 GiB bound
+   tree->SetTagmaStore(std::make_shared<ROOT::TTagmaStore>(layout));
+
+   char buf[64];
+   EXPECT_EQ(tree->GetTagmaRecord(0, buf, 64), -1);
+   EXPECT_EQ(tree->GetEntry(0), 0);
+}

@@ -5716,6 +5716,11 @@ Long64_t TTree::GetEntriesFriend() const
 /// Note: See the comments in TBranchElement::SetAddress() for the
 /// object ownership policy of the underlying (user) data.
 
+// Sanity bound for fixed-width event records. Larger layouts are
+// rejected before any allocation or read: resize() would throw or the
+// record size would not fit the Int_t length argument of ReadBuffer.
+static constexpr std::uint64_t kMaxTagmaRecordSize = 1ull << 30;  // 1 GiB
+
 Int_t TTree::GetEntry(Long64_t entry, Int_t getall)
 {
    // We already have been visited while recursively looking
@@ -5737,6 +5742,8 @@ Int_t TTree::GetEntry(Long64_t entry, Int_t getall)
          fTagmaStore->Decompose(static_cast<std::uint64_t>(entry));
       if (fTagmaStore->Contains(run, lumi, event)) {
          const ROOT::TTagmaStore::Layout &layout = fTagmaStore->GetLayout();
+         if (layout.fRecordSize == 0 || layout.fRecordSize > kMaxTagmaRecordSize)
+            return 0;
          fReadEntry = entry;
          fTagmaRecord.resize(layout.fRecordSize);
          const Int_t nbytes =
@@ -6057,7 +6064,7 @@ Int_t TTree::GetTagmaRecord(Long64_t entry, char *buf, Int_t bufsize)
    if (!fTagmaStore || entry < 0)
       return -1;
    const ROOT::TTagmaStore::Layout &layout = fTagmaStore->GetLayout();
-   if (layout.fRecordSize == 0)
+   if (layout.fRecordSize == 0 || layout.fRecordSize > kMaxTagmaRecordSize)
       return -1;
    if (bufsize < 0 || static_cast<std::uint64_t>(bufsize) < layout.fRecordSize)
       return -2;
