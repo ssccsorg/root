@@ -38,6 +38,11 @@
 //                 it. The pass opens the source fresh with the
 //                 TTreeCache enabled and reports the cache efficiency
 //                 and miss rate (requires treeplayer)
+//   analyze       1 runs the analysis workload: the same selection
+//                 (MET_pt above 100 GeV and at least one muon) and the
+//                 same MET_pt histogram on both read paths, over the
+//                 events the store covers; requires a converted store
+//                 with its layout sidecar
 //
 // The mapped coordinate row requires a Unix-like platform (mmap), like
 // the canonical CoordSpaceM reference.
@@ -45,11 +50,14 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "ROOT/TTagmaStore.hxx"
 #include "TFile.h"
+#include "TH1F.h"
 #include "TStopwatch.h"
 #include "TSystem.h"
 #include "TTree.h"
@@ -356,12 +364,152 @@ void MeasureCacheStats(const char *url, const char *treeName,
    delete file;
 }
 
+// Analysis result of one read path: the same selection applied to the
+// same events, histogram of MET_pt filled identically on both paths.
+struct AnalysisResult {
+   const char *name = nullptr;
+   Long64_t entries = 0;
+   Long64_t selected = 0;
+   Double_t wall = 0;
+   Double_t histEntries = 0;
+   Double_t histMean = 0;
+};
+
+// Parses the layout sidecar lines "<name> <offset> <type>" into a
+// name-to-offset map.
+bool ReadLayout(const char *path, std::map<std::string, Long64_t> *offsets)
+{
+   FILE *in = std::fopen(path, "r");
+   if (!in)
+      return false;
+   char name[256];
+   char type[64];
+   long long offset = 0;
+   while (std::fscanf(in, "%255s %lld %63s", name, &offset, type) == 3)
+      (*offsets)[name] = static_cast<Long64_t>(offset);
+   std::fclose(in);
+   return !offsets->empty();
+}
+
+// The example analysis: select events with MET_pt above 100 GeV and at
+// least one muon, fill a MET_pt histogram. The same selection runs on
+// both paths; the coordinate path interprets the fixed-width record at
+// the layout offsets.
+constexpr Double_t kMetCut = 100.0;
+constexpr Double_t kMinMuons = 1.0;
+
+AnalysisResult AnalyzeBaseline(TFile *file, TTree *tree, Long64_t limit)
+{
+   AnalysisResult r;
+   r.name = "analysis_baseline";
+   r.entries = limit;
+   tree->SetCacheSize(0);
+   TLeaf *metLeaf = tree->GetLeaf("MET_pt");
+   TLeaf *nmuonLeaf = tree->GetLeaf("nMuon");
+   if (!metLeaf || !nmuonLeaf) {
+      std::fprintf(stderr,
+                   "tagma_bench: analysis skipped, MET_pt/nMuon not found\n");
+      r.histEntries = -1;
+      return r;
+   }
+
+   TH1F hist("met_pt", "MET_pt;MET_pt [GeV];events", 100, 0, 1000);
+   TStopwatch watch;
+   watch.Start();
+   for (Long64_t i = 0; i < limit; ++i) {
+      tree->GetEntry(i);
+      const Double_t met = metLeaf->GetValue(0);
+      const Double_t nMuon = nmuonLeaf->GetValue(0);
+      if (met > kMetCut && nMuon >= kMinMuons) {
+         ++r.selected;
+         hist.Fill(met);
+      }
+   }
+   watch.Stop();
+   r.wall = watch.RealTime();
+   r.histEntries = hist.GetEntries();
+   r.histMean = hist.GetMean();
+   return r;
+}
+
+AnalysisResult AnalyzeCoordinate(const char *storePath, Long64_t limit,
+                                 Long64_t recordSize,
+                                 const std::map<std::string, Long64_t> &offsets)
+{
+   AnalysisResult r;
+   r.name = "analysis_coordinate";
+   r.entries = limit;
+   auto metIt = offsets.find("MET_pt");
+   auto nmuonIt = offsets.find("nMuon");
+   if (metIt == offsets.end() || nmuonIt == offsets.end()) {
+      std::fprintf(stderr,
+                   "tagma_bench: analysis skipped, MET_pt/nMuon not in "
+                   "the store layout\n");
+      r.histEntries = -1;
+      return r;
+   }
+   const Long64_t metOff = metIt->second;
+   const Long64_t nmuonOff = nmuonIt->second;
+
+   TFile *file = TFile::Open(storePath);
+   if (!file || file->IsZombie()) {
+      std::fprintf(stderr, "tagma_bench: analysis skipped, cannot open %s\n",
+                   storePath);
+      r.histEntries = -1;
+      return r;
+   }
+   ROOT::TTagmaStore::Layout layout;
+   layout.fRunMax = 1;
+   layout.fLumiMax = 1;
+   layout.fEventMax = static_cast<std::uint64_t>(limit);
+   layout.fRecordSize = static_cast<std::uint64_t>(recordSize);
+   auto store = std::make_shared<ROOT::TTagmaStore>(layout);
+   file->SetTagmaStore(store);
+   TTree tree("Events", "Events");
+   tree.SetDirectory(file);
+   tree.SetEntries(limit);
+   tree.SetTagmaStore(store);
+
+   TH1F hist("met_pt", "MET_pt;MET_pt [GeV];events", 100, 0, 1000);
+   TStopwatch watch;
+   watch.Start();
+   for (Long64_t i = 0; i < limit; ++i) {
+      if (tree.GetEntry(i) > 0) {
+         const char *buf = tree.GetTagmaRecordBuffer();
+         Double_t met = 0;
+         Double_t nMuon = 0;
+         std::memcpy(&met, buf + metOff, sizeof(met));
+         std::memcpy(&nMuon, buf + nmuonOff, sizeof(nMuon));
+         if (met > kMetCut && nMuon >= kMinMuons) {
+            ++r.selected;
+            hist.Fill(met);
+         }
+      }
+   }
+   watch.Stop();
+   r.wall = watch.RealTime();
+   r.histEntries = hist.GetEntries();
+   r.histMean = hist.GetMean();
+   delete file;
+   return r;
+}
+
+void PrintAnalysis(const AnalysisResult &r)
+{
+   std::printf("tagma_bench: %-20s entries=%lld selected=%lld wall_s=%.3f "
+               "hist_entries=%.0f hist_mean=%.3f\n",
+               r.name, static_cast<long long>(r.entries),
+               static_cast<long long>(r.selected), r.wall, r.histEntries,
+               r.histMean);
+}
+
 }  // namespace
 
 int tagma_bench(const char *url = "", const char *tree_name = "Events",
                 Long64_t max_entries = -1, Long64_t record_size = 0,
                 Int_t nscatter = 3, Bool_t disable_cache = kTRUE,
-                const char *store_path = "", Long64_t perf_entries = 0)
+                const char *store_path = "", Long64_t perf_entries = 0,
+                Bool_t analyze = kFALSE)
 {
    if (record_size <= 0)
       record_size = kDefaultRecordSize;
@@ -503,5 +651,48 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
 
    if (perf_entries > 0 && !synthetic)
       MeasureCacheStats(url, tree_name, perf_entries);
+
+   if (analyze && realStore) {
+      // The analysis workload: the same selection and histogram on both
+      // read paths, over the same events the store covers.
+      TFile *afile = TFile::Open(url);
+      TTree *atree = nullptr;
+      if (afile && !afile->IsZombie()) {
+         afile->GetObject(tree_name, atree);
+      }
+      if (!atree) {
+         std::fprintf(stderr,
+                      "tagma_bench: analysis skipped, cannot open %s\n",
+                      source);
+         delete afile;
+         return 1;
+      }
+      std::map<std::string, Long64_t> offsets;
+      const std::string layoutPath = std::string(store_path) + ".layout";
+      if (!ReadLayout(layoutPath.c_str(), &offsets)) {
+         std::fprintf(stderr,
+                      "tagma_bench: analysis skipped, no layout %s\n",
+                      layoutPath.c_str());
+         delete afile;
+         return 1;
+      }
+
+      const AnalysisResult base = AnalyzeBaseline(afile, atree, limit);
+      delete afile;
+      TString storeRaw(store_path);
+      storeRaw += "?filetype=raw";
+      const AnalysisResult coord =
+          AnalyzeCoordinate(storeRaw.Data(), limit, record_size, offsets);
+
+      PrintAnalysis(base);
+      PrintAnalysis(coord);
+      const Bool_t match = base.histEntries >= 0 &&
+                           base.histEntries == coord.histEntries &&
+                           base.histMean == coord.histMean &&
+                           base.selected == coord.selected;
+      std::printf("tagma_bench: analysis_match=%s\n", match ? "yes" : "no");
+      if (!match)
+         return 1;
+   }
    return 0;
 }

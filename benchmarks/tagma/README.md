@@ -91,6 +91,17 @@ miss rate (requires treeplayer):
 ../root-build-tagma/bin/root -l -b -q 'tagma_bench.C("/path/to/local.root", "Events", -1, 2560, 3, 1, "tagma_store.bin", 10000)'
 ```
 
+Append a ninth argument of 1 to run the analysis workload: the same
+selection (MET_pt above 100 GeV and at least one muon) and the same
+MET_pt histogram on both read paths, over the events the store covers.
+The layout sidecar written by the conversion tool maps the record
+fields; the reported `analysis_match` verifies that the coordinate
+path reproduces the baseline analysis exactly:
+
+```bash
+../root-build-tagma/bin/root -l -b -q 'tagma_bench.C("/path/to/local.root", "Events", -1, 2560, 3, 1, "tagma_store.bin", 0, 1)'
+```
+
 ## What to record
 
 | Quantity | Source |
@@ -101,6 +112,7 @@ miss rate (requires treeplayer):
 | System call count | `TFile::GetSysReadCalls` delta, counted in `TFile::SysRead` |
 | Derived per-event metrics | `reads/ev`, `bytes/read`, `syscalls/ev`, `MB/s` in the macro output |
 | Cache efficiency and miss rate | `TTreePerfStats` pass, enabled with the eighth argument (e.g. `perf_entries = 10000`); requires treeplayer |
+| Analysis workload | same selection and MET_pt histogram on both paths, enabled with the ninth argument; `analysis_match` verifies identical results |
 
 The system call count is meaningful for local files, where every
 `TFile::ReadBuffer` request is served by one `TFile::SysRead`. Remote

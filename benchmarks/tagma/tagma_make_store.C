@@ -147,6 +147,20 @@ int tagma_make_store(const char *url, const char *tree_name = "Events",
                 static_cast<unsigned long long>(checksum));
    std::fclose(sum);
 
+   // The layout sidecar: leaf name and byte offset per record field, in
+   // serialization order. The analysis mode of tagma_bench reads it to
+   // interpret the fixed-width records.
+   std::string layout_path = std::string(out_path) + ".layout";
+   FILE *layout = std::fopen(layout_path.c_str(), "w");
+   if (!layout) {
+      std::fprintf(stderr, "tagma_make_store: cannot create %s\n",
+                   layout_path.c_str());
+      return 1;
+   }
+   for (std::size_t i = 0; i < leaves.size(); ++i)
+      std::fprintf(layout, "%s %zu double\n", leafNames[i].c_str(), i * 8);
+   std::fclose(layout);
+
    std::printf("tagma_make_store: source=%s\n", url);
    std::printf("tagma_make_store: entries=%lld record_size=%lld leaves=%lld\n",
                static_cast<long long>(limit),
