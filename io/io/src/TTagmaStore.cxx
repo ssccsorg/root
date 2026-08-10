@@ -134,6 +134,9 @@ bool TTagmaStore::MapFile(const char *path)
    if (path == nullptr || path[0] == '\0')
       return false;
    const std::uint64_t need = SizeBytes();
+   // The mapping length must fit the platform address size.
+   if (need > std::numeric_limits<std::size_t>::max())
+      return false;
    const std::uint64_t size = FileSize(path);
    if (size < need)
       return false;

@@ -11,7 +11,7 @@
 # multi-gigabyte remote dataset. The real-data runbook lives in
 # README.md.
 
-if(testing)
+if(testing AND NOT WIN32)
   set(ROOT_root_CMD $<TARGET_FILE:root.exe>)
 
   ROOT_ADD_TEST(tagma-bench
