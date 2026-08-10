@@ -63,6 +63,26 @@ The file and tree name match the M1 baseline runbook. The remote run
 reads the file once through the network; cap the entry count with the
 third argument for a quick check.
 
+## Real-data run against a converted store
+
+The benchmark serves real converted records when the store is built
+with the preparation tool first. The tool reads each event (cache on)
+and writes a fixed-width record holding the first (record_size / 8)
+scalar leaf values as doubles, zero-padded, plus a sidecar checksum
+file. The conversion cost is reported separately from the read-path
+measurement.
+
+```bash
+../root-build-tagma/bin/root -l -b -q 'tagma_make_store.C("/path/to/local.root", "Events", "tagma_store.bin", 2560)'
+../root-build-tagma/bin/root -l -b -q 'tagma_bench.C("/path/to/local.root", "Events", -1, 2560, 3, 1, "tagma_store.bin")'
+```
+
+The benchmark verifies that the store holds exactly the converted
+records (size check) and that the bytes the coordinate paths serve
+match the sidecar checksum, so the measured rows run against real
+event data, not a pattern. Without the store path argument the
+benchmark generates a deterministic pattern store.
+
 ## What to record
 
 | Quantity | Source |

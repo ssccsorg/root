@@ -30,10 +30,15 @@
 //   nscatter      synthetic baseline branches per event, the number of
 //                 reads issued per event by the scattered path
 //   disable_cache 1 disables the TTreeCache in the baseline (default)
+//   store_path   pre-built coordinate store file from tagma_make_store;
+//                 when given, the benchmark serves the real converted
+//                 records and verifies the served bytes against the
+//                 sidecar checksum instead of generating a pattern store
 //
 // The mapped coordinate row requires a Unix-like platform (mmap), like
 // the canonical CoordSpaceM reference.
 
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -51,7 +56,6 @@ constexpr Long64_t kDefaultEntries = 20000;
 constexpr Long64_t kDefaultRecordSize = 2560;
 const char *kScatterFile = "tagma_bench_scatter.root";
 const char *kStoreFile = "tagma_bench_store.bin";
-const char *kStoreFileRaw = "tagma_bench_store.bin?filetype=raw";
 
 struct BenchResult {
    const char *name = nullptr;
@@ -62,6 +66,7 @@ struct BenchResult {
    Long64_t tagmaReadCalls = 0;
    Long64_t sysReadCalls = 0;
    Long64_t bytesRead = 0;
+   std::uint64_t servedChecksum = 0;
    Bool_t ok = kTRUE;
 };
 
@@ -239,9 +244,15 @@ BenchResult MeasureCoordinate(const char *storePath, const char *mapPath,
    TStopwatch watch;
    watch.Start();
    Long64_t served = 0;
+   std::uint64_t servedChecksum = 0;
    for (Long64_t i = 0; i < limit; ++i) {
-      if (tree.GetEntry(i) > 0)
+      if (tree.GetEntry(i) > 0) {
          ++served;
+         const char *buf = tree.GetTagmaRecordBuffer();
+         const Int_t size = tree.GetTagmaRecordSize();
+         for (Int_t j = 0; j < size; ++j)
+            servedChecksum += static_cast<unsigned char>(buf[j]);
+      }
    }
    watch.Stop();
 
@@ -251,6 +262,7 @@ BenchResult MeasureCoordinate(const char *storePath, const char *mapPath,
    r.tagmaReadCalls = file->GetTagmaReadCalls() - tagma0;
    r.sysReadCalls = file->GetSysReadCalls() - sys0;
    r.bytesRead = file->GetBytesRead() - bytes0;
+   r.servedChecksum = servedChecksum;
 
    if (served != limit) {
       std::fprintf(stderr,
@@ -286,7 +298,8 @@ void PrintResult(const BenchResult &r)
 
 int tagma_bench(const char *url = "", const char *tree_name = "Events",
                 Long64_t max_entries = -1, Long64_t record_size = 0,
-                Int_t nscatter = 3, Bool_t disable_cache = kTRUE)
+                Int_t nscatter = 3, Bool_t disable_cache = kTRUE,
+                const char *store_path = "")
 {
    if (record_size <= 0)
       record_size = kDefaultRecordSize;
@@ -294,7 +307,10 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
       nscatter = 1;
 
    const Bool_t synthetic = (url == nullptr || url[0] == '\0');
+   const Bool_t realStore =
+       !synthetic && store_path != nullptr && store_path[0] != '\0';
    const char *source = synthetic ? "<synthetic>" : url;
+   const char *store = realStore ? store_path : kStoreFile;
 
    TFile *baselineFile = nullptr;
    TTree *baselineTree = nullptr;
@@ -350,19 +366,50 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
                                             synthetic ? &addresses : nullptr);
    delete baselineFile;
 
-   if (!MakeStoreFile(kStoreFile, limit, record_size))
+   std::uint64_t expectedChecksum = 0;
+   Bool_t haveChecksum = kFALSE;
+   if (realStore) {
+      // The converted store must hold exactly limit records of
+      // record_size bytes.
+      Long64_t size = 0;
+      gSystem->GetPathInfo(store_path, nullptr, &size, nullptr, nullptr);
+      if (size != limit * record_size) {
+         std::fprintf(stderr,
+                      "tagma_bench: store %s size %lld does not match "
+                      "%lld records of %lld bytes\n",
+                      store_path, static_cast<long long>(size),
+                      static_cast<long long>(limit),
+                      static_cast<long long>(record_size));
+         return 1;
+      }
+      // The sidecar checksum from tagma_make_store, when present.
+      const std::string sumPath = std::string(store_path) + ".sum";
+      FILE *sum = std::fopen(sumPath.c_str(), "r");
+      if (sum) {
+         unsigned long long value = 0;
+         if (std::fscanf(sum, "%llu", &value) == 1) {
+            expectedChecksum = static_cast<std::uint64_t>(value);
+            haveChecksum = kTRUE;
+         }
+         std::fclose(sum);
+      }
+   } else if (!MakeStoreFile(kStoreFile, limit, record_size)) {
       return 1;
+   }
+
+   TString storeRaw(store);
+   storeRaw += "?filetype=raw";
    const BenchResult coord =
-       MeasureCoordinate(kStoreFileRaw, nullptr, limit, record_size);
+       MeasureCoordinate(storeRaw.Data(), nullptr, limit, record_size);
    const BenchResult coordMap =
-       MeasureCoordinate(kStoreFileRaw, kStoreFile, limit, record_size);
+       MeasureCoordinate(storeRaw.Data(), store, limit, record_size);
 
    std::printf("tagma_bench: source=%s\n", source);
    std::printf("tagma_bench: entries=%lld record_size=%lld nscatter=%d "
-               "cache_disabled=%d\n",
+               "cache_disabled=%d store=%s\n",
                static_cast<long long>(limit),
                static_cast<long long>(record_size), nscatter,
-               disable_cache ? 1 : 0);
+               disable_cache ? 1 : 0, store);
    std::printf(
        "tagma_bench: %-16s %8s %8s %7s %7s %8s %12s %7s %10s %10s %9s\n",
        "path", "wall_s", "cpu_s", "reads", "tagma", "syscalls",
@@ -371,7 +418,20 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
    PrintResult(coord);
    PrintResult(coordMap);
 
-   gSystem->Unlink(kStoreFile);
+   if (haveChecksum) {
+      const Bool_t match = coord.servedChecksum == expectedChecksum &&
+                           coordMap.servedChecksum == expectedChecksum;
+      std::printf(
+          "tagma_bench: served_checksum=%llu expected=%llu match=%s\n",
+          static_cast<unsigned long long>(coord.servedChecksum),
+          static_cast<unsigned long long>(expectedChecksum),
+          match ? "yes" : "no");
+      if (!match)
+         return 1;
+   }
+
+   if (!realStore)
+      gSystem->Unlink(kStoreFile);
    if (synthetic)
       gSystem->Unlink(kScatterFile);
 
