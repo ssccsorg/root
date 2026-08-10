@@ -12,7 +12,9 @@ reads documented as 372,000 requests averaging 4.6 KB. The coordinate
 path serves the same number of events as fixed-width records through
 `TTagmaStore`: one read per event at the record size, resolved by
 closed-form address arithmetic instead of the branch, basket, and cache
-machinery.
+machinery. The mapped coordinate path serves the same records from the
+mmap'ed store file with no read system call at all, so the byte source
+never reaches the medium for mapped data.
 
 Both paths call the same API, `GetEntry`, so the comparison isolates the
 interior read path. The coordinate store file holds a deterministic byte
@@ -75,7 +77,10 @@ The system call count is meaningful for local files, where every
 `TFile::ReadBuffer` request is served by one `TFile::SysRead`. Remote
 sources (root:// URLs) read through the network plugin instead, so the
 syscall column stays zero there; the request count and bytes moved still
-apply.
+apply. The mapped coordinate row serves every covered record from the
+mapping with zero read system calls, the syscall column stays zero, and
+the mapped pages are demand-paged once by the kernel with sequential
+locality.
 
 ## Interpretation
 
@@ -85,12 +90,17 @@ apply.
 - Coordinate reads per event of exactly one at the record size: the
   fixed-width record path collapses the per-event scatter into a single
   aligned read
+- Mapped coordinate reads per event of exactly one with zero read
+  system calls: the byte source is the mapped region, and the read path
+  never reaches the medium for mapped data, the structural removal the
+  plan describes
 - Wall time per event scales with the request count when the two paths
   move the same payload bytes: the overhead is per request, the target
   of the coordinate store
 
 The real-data run measures the baseline against the remote EOS file and
-the coordinate path against the local store file. The two paths live on
+the coordinate paths against the local store file. The two paths live on
 different media by construction; the reported request count and bytes
 per read are media-independent, while the wall-clock split reflects the
-remote latency of the baseline.
+remote latency of the baseline. The mapped coordinate row requires a
+Unix-like platform (mmap), like the canonical CoordSpaceM reference.

@@ -10,7 +10,10 @@
 // with the read cache disabled, which produces the scattered singular
 // reads documented as 372,000 requests averaging 4.6 KB. The coordinate
 // path serves the same number of events as fixed-width records through
-// TTagmaStore, one read per event at the record size.
+// TTagmaStore, one read per event at the record size, and the mapped
+// coordinate path serves the same records from the mmap'ed store file
+// with no read system call at all, the byte source never reaching the
+// medium for mapped data.
 //
 // Usage:
 //   root -l -b -q 'tagma_bench.C()'
@@ -27,6 +30,9 @@
 //   nscatter      synthetic baseline branches per event, the number of
 //                 reads issued per event by the scattered path
 //   disable_cache 1 disables the TTreeCache in the baseline (default)
+//
+// The mapped coordinate row requires a Unix-like platform (mmap), like
+// the canonical CoordSpaceM reference.
 
 #include <cstdio>
 #include <cstring>
@@ -182,11 +188,11 @@ BenchResult MeasureBaseline(TFile *file, TTree *tree, Long64_t limit,
    return r;
 }
 
-BenchResult MeasureCoordinate(const char *storePath, Long64_t limit,
-                              Long64_t recordSize)
+BenchResult MeasureCoordinate(const char *storePath, const char *mapPath,
+                              Long64_t limit, Long64_t recordSize)
 {
    BenchResult r;
-   r.name = "coordinate";
+   r.name = mapPath ? "coordinate+map" : "coordinate";
    r.entries = limit;
 
    TFile *file = TFile::Open(storePath);
@@ -206,6 +212,12 @@ BenchResult MeasureCoordinate(const char *storePath, Long64_t limit,
       store = std::make_shared<ROOT::TTagmaStore>(layout);
    } catch (const std::invalid_argument &e) {
       std::fprintf(stderr, "tagma_bench: %s\n", e.what());
+      delete file;
+      r.ok = kFALSE;
+      return r;
+   }
+   if (mapPath && !store->MapFile(mapPath)) {
+      std::fprintf(stderr, "tagma_bench: cannot map %s\n", mapPath);
       delete file;
       r.ok = kFALSE;
       return r;
@@ -261,7 +273,7 @@ void PrintResult(const BenchResult &r)
        r.entries > 0 ? Double_t(r.sysReadCalls) / r.entries : 0;
    const Double_t mbs = r.wall > 0 ? Double_t(r.bytesRead) / 1e6 / r.wall : 0;
    std::printf(
-       "tagma_bench: %-11s %8.3f %8.3f %7lld %7lld %8lld %12lld %7.2f "
+       "tagma_bench: %-16s %8.3f %8.3f %7lld %7lld %8lld %12lld %7.2f "
        "%10.1f %10.2f %9.1f\n",
        r.name, r.wall, r.cpu, static_cast<long long>(r.readCalls),
        static_cast<long long>(r.tagmaReadCalls),
@@ -341,7 +353,9 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
    if (!MakeStoreFile(kStoreFile, limit, record_size))
       return 1;
    const BenchResult coord =
-       MeasureCoordinate(kStoreFileRaw, limit, record_size);
+       MeasureCoordinate(kStoreFileRaw, nullptr, limit, record_size);
+   const BenchResult coordMap =
+       MeasureCoordinate(kStoreFileRaw, kStoreFile, limit, record_size);
 
    std::printf("tagma_bench: source=%s\n", source);
    std::printf("tagma_bench: entries=%lld record_size=%lld nscatter=%d "
@@ -350,17 +364,18 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
                static_cast<long long>(record_size), nscatter,
                disable_cache ? 1 : 0);
    std::printf(
-       "tagma_bench: %-11s %8s %8s %7s %7s %8s %12s %7s %10s %10s %9s\n",
+       "tagma_bench: %-16s %8s %8s %7s %7s %8s %12s %7s %10s %10s %9s\n",
        "path", "wall_s", "cpu_s", "reads", "tagma", "syscalls",
        "bytes_moved", "reads/ev", "bytes/read", "syscalls/ev", "MB/s");
    PrintResult(base);
    PrintResult(coord);
+   PrintResult(coordMap);
 
    gSystem->Unlink(kStoreFile);
    if (synthetic)
       gSystem->Unlink(kScatterFile);
 
-   if (!coord.ok)
+   if (!coord.ok || !coordMap.ok)
       return 1;
    std::printf("tagma_bench: comparison complete\n");
    return 0;
