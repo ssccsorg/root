@@ -51,3 +51,8 @@ documentation/doxygen/*.dot
 # Pycache
 __pycache__
 /out
+
+# Per-run benchmark result artifacts, mirroring the syntagma reference
+# (sw/cpp/bench/result/ is ignored there; the bench code is the tracked
+# single source and the results are regenerated per run).
+benchmarks/tagma/result/
