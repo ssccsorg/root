@@ -83,6 +83,14 @@ match the sidecar checksum, so the measured rows run against real
 event data, not a pattern. Without the store path argument the
 benchmark generates a deterministic pattern store.
 
+Append a positive eighth argument to also measure the baseline with
+the TTreeCache enabled on a fresh file open: the cache efficiency and
+miss rate (requires treeplayer):
+
+```bash
+../root-build-tagma/bin/root -l -b -q 'tagma_bench.C("/path/to/local.root", "Events", -1, 2560, 3, 1, "tagma_store.bin", 10000)'
+```
+
 ## What to record
 
 | Quantity | Source |
@@ -92,6 +100,7 @@ benchmark generates a deterministic pattern store.
 | Bytes moved | `TFile::GetBytesRead` delta |
 | System call count | `TFile::GetSysReadCalls` delta, counted in `TFile::SysRead` |
 | Derived per-event metrics | `reads/ev`, `bytes/read`, `syscalls/ev`, `MB/s` in the macro output |
+| Cache efficiency and miss rate | `TTreePerfStats` pass, enabled with the eighth argument (e.g. `perf_entries = 10000`); requires treeplayer |
 
 The system call count is meaningful for local files, where every
 `TFile::ReadBuffer` request is served by one `TFile::SysRead`. Remote

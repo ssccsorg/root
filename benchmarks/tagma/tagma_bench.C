@@ -34,6 +34,10 @@
 //                 when given, the benchmark serves the real converted
 //                 records and verifies the served bytes against the
 //                 sidecar checksum instead of generating a pattern store
+//   perf_entries entries to read for the cache-efficiency pass; 0 skips
+//                 it. The pass opens the source fresh with the
+//                 TTreeCache enabled and reports the cache efficiency
+//                 and miss rate (requires treeplayer)
 //
 // The mapped coordinate row requires a Unix-like platform (mmap), like
 // the canonical CoordSpaceM reference.
@@ -49,6 +53,8 @@
 #include "TStopwatch.h"
 #include "TSystem.h"
 #include "TTree.h"
+#include "TTreeCache.h"
+#include "TTreePerfStats.h"
 
 namespace {
 
@@ -294,12 +300,68 @@ void PrintResult(const BenchResult &r)
        syscallsPerEvent, mbs);
 }
 
+// Measures the baseline with the TTreeCache enabled on a fresh file
+// open: the cache efficiency and miss rate that the M1 runbook records.
+// The pass needs treeplayer (TTreePerfStats) and is skipped when the
+// class is unavailable. The fresh open keeps the basket memory from the
+// cache-disabled pass from hiding the cache behavior.
+void MeasureCacheStats(const char *url, const char *treeName,
+                       Long64_t entries)
+{
+   if (gROOT->GetClass("TTreePerfStats") == nullptr) {
+      std::printf("tagma_bench: cache stats skipped, treeplayer not built\n");
+      return;
+   }
+   TFile *file = TFile::Open(url);
+   if (!file || file->IsZombie()) {
+      std::printf("tagma_bench: cache stats skipped, cannot open %s\n", url);
+      return;
+   }
+   TTree *tree = nullptr;
+   file->GetObject(treeName, tree);
+   if (!tree) {
+      std::printf("tagma_bench: cache stats skipped, tree %s not found\n",
+                  treeName);
+      delete file;
+      return;
+   }
+   const Long64_t total = tree->GetEntries();
+   const Long64_t limit =
+       (entries > 0 && entries < total) ? entries : total;
+
+   TTreePerfStats perf("ioperf", tree);
+   TStopwatch watch;
+   watch.Start();
+   for (Long64_t i = 0; i < limit; ++i)
+      tree->GetEntry(i);
+   watch.Stop();
+   perf.Finish();
+
+   auto *cache =
+       dynamic_cast<TTreeCache *>(file->GetCacheRead(tree));
+   const Double_t efficiency = cache ? cache->GetEfficiency() : 0;
+   const Double_t disk = perf.GetDiskTime();
+   const Double_t readSizeKb =
+       perf.GetReadCalls() > 0
+           ? 0.001 * perf.GetBytesRead() / perf.GetReadCalls()
+           : 0;
+   std::printf(
+       "tagma_bench: cache entries=%lld read_calls=%d bytes=%lld "
+       "cache_mb=%.1f efficiency=%.4f miss_rate=%.4f wall_s=%.3f "
+       "cpu_s=%.3f disk_s=%.3f read_size_kb=%.1f\n",
+       static_cast<long long>(limit), perf.GetReadCalls(),
+       static_cast<long long>(perf.GetBytesRead()),
+       1e-6 * perf.GetTreeCacheSize(), efficiency, 1 - efficiency,
+       watch.RealTime(), perf.GetCpuTime(), disk, readSizeKb);
+   delete file;
+}
+
 }  // namespace
 
 int tagma_bench(const char *url = "", const char *tree_name = "Events",
                 Long64_t max_entries = -1, Long64_t record_size = 0,
                 Int_t nscatter = 3, Bool_t disable_cache = kTRUE,
-                const char *store_path = "")
+                const char *store_path = "", Long64_t perf_entries = 0)
 {
    if (record_size <= 0)
       record_size = kDefaultRecordSize;
@@ -438,5 +500,8 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
    if (!coord.ok || !coordMap.ok)
       return 1;
    std::printf("tagma_bench: comparison complete\n");
+
+   if (perf_entries > 0 && !synthetic)
+      MeasureCacheStats(url, tree_name, perf_entries);
    return 0;
 }
