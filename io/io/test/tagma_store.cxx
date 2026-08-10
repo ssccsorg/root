@@ -21,6 +21,9 @@
 
 #include "gtest/gtest.h"
 
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <memory>
 
@@ -153,6 +156,80 @@ TEST(TTagmaStore, SysReadCounterTracksEveryByteSourceRead)
    // The counter is cumulative and monotonic across both paths.
    EXPECT_FALSE(file.ReadBuffer(buf, 0, 32));  // misaligned: ordinary path
    EXPECT_EQ(file.GetSysReadCalls(), sys0 + 3);
+}
+
+TEST(TTagmaStore, MemoryBackedReadServesRecordsWithoutSyscalls)
+{
+   // A mapped store is the byte source: covered fixed-width record
+   // requests are copied from the mapping, the payload bytes are
+   // delivered, and no read system call is issued. The read path never
+   // reaches the medium for mapped data.
+   const char *path = "tagma_mmap_test.bin";
+   {
+      FILE *out = std::fopen(path, "wb");
+      ASSERT_NE(out, nullptr);
+      unsigned char record[64];
+      for (int i = 0; i < 4; ++i) {
+         for (int j = 0; j < 64; ++j)
+            record[j] = static_cast<unsigned char>(i * 64 + j);
+         ASSERT_EQ(std::fwrite(record, 1, sizeof(record), out),
+                   sizeof(record));
+      }
+      std::fclose(out);
+   }
+
+   TFile file("tagma_mmap_test.bin?filetype=raw");
+   ASSERT_FALSE(file.IsZombie());
+   ROOT::TTagmaStore::Layout layout;
+   layout.fRunMax = 1;
+   layout.fLumiMax = 1;
+   layout.fEventMax = 4;
+   layout.fRecordSize = 64;
+   auto store = std::make_shared<ROOT::TTagmaStore>(layout);
+   ASSERT_TRUE(store->MapFile(path));
+   file.SetTagmaStore(store);
+
+   const Int_t sys0 = file.GetSysReadCalls();
+   char buf[64];
+   EXPECT_FALSE(file.ReadBuffer(buf, 0, 64));   // record 0
+   EXPECT_EQ(std::memcmp(buf, "\x00\x01\x02\x03", 4), 0);
+   EXPECT_FALSE(file.ReadBuffer(buf, 64, 64));  // record 1
+   EXPECT_EQ(std::memcmp(buf, "\x40\x41\x42\x43", 4), 0);
+   EXPECT_FALSE(file.ReadBuffer(buf, 192, 64)); // record 3
+   EXPECT_EQ(std::memcmp(buf, "\xc0\xc1\xc2\xc3", 4), 0);
+
+   // Served from the mapping: zero system calls, counted as coordinate
+   // reads, and the bytes moved equal the record bytes.
+   EXPECT_EQ(file.GetSysReadCalls(), sys0);
+   EXPECT_EQ(file.GetTagmaReadCalls(), 3);
+   EXPECT_EQ(file.GetBytesRead(), 192);
+
+   store->Unmap();
+   std::remove(path);
+}
+
+TEST(TTagmaStore, MapFileRejectsShortFile)
+{
+   // A file smaller than the store extent is not mapped: the read path
+   // would otherwise read past the end of the byte source.
+   const char *path = "tagma_mmap_short.bin";
+   {
+      FILE *out = std::fopen(path, "wb");
+      ASSERT_NE(out, nullptr);
+      const char one = 0;
+      ASSERT_EQ(std::fwrite(&one, 1, 1, out), 1u);
+      std::fclose(out);
+   }
+
+   ROOT::TTagmaStore::Layout layout;
+   layout.fRunMax = 1;
+   layout.fLumiMax = 1;
+   layout.fEventMax = 4;
+   layout.fRecordSize = 64;
+   ROOT::TTagmaStore store(layout);
+   EXPECT_FALSE(store.MapFile(path));
+   EXPECT_FALSE(store.IsMapped());
+   std::remove(path);
 }
 
 TEST(TTagmaStore, TFileReadBufferServesAlignedRecords)

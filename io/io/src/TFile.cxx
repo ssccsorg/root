@@ -112,6 +112,7 @@ The structure of a directory is shown in TDirectoryFile::TDirectoryFile
 #endif
 #include <fcntl.h>
 #include <cerrno>
+#include <cstring>
 #include <sys/stat.h>
 #ifndef WIN32
 #include <unistd.h>
@@ -1994,13 +1995,14 @@ Int_t TFile::ReadBufferViaCache(char *buf, Int_t len)
 /// the record index decomposes inside the layout bounds. Served requests
 /// bypass the read cache and are counted separately from ordinary reads.
 ///
-/// This hook establishes the coordinate seam at the byte source: the
-/// request is served with the same single read as the ordinary path, so
-/// the per-request syscall count is unchanged here. The read-count
-/// reduction comes from the entry layer (TTree::GetTagmaRecord), which
-/// collapses the scattered per-branch reads of one event into one record
-/// read. A memory-backed store can later serve this path without a
-/// syscall at all.
+/// When the store is mapped with TTagmaStore::MapFile, the record is
+/// copied from the mapped region and no read system call is issued: the
+/// byte source is the mapping, demand-paged once with sequential
+/// locality, and the read path never reaches the medium for mapped data.
+/// Without a mapping, the request is served with the same single read as
+/// the ordinary path. In both cases the read-count reduction comes from
+/// the entry layer (TTree::GetTagmaRecord), which collapses the
+/// scattered per-branch reads of one event into one record read.
 ///
 /// Returns 1 when the request was served, -1 when the request was covered
 /// but the read failed, and 0 when the request falls through to the
@@ -2025,6 +2027,27 @@ Int_t TFile::ReadBufferViaTagma(char *buf, Long64_t pos, Int_t len)
    Double_t start = 0;
    if (gPerfStats)
       start = TTimeStamp();
+
+   // Memory-backed byte source: copy the record from the mapping. The
+   // map covers the full store extent, so the record range is in
+   // bounds; the syscall counter stays untouched.
+   if (fTagmaStore->IsMapped()) {
+      const std::uint64_t offset =
+         fTagmaStore->Offset(run, lumi, event);
+      const char *src = fTagmaStore->GetMapped() + offset;
+      std::memcpy(buf, src, static_cast<std::size_t>(len));
+      fBytesRead += len;
+      fgBytesRead += len;
+      fReadCalls++;
+      fgReadCalls++;
+      fTagmaReadCalls++;
+
+      if (gMonitoringWriter)
+         gMonitoringWriter->SendFileReadProgress(this);
+      if (gPerfStats)
+         gPerfStats->FileReadEvent(this, len, start);
+      return 1;
+   }
 
    Seek(pos);
    ssize_t siz;

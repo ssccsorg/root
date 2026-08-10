@@ -26,7 +26,16 @@
 // (sw/cpp, namespace tagma). This class is the ROOT-side extension that
 // the TTree read path consumes. It is self-contained C++17 with no ROOT
 // dependencies.
+//
+// MapFile attaches a read-only memory mapping of the store file. The
+// mapping follows the mmap discipline of the canonical CoordSpaceM in
+// the vendored reference (ssccsorg/syntagma sw/cpp/tagma_core): the
+// region is demand-paged once with sequential locality, and covered
+// reads copy from the map instead of issuing a read system call. The
+// byte source is then the mapped region, and the read path never
+// reaches the medium for mapped data.
 
+#include <cstddef>
 #include <cstdint>
 #include <stdexcept>
 #include <tuple>
@@ -71,10 +80,34 @@ public:
    bool Contains(std::uint64_t run, std::uint64_t lumi,
                  std::uint64_t event) const;
 
+   // Maps the file at `path` (read-only) as the byte source for the
+   // store extent. The file must hold at least SizeBytes() bytes.
+   // Returns false when mapping is unsupported on the platform, the
+   // file cannot be opened or mapped, or the file is smaller than the
+   // store extent. A previous mapping is released first.
+   bool MapFile(const char *path);
+
+   // True when a mapping is attached.
+   bool IsMapped() const { return fMap != nullptr; }
+
+   // The mapped region, valid only while IsMapped() is true.
+   const char *GetMapped() const { return static_cast<const char *>(fMap); }
+
+   // Releases the mapping. Called by the destructor.
+   void Unmap();
+
    const Layout &GetLayout() const { return fLayout; }
+
+   ~TTagmaStore();
+   TTagmaStore(const TTagmaStore &) = delete;
+   TTagmaStore &operator=(const TTagmaStore &) = delete;
+   TTagmaStore(TTagmaStore &&other) noexcept;
+   TTagmaStore &operator=(TTagmaStore &&other) noexcept;
 
 private:
    Layout fLayout;
+   void *fMap = nullptr;      // read-only mapping of the store file
+   std::size_t fMapLen = 0;   // mapped length in bytes
 };
 
 }  // namespace ROOT

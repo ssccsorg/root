@@ -12,7 +12,58 @@
 
 #include <limits>
 
+#if defined(__unix__) || defined(__APPLE__)
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
 namespace ROOT {
+
+namespace {
+
+// File size in bytes, or a value that fails every range check when the
+// file cannot be stat'ed.
+std::uint64_t FileSize(const char *path)
+{
+#if defined(__unix__) || defined(__APPLE__)
+   struct stat st;
+   if (::stat(path, &st) != 0)
+      return 0;
+   return static_cast<std::uint64_t>(st.st_size);
+#else
+   (void)path;
+   return 0;
+#endif
+}
+
+}  // namespace
+
+TTagmaStore::~TTagmaStore()
+{
+   Unmap();
+}
+
+TTagmaStore::TTagmaStore(TTagmaStore &&other) noexcept
+    : fLayout(other.fLayout), fMap(other.fMap), fMapLen(other.fMapLen)
+{
+   other.fMap = nullptr;
+   other.fMapLen = 0;
+}
+
+TTagmaStore &TTagmaStore::operator=(TTagmaStore &&other) noexcept
+{
+   if (this != &other) {
+      Unmap();
+      fLayout = other.fLayout;
+      fMap = other.fMap;
+      fMapLen = other.fMapLen;
+      other.fMap = nullptr;
+      other.fMapLen = 0;
+   }
+   return *this;
+}
 
 TTagmaStore::TTagmaStore(const Layout &layout) : fLayout(layout)
 {
@@ -74,6 +125,47 @@ bool TTagmaStore::Contains(std::uint64_t run, std::uint64_t lumi,
 {
    return run < fLayout.fRunMax && lumi < fLayout.fLumiMax &&
           event < fLayout.fEventMax;
+}
+
+bool TTagmaStore::MapFile(const char *path)
+{
+   Unmap();
+#if defined(__unix__) || defined(__APPLE__)
+   if (path == nullptr || path[0] == '\0')
+      return false;
+   const std::uint64_t need = SizeBytes();
+   const std::uint64_t size = FileSize(path);
+   if (size < need)
+      return false;
+   const int fd = ::open(path, O_RDONLY);
+   if (fd < 0)
+      return false;
+   void *ptr = ::mmap(nullptr, static_cast<std::size_t>(need), PROT_READ,
+                      MAP_PRIVATE, fd, 0);
+   ::close(fd);
+   if (ptr == MAP_FAILED)
+      return false;
+   fMap = ptr;
+   fMapLen = static_cast<std::size_t>(need);
+   return true;
+#else
+   (void)path;
+   return false;
+#endif
+}
+
+void TTagmaStore::Unmap()
+{
+#if defined(__unix__) || defined(__APPLE__)
+   if (fMap != nullptr) {
+      ::munmap(fMap, fMapLen);
+      fMap = nullptr;
+      fMapLen = 0;
+   }
+#else
+   fMap = nullptr;
+   fMapLen = 0;
+#endif
 }
 
 }  // namespace ROOT
