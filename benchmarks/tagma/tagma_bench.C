@@ -15,6 +15,52 @@
 // with no read system call at all, the byte source never reaching the
 // medium for mapped data.
 //
+// Reference results (master document)
+// -----------------------------------
+// The measured comparison below is the master record for this
+// benchmark. Absolute times are machine-specific: the runs were
+// measured on a single Arm Firestorm 3.2 GHz core (macOS, out-of-source
+// Release build, treeplayer=ON, testing=ON). The ratios are the claim;
+// the request and system call counts are media-independent.
+//
+// Workload: read every event of the CMS Run2016G DoubleMuon NanoAOD
+// first file (tree Events, 2,315,223 events, 2,155,974,646 bytes), the
+// M1 workload. The coordinate rows read the fixed-width store converted
+// from the same events (2,560-byte records, 320 scalar leaves).
+//
+// Full dataset, same medium (local disk), cache-disabled baseline:
+//   path              wall_s   reads/ev  syscalls/ev  bytes/read    MB/s
+//   baseline          195.2    0.20      0.20         4,573         11.0
+//   coordinate          3.34   1.00      1.00         2,560        1,776   (58.5x)
+//   coordinate+map      1.45   1.00      0.00         2,560        4,087   (134.6x)
+//   served_checksum: match (233262869086)
+//
+// One-time conversion of the dataset into the store: 226.3 s.
+//
+// Analysis workload (MET_pt above 100 GeV and at least one muon, MET_pt
+// histogram), full dataset:
+//   analysis_baseline    188.9 s, selected 20,861, histogram mean 132.696
+//   analysis_coordinate    3.10 s, selected 20,861, histogram mean 132.696  (60.9x)
+//   analysis_match: yes
+//
+// Baseline with the TTreeCache enabled (10,000 events): 8 read calls,
+// 1,943 KB per read, efficiency 0.917, miss rate 0.083. This is the
+// ideal sequential case; the documented cache degradation under
+// out-of-order multithreaded reads is not reproduced.
+//
+// M1 signature slice (2,000 events, same medium): baseline 1.37 reads
+// per event at 2,635 bytes per read, wall 0.461 s, matching the
+// documented 372,000 x 4.6 KB singular-read scale. The remote EOS
+// baseline (2,000 events) runs 100.1 s with about 98.5 percent I/O wait.
+//
+// Synthetic (20,000 events, 2,560-byte records): baseline 0.124 s
+// (3.00 reads and syscalls per event), coordinate 0.019 s,
+// coordinate+map 0.004 s (zero syscalls).
+//
+// Boundaries: phase 1 covers fixed-width records; the store holds a
+// scalar projection of the events; the documented 14-hour production
+// workload is not reproduced end to end.
+//
 // Usage:
 //   root -l -b -q 'tagma_bench.C()'
 //   root -l -b -q 'tagma_bench.C("root://eospublic.cern.ch//eos/opendata/cms/Run2016G/DoubleMuon/NANOAOD/UL2016_MiniAODv2_NanoAODv9-v2/2430000/05DD095C-F6C3-9A4F-9FB3-348A5A6403D5.root", "Events", -1, 2560)'
