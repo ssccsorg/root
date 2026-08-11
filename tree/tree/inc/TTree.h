@@ -26,8 +26,11 @@
 //                                                                      //
 //////////////////////////////////////////////////////////////////////////
 
+#include <memory>
+
 #include "Compression.h"
 #include "ROOT/TIOFeatures.hxx"
+#include "ROOT/TTagmaStore.hxx"
 #include "TArrayD.h"
 #include "TArrayI.h"
 #include "TAttFill.h"
@@ -129,6 +132,8 @@ protected:
    /// Usually points to a TNotifyLink if this is a TChain.
    TObject       *fNotify;                ///<!
    TDirectory    *fDirectory;             ///<! Pointer to directory holding this tree
+   std::shared_ptr<ROOT::TTagmaStore> fTagmaStore; ///<! Coordinate-indexed store layout (if any)
+   std::vector<char> fTagmaRecord;       ///<! Last record served by the coordinate read path
    TObjArray      fBranches;              ///<  List of Branches
    TObjArray      fLeaves;                ///<  Direct pointers to individual branch leaves
    TList         *fAliases;               ///<  List of aliases for expressions based on the tree branches.
@@ -554,6 +559,7 @@ public:
    virtual Long64_t        GetEstimate() const { return fEstimate; }
    virtual Int_t           GetEntry(Long64_t entry, Int_t getall = 0);
            Int_t           GetEvent(Long64_t entry, Int_t getall = 0) { return GetEntry(entry, getall); }
+   virtual Int_t           GetTagmaRecord(Long64_t entry, char *buf, Int_t bufsize);
    virtual Int_t           GetEntryWithIndex(Long64_t major, Long64_t minor = 0);
    virtual Long64_t        GetEntryNumberWithBestIndex(Long64_t major, Long64_t minor = 0) const;
    virtual Long64_t        GetEntryNumberWithIndex(Long64_t major, Long64_t minor = 0) const;
@@ -691,6 +697,16 @@ public:
    virtual void            SetBranchStatus(const char* bname, bool status = true, UInt_t* found = nullptr);
    static  void            SetBranchStyle(Int_t style = 1);  //style=0 for old branch, =1 for new branch style
    virtual Int_t           SetCacheSize(Long64_t cachesize = -1);
+   virtual void            SetTagmaStore(std::shared_ptr<ROOT::TTagmaStore> store);
+   virtual std::shared_ptr<ROOT::TTagmaStore> GetTagmaStore() const { return fTagmaStore; }
+   /// Pointer to the last record served by the coordinate read path, or
+   /// nullptr before the first coordinate-served entry. The buffer stays
+   /// valid until the next GetEntry or GetTagmaRecord call on this tree.
+   const char              *GetTagmaRecordBuffer() const { return fTagmaRecord.empty() ? nullptr : fTagmaRecord.data(); }
+   /// Size in bytes of the last record served by the coordinate read
+   /// path; 0 before the first coordinate-served entry or after a failed
+   /// covered read.
+   Int_t                    GetTagmaRecordSize() const { return static_cast<Int_t>(fTagmaRecord.size()); }
    virtual Int_t           SetCacheEntryRange(Long64_t first, Long64_t last);
    virtual void            SetCacheLearnEntries(Int_t n=10);
    virtual void            SetChainOffset(Long64_t offset = 0) { fChainOffset=offset; }

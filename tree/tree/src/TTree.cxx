@@ -5738,6 +5738,11 @@ Long64_t TTree::GetEntriesFriend() const
 /// Note: See the comments in TBranchElement::SetAddress() for the
 /// object ownership policy of the underlying (user) data.
 
+// Sanity bound for fixed-width event records. Larger layouts are
+// rejected before any allocation or read: resize() would throw or the
+// record size would not fit the Int_t length argument of ReadBuffer.
+static constexpr std::uint64_t kMaxTagmaRecordSize = 1ull << 30;  // 1 GiB
+
 Int_t TTree::GetEntry(Long64_t entry, Int_t getall)
 {
    // We already have been visited while recursively looking
@@ -5745,6 +5750,35 @@ Int_t TTree::GetEntry(Long64_t entry, Int_t getall)
    if (kGetEntry & fFriendLockStatus) return 0;
 
    if (entry < 0 || entry >= fEntries) return 0;
+
+   // Coordinate-indexed store path: for entries covered by the attached
+   // layout, the fixed-width record is served with a single read through
+   // the store's closed-form arithmetic, bypassing the branch, basket,
+   // and read-cache machinery. The record bytes are kept in
+   // fTagmaRecord; GetTagmaRecordBuffer and GetTagmaRecordSize expose
+   // them. The getall argument is moot here because branches are not
+   // filled. Everything else falls through to the ordinary path
+   // unchanged.
+   if (fTagmaStore) {
+      const auto [run, lumi, event] =
+         fTagmaStore->Decompose(static_cast<std::uint64_t>(entry));
+      if (fTagmaStore->Contains(run, lumi, event)) {
+         const ROOT::TTagmaStore::Layout &layout = fTagmaStore->GetLayout();
+         if (layout.fRecordSize == 0 || layout.fRecordSize > kMaxTagmaRecordSize)
+            return 0;
+         fReadEntry = entry;
+         fTagmaRecord.resize(layout.fRecordSize);
+         const Int_t nbytes =
+            GetTagmaRecord(entry, fTagmaRecord.data(),
+                           static_cast<Int_t>(fTagmaRecord.size()));
+         if (nbytes < 0) {
+            fTagmaRecord.resize(0);
+            return 0;
+         }
+         return nbytes;
+      }
+   }
+
    Int_t i;
    Int_t nbytes = 0;
    fReadEntry = entry;
@@ -6016,6 +6050,59 @@ Long64_t TTree::GetEntryNumberWithIndex(Long64_t major, Long64_t minor) const
       return -1;
    }
    return fTreeIndex->GetEntryNumberWithIndex(major, minor);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Attach a coordinate-indexed store layout to this tree.
+///
+/// When a store is attached, GetTagmaRecord serves fixed-width event
+/// records through the store's closed-form address arithmetic instead of
+/// the branch and basket machinery. The TTree entry number is the linear
+/// store index: Decompose(entry) resolves the (run, luminosity block,
+/// event) axes and Offset resolves the byte range. Entries outside the
+/// store layout and trees without a store fall through to the ordinary
+/// read path unchanged.
+
+void TTree::SetTagmaStore(std::shared_ptr<ROOT::TTagmaStore> store)
+{
+   fTagmaStore = std::move(store);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Read the fixed-width event record for `entry` from the
+/// coordinate-indexed store attached with SetTagmaStore.
+///
+/// The record is read with exactly one TFile::ReadBuffer call at the
+/// byte offset resolved by the store, bypassing the branch, basket, and
+/// read-cache machinery. The record bytes are copied into `buf`, which
+/// must hold at least the store record size.
+///
+/// Returns the record size in bytes on success; -1 when no store is
+/// attached, the entry is outside the store layout, or the underlying
+/// read failed; -2 when `bufsize` is smaller than the record size.
+
+Int_t TTree::GetTagmaRecord(Long64_t entry, char *buf, Int_t bufsize)
+{
+   if (!fTagmaStore || entry < 0)
+      return -1;
+   const ROOT::TTagmaStore::Layout &layout = fTagmaStore->GetLayout();
+   if (layout.fRecordSize == 0 || layout.fRecordSize > kMaxTagmaRecordSize)
+      return -1;
+   if (bufsize < 0 || static_cast<std::uint64_t>(bufsize) < layout.fRecordSize)
+      return -2;
+   const auto [run, lumi, event] =
+      fTagmaStore->Decompose(static_cast<std::uint64_t>(entry));
+   if (!fTagmaStore->Contains(run, lumi, event))
+      return -1;
+   const std::uint64_t offset = fTagmaStore->Offset(run, lumi, event);
+   TFile *file = fDirectory ? fDirectory->GetFile() : nullptr;
+   if (!file)
+      return -1;
+   if (file->ReadBuffer(buf, static_cast<Long64_t>(offset),
+                        static_cast<Int_t>(layout.fRecordSize))) {
+      return -1;
+   }
+   return static_cast<Int_t>(layout.fRecordSize);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

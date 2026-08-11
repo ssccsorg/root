@@ -38,6 +38,11 @@ ROOT_ADD_GTEST(entrylist_enter entrylist_enter.cxx LIBRARIES RIO Tree)
 ROOT_ADD_GTEST(entrylist_enterrange entrylist_enterrange.cxx LIBRARIES RIO Tree)
 ROOT_ADD_GTEST(friendinfo friendinfo.cxx LIBRARIES RIO Tree)
 ROOT_ADD_GTEST(testTTreeCompression TTreeCompression.cxx LIBRARIES RIO Tree MathCore)
+ROOT_ADD_GTEST(tagma_record tagma_record.cxx LIBRARIES RIO Tree)
+ROOT_ADD_GTEST(tagma_core_consume tagma_core_consume.cxx LIBRARIES RIO Tree)
+if(NOT WIN32)
+  ROOT_ADD_GTEST(tagma_coord_space_m tagma_coord_space_m.cxx LIBRARIES RIO Tree)
+endif()
 ROOT_ADD_GTEST(evolution evolution.cxx LIBRARIES RIO Tree)
 ROOT_GENERATE_DICTIONARY(EvolutionStruct ${CMAKE_CURRENT_SOURCE_DIR}/EvolutionStruct.hxx
                          MODULE evolution

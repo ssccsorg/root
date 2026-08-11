@@ -112,6 +112,7 @@ The structure of a directory is shown in TDirectoryFile::TDirectoryFile
 #endif
 #include <fcntl.h>
 #include <cerrno>
+#include <cstring>
 #include <sys/stat.h>
 #ifndef WIN32
 #include <unistd.h>
@@ -1786,6 +1787,14 @@ Bool_t TFile::ReadBuffer(char *buf, Long64_t pos, Int_t len)
 
       SetOffset(pos);
 
+      // Coordinate-indexed store path: requests that resolve to exactly
+      // one fixed-width record are served directly from the byte source,
+      // bypassing the read cache. Everything else falls through to the
+      // ordinary read path unchanged.
+      const Int_t tagma = ReadBufferViaTagma(buf, pos, len);
+      if (tagma != 0)
+         return tagma < 0 ? kTRUE : kFALSE;
+
       Int_t st;
       Double_t start = 0;
       if (gPerfStats) start = TTimeStamp();
@@ -1975,6 +1984,97 @@ Int_t TFile::ReadBufferViaCache(char *buf, Int_t len)
    }
 
    return 0;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Serve an aligned fixed-width record request from the coordinate-indexed
+/// store attached with SetTagmaStore.
+///
+/// A request is served when the store layout covers exactly one record:
+/// the position is record-aligned, the length equals the record size, and
+/// the record index decomposes inside the layout bounds. Served requests
+/// bypass the read cache and are counted separately from ordinary reads.
+///
+/// When the store is mapped with TTagmaStore::MapFile, the record is
+/// copied from the mapped region and no read system call is issued: the
+/// byte source is the mapping, demand-paged once with sequential
+/// locality, and the read path never reaches the medium for mapped data.
+/// Without a mapping, the request is served with the same single read as
+/// the ordinary path. In both cases the read-count reduction comes from
+/// the entry layer (TTree::GetTagmaRecord), which collapses the
+/// scattered per-branch reads of one event into one record read.
+///
+/// Returns 1 when the request was served, -1 when the request was covered
+/// but the read failed, and 0 when the request falls through to the
+/// ordinary read path.
+
+Int_t TFile::ReadBufferViaTagma(char *buf, Long64_t pos, Int_t len)
+{
+   if (!fTagmaStore)
+      return 0;
+   const ROOT::TTagmaStore::Layout &layout = fTagmaStore->GetLayout();
+   if (layout.fRecordSize == 0)
+      return 0;
+   if (pos < 0 || static_cast<std::uint64_t>(len) != layout.fRecordSize)
+      return 0;
+   if (static_cast<std::uint64_t>(pos) % layout.fRecordSize != 0)
+      return 0;
+   const std::uint64_t index = static_cast<std::uint64_t>(pos) / layout.fRecordSize;
+   const auto [run, lumi, event] = fTagmaStore->Decompose(index);
+   if (!fTagmaStore->Contains(run, lumi, event))
+      return 0;
+
+   Double_t start = 0;
+   if (gPerfStats)
+      start = TTimeStamp();
+
+   // Memory-backed byte source: copy the record from the mapping. The
+   // map covers the full store extent, so the record range is in
+   // bounds; the syscall counter stays untouched.
+   if (fTagmaStore->IsMapped()) {
+      const std::uint64_t offset =
+         fTagmaStore->Offset(run, lumi, event);
+      const char *src = fTagmaStore->GetMapped() + offset;
+      std::memcpy(buf, src, static_cast<std::size_t>(len));
+      fBytesRead += len;
+      fgBytesRead += len;
+      fReadCalls++;
+      fgReadCalls++;
+      fTagmaReadCalls++;
+
+      if (gMonitoringWriter)
+         gMonitoringWriter->SendFileReadProgress(this);
+      if (gPerfStats)
+         gPerfStats->FileReadEvent(this, len, start);
+      return 1;
+   }
+
+   Seek(pos);
+   ssize_t siz;
+   while ((siz = SysRead(fD, buf, len)) < 0 && GetErrno() == EINTR)
+      ResetErrno();
+
+   if (siz < 0) {
+      SysError("ReadBuffer", "error reading from file %s", GetName());
+      return -1;
+   }
+   if (siz != len) {
+      Error("ReadBuffer", "error reading all requested bytes from file %s, got %ld of %d",
+            GetName(), (Long_t)siz, len);
+      return -1;
+   }
+   fBytesRead += siz;
+   fgBytesRead += siz;
+   fReadCalls++;
+   fgReadCalls++;
+   fTagmaReadCalls++;
+
+   if (gMonitoringWriter)
+      gMonitoringWriter->SendFileReadProgress(this);
+   if (gPerfStats) {
+      gPerfStats->FileReadEvent(this, len, start);
+   }
+   return 1;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4218,6 +4318,7 @@ Int_t TFile::SysClose(Int_t fd)
 
 Int_t TFile::SysRead(Int_t fd, void *buf, Int_t len)
 {
+   fSysReadCalls++;
    return ::read(fd, buf, len);
 }
 
