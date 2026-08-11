@@ -3925,7 +3925,8 @@ Long64_t TTree::Draw(const char* varexp, const TCut& selection, Option_t* option
 ///                   vs "e2" vs "e3" and "e4" mapped on the current color palette.
 ///                   (to create histograms in the 2, 3, and 4 dimensional case,
 ///                   see section "Saving the result of Draw to an histogram")
-///   - "e1:e2:e3:e4:e5" with option "GL5D" produces a 5D plot using OpenGL. `gStyle->SetCanvasPreferGL(true)` is needed.
+///   - "e1:e2:e3:e4:e5" with option "GL5D" produces a 5D plot using OpenGL. `gStyle->SetCanvasPreferGL(true)` is
+///   needed.
 ///   - Any number of variables no fewer than two can be used with the options "CANDLE" and "PARA"
 ///   - An arbitrary number of variables can be used with the option "GOFF"
 ///
@@ -3964,7 +3965,8 @@ Long64_t TTree::Draw(const char* varexp, const TCut& selection, Option_t* option
 ///   If the selection expression returns an array, it is iterated over in sync with the
 ///   array returned by the varexp argument (as described below in "Drawing expressions using arrays and array
 ///   elements"). For example, if, for a given event, varexp evaluates to
-///   `{1., 2., 3.}` and selection evaluates to `{0, 1, 0}`, the resulting histogram is filled with the value 2. For example, for each event here we perform a simple object selection:
+///   `{1., 2., 3.}` and selection evaluates to `{0, 1, 0}`, the resulting histogram is filled with the value 2. For
+///   example, for each event here we perform a simple object selection:
 ///   ~~~{.cpp}
 ///   // Muon_pt is an array: fill a histogram with the array elements > 100 in each event
 ///   tree->Draw('Muon_pt', 'Muon_pt > 100')
@@ -4039,7 +4041,8 @@ Long64_t TTree::Draw(const char* varexp, const TCut& selection, Option_t* option
 /// | `fMatrix[][2]  - fResults[][]`   |  six       | on both 1st and 2nd dimensions of fResults |
 /// | `fMatrix[][2]  - fResults[3][]`  |  two       | on 1st dim of fMatrix and 2nd of fResults (at the same time) |
 /// | `fMatrix[][]   - fResults[][]`   |  six       | on 1st dim then on  2nd dim |
-/// | `fMatrix[][fResult[][]]`         |  30        | on 1st dim of fMatrix then on both dimensions of fResults.  The value if fResults[j][k] is used as the second index of fMatrix.|
+/// | `fMatrix[][fResult[][]]`         |  30        | on 1st dim of fMatrix then on both dimensions of fResults.  The
+/// value if fResults[j][k] is used as the second index of fMatrix.|
 ///
 ///
 /// In summary, TTree::Draw loops through all unspecified dimensions.  To
@@ -4172,9 +4175,9 @@ Long64_t TTree::Draw(const char* varexp, const TCut& selection, Option_t* option
 ///          // 100 bins in x-direction; lower limit on x-axis is 10; upper limit is 60
 ///          //  50 bins in y-direction; lower limit on y-axis is .1; upper limit is .5
 /// ~~~
-/// By default, the specified histogram is reset.
-/// To continue to append data to an existing histogram, use "+" in front
-/// of the histogram name.
+/// By default, if a histogram with the same name is already registered to the current
+/// ROOT directory, the specified histogram is reset. To continue to append data to an
+/// existing histogram, use "+" in front of the histogram name.
 ///
 /// A '+' in front of the histogram name is ignored, when the name is followed by
 /// binning information as described in the previous paragraph.
@@ -4183,6 +4186,15 @@ Long64_t TTree::Draw(const char* varexp, const TCut& selection, Option_t* option
 /// ~~~
 /// will not reset `hsqrt`, but will continue filling. This works for 1-D, 2-D
 /// and 3-D histograms.
+///
+/// Note that when the automatic registration of histograms is off (see \ref DisableObjectAutoRegistration() ),
+/// external histogram are not visible to TTree::Draw unless they are registered to the current directory explicitly.
+/// ~~~ {.cpp}
+///     auto histo = new TH1D("histo", ...);
+///     histo->SetDirectory(gDirectory);
+///     tree.Draw("sqrt(x)>>histo","y>0")
+/// ~~~
+/// When auto-registration is off, histograms created by TTree::Draw will still be registered to the current directory.
 ///
 /// ### Accessing collection objects
 ///
@@ -4434,6 +4446,14 @@ Long64_t TTree::Draw(const char* varexp, const TCut& selection, Option_t* option
 /// will not reset yplus, but will enter the selected entries at the end
 /// of the existing list.
 ///
+/// Note that when the automatic registration of event lists is off (see \ref DisableObjectAutoRegistration() ),
+/// they are not visible to TTree::Draw unless they are registered to the current directory explicitly.
+/// ~~~ {.cpp}
+///     auto elist = new TEventList("elist", ...);
+///     elist->SetDirectory(gDirectory);
+///     tree.Draw(">>+elist","y>0")
+/// ~~~
+///
 /// ### Using a TEventList, TEntryList or TEntryListArray as Input
 ///
 /// Once a TEventList or a TEntryList object has been generated, it can be used as input
@@ -4502,12 +4522,14 @@ Long64_t TTree::Draw(const char* varexp, const TCut& selection, Option_t* option
 ///  Once TTree::Draw has been called, it is possible to access useful
 ///  information still stored in the TTree object via the following functions:
 ///
-/// - GetSelectedRows() // return the number of values accepted by the selection expression. In case where no selection was specified, returns the number of values processed.
+/// - GetSelectedRows() // return the number of values accepted by the selection expression. In case where no selection
+/// was specified, returns the number of values processed.
 /// - GetV1()           // returns a pointer to the double array of V1
 /// - GetV2()           // returns a pointer to the double array of V2
 /// - GetV3()           // returns a pointer to the double array of V3
 /// - GetV4()           // returns a pointer to the double array of V4
-/// - GetW()            // returns a pointer to the double array of Weights where weight equal the result of the selection expression.
+/// - GetW()            // returns a pointer to the double array of Weights where weight equal the result of the
+/// selection expression.
 ///
 /// where V1,V2,V3 correspond to the expressions in
 /// ~~~ {.cpp}

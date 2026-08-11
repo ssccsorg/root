@@ -53,6 +53,7 @@ if(MSVC)
   target_link_libraries(CPyCppyy PRIVATE cppyy_backend)
   target_link_libraries(CPyCppyy PUBLIC Python3::Python)
   set_target_properties(CPyCppyy PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS TRUE)
+  target_link_options(CPyCppyy PRIVATE "-ignore:4197")
 elseif(APPLE)
   target_link_libraries(CPyCppyy PRIVATE -Wl,-bind_at_load -Wl,-w -Wl,-undefined -Wl,dynamic_lookup cppyy_backend)
 else()
@@ -109,6 +110,9 @@ if(NOT MSVC)
   # Make sure that relative RUNPATH to main ROOT libraries is always correct.
   ROOT_APPEND_LIBDIR_TO_INSTALL_RPATH(cppyy ${CMAKE_INSTALL_PYTHONDIR}/cppyy)
   ROOT_APPEND_LIBDIR_TO_INSTALL_RPATH(CPyCppyy ${CMAKE_INSTALL_LIBDIR})
+  set(CPPYY_INSTALL_DIR ${CMAKE_INSTALL_PYTHONDIR}/cppyy)
+else()
+  set(CPPYY_INSTALL_DIR ${CMAKE_INSTALL_PYTHONDIR})
 endif()
 
 # Install library
@@ -118,9 +122,9 @@ install(TARGETS CPyCppyy EXPORT ${CMAKE_PROJECT_NAME}Exports
                             ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT libraries)
 
 install(TARGETS cppyy EXPORT ${CMAKE_PROJECT_NAME}Exports
-                            RUNTIME DESTINATION ${CMAKE_INSTALL_PYTHONDIR}/cppyy COMPONENT libraries # Windows
-                            LIBRARY DESTINATION ${CMAKE_INSTALL_PYTHONDIR}/cppyy COMPONENT libraries
-                            ARCHIVE DESTINATION ${CMAKE_INSTALL_PYTHONDIR}/cppyy COMPONENT libraries)
+                            RUNTIME DESTINATION ${CPPYY_INSTALL_DIR} COMPONENT libraries # Windows
+                            LIBRARY DESTINATION ${CPPYY_INSTALL_DIR} COMPONENT libraries
+                            ARCHIVE DESTINATION ${CPPYY_INSTALL_DIR} COMPONENT libraries)
 
 file(COPY ${headers} DESTINATION ${CMAKE_BINARY_DIR}/include/CPyCppyy)
 
