@@ -29,11 +29,11 @@
 //
 // MapFile attaches a read-only memory mapping of the store file. The
 // mapping follows the mmap discipline of the canonical CoordSpaceM in
-// the vendored reference (ssccsorg/syntagma sw/cpp/tagma_core): the
-// region is demand-paged once with sequential locality, and covered
-// reads copy from the map instead of issuing a read system call. The
-// byte source is then the mapped region, and the read path never
-// reaches the medium for mapped data.
+// the reference (ssccsorg/syntagma sw/cpp/tagma_core, fetched from
+// main): the region is demand-paged once with sequential locality, and
+// covered reads copy from the map instead of issuing a read system
+// call. The byte source is then the mapped region, and the read path
+// never reaches the medium for mapped data.
 
 #include <cstddef>
 #include <cstdint>

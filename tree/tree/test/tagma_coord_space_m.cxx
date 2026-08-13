@@ -8,7 +8,7 @@
  * For the list of contributors see $ROOTSYS/README/CREDITS.             *
  *************************************************************************/
 
-// Consumes the vendored mmap-backed dense space from the canonical
+// Consumes the mmap-backed dense space fetched from the canonical
 // reference: CoordSpaceM3 place/at_path/vacate round trips over the
 // 19 x 21 x 28 lattice, the fork's closed-form composition over the
 // canonical 11172^3 radix reproduces the reference linear index, and the
