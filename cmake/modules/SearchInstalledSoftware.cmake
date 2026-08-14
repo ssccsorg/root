@@ -984,34 +984,15 @@ if(experimental_adaptivecpp)
   endif()
 endif()
 
-#---Check for protobuf-------------------------------------------------------------------
+#---Check for optional TMVA-SOFIE testing dependency (BLAS)-------------------------------
+# SOFIE itself has no external dependencies: ONNX models are read with a small
+# self-contained protobuf wire-format decoder (tmva/sofie_parsers/src/onnx.hxx).
 
-if(tmva-sofie)
-  if(testing)
-    message(STATUS "Looking for BLAS as an optional testing dependency of TMVA-SOFIE")
-    find_package(BLAS)
-    if(NOT BLAS_FOUND)
-      # BLAS only backs the TMVA-SOFIE tests, not the feature itself, so a
-      # missing BLAS must not turn into a configuration error.
-      message(WARNING "BLAS not found: TMVA-SOFIE will not be fully tested")
-    endif()
-  endif()
-  message(STATUS "Looking for Protobuf")
-  set(protobuf_MODULE_COMPATIBLE TRUE)
-  find_package(Protobuf CONFIG)
-  if(NOT Protobuf_FOUND)
-    find_package(Protobuf MODULE)
-  endif()
-  if(NOT Protobuf_FOUND)
-    message(SEND_ERROR "Protobuf libraries not found while -Dtmva-sofie=ON")
-  else()
-    if(Protobuf_VERSION LESS 3.0)
-      message(SEND_ERROR "Protobuf libraries found but is less than the version required (3.0) (tmva-sofie option enabled)")
-    else()
-      if(NOT TARGET protobuf::protoc)
-        message(SEND_ERROR "Protobuf compiler not found  while -Dtmva-sofie=ON")
-      endif()
-    endif()
+if(tmva AND testing AND test_tmva_sofie)
+  message(STATUS "Looking for BLAS as an optional testing dependency of TMVA-SOFIE")
+  find_package(BLAS)
+  if(NOT BLAS_FOUND)
+    message(SEND_ERROR "BLAS not found, but it's required for TMVA-SOFIE testing. Please install BLAS or configure with test_tmva_sofie=OFF")
   endif()
 endif()
 
