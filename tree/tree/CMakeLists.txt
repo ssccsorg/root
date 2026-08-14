@@ -9,6 +9,19 @@
 # @author Pere Mato, CERN
 ############################################################################
 
+# Tagma coordinate engine (ssccsorg/syntagma, sw/cpp/tagma_core). The
+# canonical C++ implementation is fetched from the upstream main branch as
+# a CMake module instead of being vendored, so this fork consumes the
+# reference without copying code files. The fetched subproject exposes the
+# tagma_core target with the `tagma_core/...` include directory.
+include(FetchContent)
+FetchContent_Declare(tagma
+  GIT_REPOSITORY https://github.com/ssccsorg/syntagma.git
+  GIT_TAG main
+  GIT_SHALLOW TRUE
+  SOURCE_SUBDIR sw/cpp/tagma_core)
+FetchContent_MakeAvailable(tagma)
+
 if (imt)
   list(APPEND TREE_EXTRA_LIBRARIES Imt)
 endif(imt)
@@ -68,7 +81,6 @@ ROOT_STANDARD_LIBRARY_PACKAGE(Tree
     ROOT/InternalTreeUtils.hxx
     ROOT/RFriendInfo.hxx
     ROOT/TIOFeatures.hxx
-    tagma_core/coord.h
   SOURCES
     src/InternalTreeUtils.cxx
     src/RFriendInfo.cxx
@@ -93,7 +105,6 @@ ROOT_STANDARD_LIBRARY_PACKAGE(Tree
     src/TEventList.cxx
     src/TFriendElement.cxx
     src/TIOFeatures.cxx
-    src/tagma_core/coord.cpp
     src/TLeafB.cxx
     src/TLeafC.cxx
     src/TLeaf.cxx
@@ -133,6 +144,7 @@ ROOT_STANDARD_LIBRARY_PACKAGE(Tree
     ${TREE_EXTRA_LIBRARIES}
     Thread
     MathCore
+    tagma_core
 )
 
 ROOT_ADD_TEST_SUBDIRECTORY(test)

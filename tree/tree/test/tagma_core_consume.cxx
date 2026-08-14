@@ -8,9 +8,9 @@
  * For the list of contributors see $ROOTSYS/README/CREDITS.             *
  *************************************************************************/
 
-// Verifies that the fork consumes the canonical Tagma C++ core (vendored
-// from ssccsorg/syntagma): TTagmaStore's closed-form composition and
-// decomposition must agree with tagma::Coord over the entire 19 x 21 x 28
+// Verifies that the fork consumes the canonical Tagma C++ core (fetched
+// from the ssccsorg/syntagma main branch): TTagmaStore's closed-form
+// composition and decomposition must agree with tagma::Coord over the
 // lattice, and byte offsets must follow from the composed index.
 
 #include "ROOT/TTagmaStore.hxx"
