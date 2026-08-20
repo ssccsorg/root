@@ -54,5 +54,7 @@ __pycache__
 
 # Per-run benchmark result artifacts, mirroring the syntagma reference
 # (sw/cpp/bench/result/ is ignored there; the bench code is the tracked
-# single source and the results are regenerated per run).
-benchmarks/tagma/result/
+# single source and the results are regenerated per run). The reference
+# artifact backing the published numbers is tracked explicitly.
+benchmarks/tagma/result/*
+!benchmarks/tagma/result/bench-20260810-153200-474b9af1ad.json
