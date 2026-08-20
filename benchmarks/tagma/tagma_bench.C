@@ -23,16 +23,22 @@
 // Release build, treeplayer=ON, testing=ON). The ratios are the claim;
 // the request and system call counts are media-independent.
 //
+// UPDATE THIS BLOCK AFTER EACH MEASURED RUN. The source is the per-run
+// JSON under benchmarks/tagma/result/ (gitignored per-run artifact;
+// this block is the tracked single source). Keep it aligned with
+// docs/works/cern/root-ttree/index.qmd and with the reference artifact
+// bench-20260810-153200-474b9af1ad.json.
+//
 // Workload: read every event of the CMS Run2016G DoubleMuon NanoAOD
 // first file (tree Events, 2,315,223 events, 2,155,974,646 bytes), the
 // M1 workload. The coordinate rows read the fixed-width store converted
 // from the same events (2,560-byte records, 320 scalar leaves).
 //
 // Full dataset, same medium (local disk), cache-disabled baseline:
-//   path              wall_s   reads/ev  syscalls/ev  bytes/read    MB/s
-//   baseline          195.2    0.20      0.20         4,573         11.0
-//   coordinate          3.34   1.00      1.00         2,560        1,776   (58.5x)
-//   coordinate+map      1.45   1.00      0.00         2,560        4,087   (134.6x)
+//   path              wall_s   cpu_s   reads/ev  syscalls/ev  bytes/read    MB/s
+//   baseline          192.8    182.9   0.20      0.20         4,573         11.2
+//   coordinate          2.79    2.62   1.00      1.00         2,560        2,122   (69.0x)
+//   coordinate+map      1.06    1.05   1.00      0.00         2,560        5,584   (181.7x)
 //   served_checksum: match (233262869086)
 //
 // One-time conversion of the dataset into the store: 226.3 s.
@@ -51,11 +57,12 @@
 // M1 signature slice (2,000 events, same medium): baseline 1.37 reads
 // per event at 2,635 bytes per read, wall 0.461 s, matching the
 // documented 372,000 x 4.6 KB singular-read scale. The remote EOS
-// baseline (2,000 events) runs 100.1 s with about 98.5 percent I/O wait.
+// baseline (2,000 events) runs 100.1 s with about 98.8 percent I/O wait.
+// Same-media slice ratios: 230.5x (coordinate), 1512.0x (coordinate+map).
 //
 // Synthetic (20,000 events, 2,560-byte records): baseline 0.124 s
-// (3.00 reads and syscalls per event), coordinate 0.019 s,
-// coordinate+map 0.004 s (zero syscalls).
+// (3.00 reads and syscalls per event, 1x), coordinate 0.019 s (6.5x),
+// coordinate+map 0.004 s (31.0x, zero syscalls).
 //
 // Boundaries: phase 1 covers fixed-width records; the store holds a
 // scalar projection of the events; the documented 14-hour production
