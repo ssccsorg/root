@@ -243,6 +243,7 @@ To change the color model use `gStyle->SetColorModelPS(c)`.
 #include "TColor.h"
 #include "TVirtualPad.h"
 #include "TPoints.h"
+#include "TPoint.h"
 #include "TPostScript.h"
 #include "TStyle.h"
 #include "TMath.h"
@@ -439,7 +440,8 @@ void TPostScript::Close(Option_t *)
       while (fgets(line, 255, sg)) {
          if (strstr(line,"EndComments")) PrintStr("%%DocumentNeededResources: ProcSet (FontSetInit)@");
          fStream->write(line,strlen(line));
-         if (!fFontEmbed && strstr(line,"m5")) {
+         // insert font after end of generic defines
+         if (!fFontEmbed && strstr(line,"/ita")) {
             FontEmbed();
             PrintStr("@");
          }
@@ -619,85 +621,6 @@ void TPostScript::CellArrayEnd()
    PrintStr(" def DrawCT ");
 }
 
-////////////////////////////////////////////////////////////////////////////////
-/// Define the markers
-
-void TPostScript::DefineMarkers()
-{
-   PrintStr("/mp {newpath /y exch def /x exch def} def@");
-   PrintStr("/side {[w .77 mul w .23 mul] .385 w mul sd w 0 l currentpoint t -144 r} def@");
-   PrintStr("/mr {mp x y w2 0 360 arc} def /m24 {mr s} def /m20 {mr f} def@");
-   PrintStr("/mb {mp x y w2 add m w2 neg 0 d 0 w neg d w 0 d 0 w d cl} def@");
-   PrintStr("/mt {mp x y w2 add m w2 neg w neg d w 0 d cl} def@");
-   PrintStr("/w4 {w 4 div} def@");
-   PrintStr("/w6 {w 6 div} def@");
-   PrintStr("/w8 {w 8 div} def@");
-   PrintStr("/m21 {mb f} def /m25 {mb s} def /m22 {mt f} def /m26{mt s} def@");
-   PrintStr("/m23 {mp x y w2 sub m w2 w d w neg 0 d cl f} def@");
-   PrintStr("/m27 {mp x y w2 add m w3 neg w2 neg d w3 w2 neg d w3 w2 d cl s} def@");
-   PrintStr("/m28 {mp x w2 sub y w2 sub w3 add m w3 0 d ");
-   PrintStr(" 0 w3 neg d w3 0 d 0 w3 d w3 0 d ");
-   PrintStr(" 0 w3 d w3 neg 0 d 0 w3 d w3 neg 0 d");
-   PrintStr(" 0 w3 neg d w3 neg 0 d cl s } def@");
-   PrintStr("/m29 {mp gsave x w2 sub y w2 add w3 sub m currentpoint t");
-   PrintStr(" 4 {side} repeat cl fill gr} def@");
-   PrintStr("/m30 {mp gsave x w2 sub y w2 add w3 sub m currentpoint t");
-   PrintStr(" 4 {side} repeat cl s gr} def@");
-   PrintStr("/m31 {mp x y w2 sub m 0 w d x w2 sub y m w 0 d");
-   PrintStr(" x w2 .707 mul sub y w2 .707 mul add m w 1.44 div w 1.44 div neg d x w2 .707 mul sub y w2 .707 mul");
-   PrintStr(" sub m w 1.44 div w 1.44 div d s} def@");
-   PrintStr("/m32 {mp x y w2 sub m w2 w d w neg 0 d cl s} def@");
-   PrintStr("/m33 {mp x y w2 add m w3 neg w2 neg d w3 w2 neg d w3 w2 d cl f} def@");
-   PrintStr("/m34 {mp x w2 sub y w2 sub w3 add m w3 0 d ");
-   PrintStr(" 0 w3 neg d w3 0 d 0 w3 d w3 0 d ");
-   PrintStr(" 0 w3 d w3 neg 0 d 0 w3 d w3 neg 0 d");
-   PrintStr(" 0 w3 neg d w3 neg 0 d cl f } def@");
-   PrintStr("/m35 {mp x y w2 add m w2 neg w2 neg d w2 w2 neg d w2 w2 d w2 neg w2 d");
-   PrintStr(" x y w2 sub m 0 w d x w2 sub y m w 0 d s} def@");
-   PrintStr("/m36 {mb x w2 sub y w2 add m w w neg d x w2 sub y w2 sub m w w d s} def@");
-   PrintStr("/m37 {mp x y m w4 neg w2 d w4 neg w2 neg d w2 0 d ");
-   PrintStr(" w4 neg w2 neg d w2 0 d w4 neg w2 d w2 0 d w4 neg w2 d w4 neg w2 neg d cl s} def@");
-   PrintStr("/m38 {mp x w4 sub y w2 add m w4 neg w4 neg d 0 w2 neg d w4 w4 neg d");
-   PrintStr(" w2 0 d w4 w4 d 0 w2 d w4 neg w4 d w2 neg 0 d");
-   PrintStr(" x y w2 sub m 0 w d x w2 sub y m w 0 d cl s} def@");
-   PrintStr("/m39 {mp x y m w4 neg w2 d w4 neg w2 neg d w2 0 d ");
-   PrintStr(" w4 neg w2 neg d w2 0 d w4 neg w2 d w2 0 d w4 neg w2 d w4 neg w2 neg d cl f} def@");
-   PrintStr("/m40 {mp x y m w4 w2 d w4 w4 neg d w2 neg w4 neg d w2 w4 neg d w4 neg w4 neg d");
-   PrintStr(" w4 neg w2 d w4 neg w2 neg d w4 neg w4 d w2 w4 d w2 neg w4 d w4 w4 d w4 w2 neg d cl s} def@");
-   PrintStr("/m41 {mp x y m w4 w2 d w4 w4 neg d w2 neg w4 neg d w2 w4 neg d w4 neg w4 neg d");
-   PrintStr(" w4 neg w2 d w4 neg w2 neg d w4 neg w4 d w2 w4 d w2 neg w4 d w4 w4 d w4 w2 neg d cl f} def@");
-   PrintStr("/m42 {mp x y w2 add m w8 neg w2 -3 4 div mul d w2 -3 4 div mul w8 neg d");
-   PrintStr(" w2 3 4 div mul w8 neg d w8 w2 -3 4 div mul d");
-   PrintStr(" w8 w2 3 4 div mul d w2 3 4 div mul w8 d");
-   PrintStr(" w2 -3 4 div mul w8 d w8 neg w2 3 4 div mul d cl s} def@");
-   PrintStr("/m43 {mp x y w2 add m w8 neg w2 -3 4 div mul d w2 -3 4 div mul w8 neg d");
-   PrintStr(" w2 3 4 div mul w8 neg d w8 w2 -3 4 div mul d");
-   PrintStr(" w8 w2 3 4 div mul d w2 3 4 div mul w8 d");
-   PrintStr(" w2 -3 4 div mul w8 d w8 neg w2 3 4 div mul d cl f} def@");
-   PrintStr("/m44 {mp x y m w6 neg w2 d w2 2 3 div mul 0 d w6 neg w2 neg d");
-   PrintStr(" w2 w6 d 0 w2 -2 3 div mul d w2 neg w6 d");
-   PrintStr(" w6 w2 neg d w2 -2 3 div mul 0 d w6 w2 d");
-   PrintStr(" w2 neg w6 neg d 0 w2 2 3 div mul d w2 w6 neg d cl s} def@");
-   PrintStr("/m45 {mp x y m w6 neg w2 d w2 2 3 div mul 0 d w6 neg w2 neg d");
-   PrintStr(" w2 w6 d 0 w2 -2 3 div mul d w2 neg w6 d");
-   PrintStr(" w6 w2 neg d w2 -2 3 div mul 0 d w6 w2 d");
-   PrintStr(" w2 neg w6 neg d 0 w2 2 3 div mul d w2 w6 neg d cl f} def@");
-   PrintStr("/m46 {mp x y w4 add m w4 neg w4 d w4 neg w4 neg d ");
-   PrintStr(" w4 w4 neg d w4 neg w4 neg d w4 w4 neg d w4 w4 d");
-   PrintStr(" w4 w4 neg d w4 w4 d w4 neg w4 d w4 w4 d w4 neg w4 d w4 neg w4 neg d cl s} def@");
-   PrintStr("/m47 {mp x y w4 add m w4 neg w4 d w4 neg w4 neg d");
-   PrintStr(" w4 w4 neg d w4 neg w4 neg d  w4 w4 neg d w4 w4 d");
-   PrintStr(" w4 w4 neg d w4 w4 d w4 neg w4 d w4 w4 d w4 neg w4 d w4 neg w4 neg d cl f} def@");
-   PrintStr("/m48 {mp x y w4 add m w4 neg w4 d w4 neg w4 neg d w4 w4 neg d ");
-   PrintStr(" w4 neg w4 neg d w4 w4 neg d w4 w4 d w4 w4 neg d w4 w4 d");
-   PrintStr(" w4 neg w4 d w4 w4 d w4 neg w4 d w4 neg w4 neg d ");
-   PrintStr(" w4 w4 neg d w4 neg w4 neg d w4 neg w4 d w4 w4 d cl f} def@");
-   PrintStr("/m49 {mp x w2 sub w3 add y w2 sub w3 add m ");
-   PrintStr(" 0 w3 neg d w3 0 d 0 w3 d w3 0 d 0 w3 d w3 neg 0 d 0 w3 d w3 neg 0 d");
-   PrintStr(" 0 w3 neg d w3 neg 0 d 0 w3 neg d w3 0 d 0 w3 d w3 0 d 0 w3 neg d w3 neg 0 d cl f } def@");
-   PrintStr("/m2 {mp x y w2 sub m 0 w d x w2 sub y m w 0 d s} def@");
-   PrintStr("/m5 {mp x w2 .707 mul sub y w2 .707 mul sub m w 1.44 div w 1.44 div d x w2 .707 mul sub y w2 .707 mul add m w 1.44 div w 1.44 div neg d s} def@");
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Draw a Box
@@ -1042,76 +965,107 @@ END:
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Draw markers at the n WC points x, y
+template<typename T>
+void TPostScript::DrawPolyMarkerShape(Int_t n, T *x, T *y)
+{
+   if (GetMarkerSize() <= 0)
+      return;
+
+   auto linestylesav = GetLineStyle();
+   auto linewidthsav = GetLineWidth();
+
+   Float_t s2x = 1. / Float_t(gPad->GetWw() * gPad->GetAbsWNDC());
+   // Rescale size of marker on PS coordinates
+   Float_t scale = UtoPS(s2x) - UtoPS(0);
+
+   Int_t markerSize = 0;
+   std::vector<TPoint> points;
+
+   auto shape = GetMarkerShape(markerSize, points, scale, kUsePSWidthScale);
+   auto markerLineWidth = GetMarkerLineWidth(GetMarkerStyle());
+
+   Int_t szindx = (Int_t) (GetMarkerSize()*100.);
+
+   TString name = szindx == 100 ? TString::Format("m%d", (Int_t) GetMarkerStyle())
+                                : TString::Format("m%d_sz%d", (Int_t) GetMarkerStyle(), szindx);
+
+   if (!fMarkers[name.Data()]) {
+      // create marker definition only once
+      PrintStr("@/");
+      PrintStr(name.Data());
+      PrintStr(" { gsave translate newpath");
+      switch(shape) {
+         case TAttMarker::kShapeDot:
+            markerSize = TMath::Max(4, markerSize*4); // circe diameter
+            // no break, handle as filled circle
+         case TAttMarker::kShapeFilledCircle:
+         case TAttMarker::kShapeCircle:
+            PrintStr(" 0 0");
+            WriteInteger(markerSize/2);
+            PrintStr(" 0 360 arc");
+            if (shape != TAttMarker::kShapeCircle)
+               PrintStr(" fill");
+            else
+               PrintStr(" stroke");
+            break;
+         case TAttMarker::kShapePolyLine:
+         case TAttMarker::kShapeFilledArea:
+            for (std::size_t i = 0; i < points.size(); ++i) {
+               WriteInteger(points[i].fX);
+               WriteInteger(-points[i].fY);
+               PrintStr(i == 0 ? " moveto" : " lineto");
+            }
+            if (points.front() == points.back())
+               PrintStr(" closepath");
+            if (shape == TAttMarker::kShapeFilledArea)
+               PrintStr(" fill");
+            else
+               PrintStr(" stroke");
+            break;
+         case TAttMarker::kShapeSegments:
+            for (std::size_t i = 0; i < points.size(); ++i) {
+               WriteInteger(points[i].fX);
+               WriteInteger(-points[i].fY);
+               PrintStr(i % 2 == 0 ? " moveto" : " lineto stroke");
+            }
+            break;
+         case TAttMarker::kShapeTriangles:
+            for (std::size_t i = 0; i < points.size(); ++i) {
+               WriteInteger(points[i].fX);
+               WriteInteger(-points[i].fY);
+               PrintStr(i % 3 == 0 ? " moveto" : " lineto");
+               if (i % 3 == 2)
+                  PrintStr(" closepath fill");
+            }
+            break;
+      }
+      PrintStr(" grestore } def@");
+      fMarkers[name.Data()] = true;
+   }
+
+   SetStyle(1);
+   SetWidth((markerLineWidth > 1) ? markerLineWidth : 1);
+   SetColor(GetMarkerColor());
+
+   for (Int_t k = 0; k < n; ++k) {
+      WriteInteger(XtoPS(x[k]));
+      WriteInteger(YtoPS(y[k]));
+      PrintStr(" ");
+      PrintStr(name.Data());
+   }
+   PrintStr("@");
+
+   SetLineStyle(linestylesav);
+   SetLineWidth(linewidthsav);
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+/// Draw markers at the n WC points x, y
 
 void TPostScript::DrawPolyMarker(Int_t n, Float_t *x, Float_t *y)
 {
-   Int_t i, np, markerstyle;
-   Float_t markersize;
-   char chtemp[10];
-
-   if (!fMarkerSize) return;
-   fMarkerStyle = TMath::Abs(fMarkerStyle);
-   Style_t linestylesav = fLineStyle;
-   Width_t linewidthsav = fLineWidth;
-   SetStyle(1);
-   SetWidth(TMath::Max(1, Int_t(TAttMarker::GetMarkerLineWidth(fMarkerStyle))));
-   SetColor(Int_t(fMarkerColor));
-   markerstyle = TAttMarker::GetMarkerStyleBase(fMarkerStyle);
-   if (markerstyle <= 0) strlcpy(chtemp, " m20",10);
-   if (markerstyle == 1) strlcpy(chtemp, " m20",10);
-   if (markerstyle == 2) strlcpy(chtemp, " m2",10);
-   if (markerstyle == 3) strlcpy(chtemp, " m31",10);
-   if (markerstyle == 4) strlcpy(chtemp, " m24",10);
-   if (markerstyle == 5) strlcpy(chtemp, " m5",10);
-   if (markerstyle >= 6 && markerstyle <= 19) strlcpy(chtemp, " m20",10);
-   if (markerstyle >= 20 && markerstyle <= 49 ) snprintf(chtemp,10," m%d", markerstyle);
-   if (markerstyle >= 50) strlcpy(chtemp, " m20",10);
-
-   // Set the PostScript marker size
-   if (markerstyle == 1 || (markerstyle >= 9 && markerstyle <= 19)) {
-      markersize = 2.;
-   } else if (markerstyle == 6) {
-      markersize = 4.;
-   } else if (markerstyle == 7) {
-      markersize = 8.;
-   } else {
-      Float_t symbolsize  = fMarkerSize - TMath::Floor(TAttMarker::GetMarkerLineWidth(fMarkerStyle)/2.)/4.*fLineScale/4.;
-      const Int_t kBASEMARKER = 8;
-      Float_t sbase = symbolsize*kBASEMARKER;
-      Float_t s2x = sbase / Float_t(gPad->GetWw() * gPad->GetAbsWNDC());
-      markersize = this->UtoPS(s2x) - this->UtoPS(0);
-   }
-
-   if (fMarkerSizeCur != markersize) {
-      fMarkerSizeCur = markersize;
-      PrintFast(3," /w");
-      WriteInteger(Int_t(markersize+0.5));
-      PrintFast(40," def /w2 {w 2 div} def /w3 {w 3 div} def");
-   }
-
-   WriteInteger(XtoPS(x[0]));
-   WriteInteger(YtoPS(y[0]));
-   if (n == 1) {
-      PrintStr(chtemp);
-      SetStyle(linestylesav);
-      SetWidth(linewidthsav);
-      return;
-   }
-   np = 1;
-   for (i=1;i<n;i++) {
-      WriteInteger(XtoPS(x[i]));
-      WriteInteger(YtoPS(y[i]));
-      np++;
-      if (np == 100 || i == n-1) {
-         WriteInteger(np);
-         PrintFast(2," {");
-         PrintStr(chtemp);
-         PrintFast(3,"} R");
-         np = 0;
-      }
-   }
-   SetStyle(linestylesav);
-   SetWidth(linewidthsav);
+   DrawPolyMarkerShape<Float_t>(n, x, y);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1119,73 +1073,7 @@ void TPostScript::DrawPolyMarker(Int_t n, Float_t *x, Float_t *y)
 
 void TPostScript::DrawPolyMarker(Int_t n, Double_t *x, Double_t *y)
 {
-   Int_t i, np, markerstyle;
-   Float_t markersize;
-   char chtemp[10];
-
-   if (!fMarkerSize) return;
-   fMarkerStyle = TMath::Abs(fMarkerStyle);
-   Style_t linestylesav = fLineStyle;
-   Width_t linewidthsav = fLineWidth;
-   SetStyle(1);
-   SetWidth(TMath::Max(1, Int_t(TAttMarker::GetMarkerLineWidth(fMarkerStyle))));
-   SetColor(Int_t(fMarkerColor));
-   markerstyle = TAttMarker::GetMarkerStyleBase(fMarkerStyle);
-   if (markerstyle <= 0) strlcpy(chtemp, " m20",10);
-   if (markerstyle == 1) strlcpy(chtemp, " m20",10);
-   if (markerstyle == 2) strlcpy(chtemp, " m2",10);
-   if (markerstyle == 3) strlcpy(chtemp, " m31",10);
-   if (markerstyle == 4) strlcpy(chtemp, " m24",10);
-   if (markerstyle == 5) strlcpy(chtemp, " m5",10);
-   if (markerstyle >= 6 && markerstyle <= 19) strlcpy(chtemp, " m20",10);
-   if (markerstyle >= 20 && markerstyle <= 49 ) snprintf(chtemp,10," m%d", markerstyle);
-   if (markerstyle >= 50) strlcpy(chtemp, " m20",10);
-
-   // Set the PostScript marker size
-   if (markerstyle == 1 || (markerstyle >= 9 && markerstyle <= 19)) {
-      markersize = 2.;
-   } else if (markerstyle == 6) {
-      markersize = 4.;
-   } else if (markerstyle == 7) {
-      markersize = 8.;
-   } else {
-      Float_t symbolsize  = fMarkerSize - TMath::Floor(TAttMarker::GetMarkerLineWidth(fMarkerStyle)/2.)/4.*fLineScale/4.;
-      const Int_t kBASEMARKER = 8;
-      Float_t sbase = symbolsize*kBASEMARKER;
-      Float_t s2x = sbase / Float_t(gPad->GetWw() * gPad->GetAbsWNDC());
-      markersize = this->UtoPS(s2x) - this->UtoPS(0);
-   }
-
-   if (fMarkerSizeCur != markersize) {
-      fMarkerSizeCur = markersize;
-      PrintFast(3," /w");
-      WriteInteger(Int_t(markersize+0.5));
-      PrintFast(40," def /w2 {w 2 div} def /w3 {w 3 div} def");
-   }
-
-   WriteInteger(XtoPS(x[0]));
-   WriteInteger(YtoPS(y[0]));
-   if (n == 1) {
-      PrintStr(chtemp);
-      SetStyle(linestylesav);
-      SetWidth(linewidthsav);
-      return;
-   }
-   np = 1;
-   for (i=1;i<n;i++) {
-      WriteInteger(XtoPS(x[i]));
-      WriteInteger(YtoPS(y[i]));
-      np++;
-      if (np == 100 || i == n-1) {
-         WriteInteger(np);
-         PrintFast(2," {");
-         PrintStr(chtemp);
-         PrintFast(3,"} R");
-         np = 0;
-      }
-   }
-   SetStyle(linestylesav);
-   SetWidth(linewidthsav);
+   DrawPolyMarkerShape<Double_t>(n, x, y);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1746,13 +1634,16 @@ void TPostScript::Initialize()
    PrintStr(t.AsString());
    PrintStr("@");
 
-   if ( fMode == 1 || fMode == 4) PrintStr("%%Orientation: Portrait@");
-   if ( fMode == 2 || fMode == 5) PrintStr("%%Orientation: Landscape@");
+   if (fMode == 1 || fMode == 4)
+      PrintStr("%%Orientation: Portrait@");
+   if (fMode == 2 || fMode == 5)
+      PrintStr("%%Orientation: Landscape@");
 
    PrintStr("%%EndComments@");
    PrintStr("%%BeginProlog@");
 
-   if( fMode == 3)PrintStr("80 dict begin@");
+   if(fMode == 3)
+      PrintStr("80 dict begin@");
 
    // Initialisation of PostScript procedures
    PrintStr("/s {stroke} def /l {lineto} def /m {moveto} def /t {translate} def@");
@@ -1766,11 +1657,9 @@ void TPostScript::Initialize()
    PrintStr("/cl {closepath} def /sf {scalefont setfont} def /lw {setlinewidth} def@");
    PrintStr("/box {m dup 0 exch d exch 0 d 0 exch neg d cl} def@");
    PrintStr("/NC{systemdict begin initclip end}def/C{NC box clip newpath}def@");
-   PrintStr("/bl {box s} def /bf {gsave box gsave f grestore 1 lw [] 0 sd s grestore} def /Y { 0 exch d} def /X { 0 d} def @");
+   PrintStr("/bl {box s} def /bf {gsave box gsave f grestore 1 lw [] 0 sd s grestore} def /Y { 0 exch d} def /X { 0 d} def@");
    PrintStr("/K {{pop pop 0 moveto} exch kshow} bind def@");
-   PrintStr("/ita {/ang 15 def gsave [1 0 ang dup sin exch cos div 1 0 0] concat} def @");
-
-   DefineMarkers();
+   PrintStr("/ita {/ang 15 def gsave [1 0 ang dup sin exch cos div 1 0 0] concat} def@");
 
    FontEncode();
 

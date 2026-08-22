@@ -155,7 +155,6 @@ jobs:
       - name: Pull Request Build
         if: github.event_name == 'pull_request'
         env:
-          INCREMENTAL: ${{ !contains(github.event.pull_request.labels.*.name, 'clean build') && !matrix.platform == 'mac15' && !matrix.platform == 'mac26'}}
           GITHUB_PR_ORIGIN: ${{ github.event.pull_request.head.repo.clone_url }}
           OVERRIDES: ${{ join( matrix.overrides, ' ') }}
         run: |
@@ -163,7 +162,7 @@ jobs:
           echo "Python is now $(which python3) $(python3 --version)"
           src/.github/workflows/root-ci-config/build_root.py  \
                     --buildtype       RelWithDebInfo          \
-                    --incremental     $INCREMENTAL            \
+                    --incremental     false                   \
                     --base_ref        ${{ github.base_ref }}  \
                     --sha             ${{ github.sha }}       \
                     --pull_repository ${{ github.event.pull_request.head.repo.clone_url }}  \
@@ -187,34 +186,23 @@ jobs:
                     --binaries       ${{ inputs.binaries }}   \
                     --repository     ${{ github.server_url }}/${{ github.repository }}
 
-      - name: Nightly build
-        if:   github.event_name == 'schedule'
-        run: |
-          [ -d "${VIRTUAL_ENV_DIR}" ] && source ${VIRTUAL_ENV_DIR}/bin/activate
-          echo "Python is now $(which python3) $(python3 --version)"
-          src/.github/workflows/root-ci-config/build_root.py  \
-                    --buildtype      RelWithDebInfo           \
-                    --platform       ${{ matrix.platform }}   \
-                    --incremental    false                    \
-                    --binaries       true                     \
-                    --base_ref       ${{ inputs.ref_name }}   \
-                    --repository     ${{ github.server_url }}/${{ github.repository }}
-
-      - name: Update build cache after push to release branch
-        if:   github.event_name == 'push'
+      - name: Nightlies and push to branch
+        if:   github.event_name == 'schedule' || github.event_name == 'push'
         env:
-          OVERRIDES: ${{ join( matrix.overrides, ' ') }}
+          OVERRIDES: ${{ github.event_name == 'push' && format('{0} {1} {2}', '--overrides', env.GLOBAL_OVERRIDES, join( matrix.overrides, ' ')) || '' }}
+          BASE_REF:  ${{ github.event_name == 'push' && github.ref_name || inputs.ref_name }}
         run: |
           [ -d "${VIRTUAL_ENV_DIR}" ] && source ${VIRTUAL_ENV_DIR}/bin/activate
           echo "Python is now $(which python3) $(python3 --version)"
-          src/.github/workflows/root-ci-config/build_root.py  \
-                    --buildtype      RelWithDebInfo           \
-                    --platform       ${{ matrix.platform }}   \
-                    --incremental    false                    \
-                    --base_ref       ${{ github.ref_name }}   \
-                    --binaries       ${{ startsWith(github.ref, 'refs/tags/') }}  \
-                    --repository     ${{ github.server_url }}/${{ github.repository }}  \
-                    --overrides       ${GLOBAL_OVERRIDES} ${OVERRIDES}
+          src/.github/workflows/root-ci-config/build_root.py    \
+                    --buildtype        RelWithDebInfo           \
+                    --platform         ${{ matrix.platform }}   \
+                    --incremental      false                    \
+                    --upload_artifacts false                    \
+                    --binaries         ${{ github.event_name == 'schedule' }} \
+                    --base_ref         ${BASE_REF}              \
+                    --repository       ${{ github.server_url }}/${{ github.repository }} \
+                    ${OVERRIDES}
 
       - name: Upload test results
         if:   ${{ !cancelled() }}
@@ -672,15 +660,10 @@ jobs:
         EOS_PATH: /eos/project/r/root-eos/website/download
         EOS_ENDPOINT: root://eosproject-r.cern.ch
         KRB5CCNAME: /tmp/krb5cc
-      working-directory: ${{ env.WORKDIR }}
       run: |
-        echo +++ Content
         ls
-        echo +++ Retrieving the secret
         echo ${RWEBEOS_KT} | base64 -d > ${KT_FILE_NAME}
-        echo +++ Creating the token
         kinit  -p ${{ secrets.KRB5USER }}@${{ secrets.KRB5REALM }} -kt ${KT_FILE_NAME}
-        echo +++ Running the copy
         xrdcp --parallel 64 -rf Binaries*/root_v* ${EOS_ENDPOINT}/${EOS_PATH}/
 
 

@@ -15,6 +15,9 @@
 
 #include "TVirtualPS.h"
 
+#include <map>
+#include <string>
+
 class TPoints;
 
 class TPostScript : public TVirtualPS {
@@ -78,9 +81,13 @@ protected:
    TString fFileName;             ///< PS file name
    Bool_t  fFontEmbed = kFALSE;   ///< True is FontEmbed has been called
    Bool_t  fMustEmbed[29];        ///< flag to embed font
+   std::map<std::string,bool> fMarkers; ///<! array of already defined markers
 
    static Int_t fgLineJoin;       ///< Appearance of joining lines
    static Int_t fgLineCap;        ///< Appearance of line caps
+
+   template<typename T>
+   void DrawPolyMarkerShape(Int_t n, T *x, T *y);
 
 public:
    TPostScript();
@@ -93,7 +100,6 @@ public:
    void  CellArrayEnd() override;
    void  Close(Option_t *opt="") override;
    Int_t CMtoPS(Double_t u) {return Int_t(0.5 + 72*u/2.54);}
-   void  DefineMarkers();
    void  DrawBox(Double_t x1, Double_t y1, Double_t x2, Double_t y2) override;
    void  DrawFrame(Double_t xl, Double_t yl, Double_t xt, Double_t yt, Int_t mode, Int_t border, Int_t dark,
                   Int_t light) override;
@@ -143,7 +149,7 @@ public:
    Int_t YtoPS(Double_t y);
    void  Zone();
 
-   ClassDefOverride(TPostScript,1)  //PostScript driver
+   ClassDefOverride(TPostScript,0)  //PostScript driver
 };
 
 #endif

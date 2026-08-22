@@ -92,6 +92,9 @@ protected:
 
    void EnsureBufferSize(Int_t required_size);
 
+   template<typename T>
+   void PrintPolyMarkerShape(Int_t n, T *x, T* y);
+
 public:
    TPDF();
    TPDF(const char *filename, Int_t type=-111);
@@ -154,7 +157,7 @@ public:
    Double_t XtoPDF(Double_t x);
    Double_t YtoPDF(Double_t y);
 
-   ClassDefOverride(TPDF, 1); // PDF driver
+   ClassDefOverride(TPDF, 0); // PDF driver
 };
 
 #endif
