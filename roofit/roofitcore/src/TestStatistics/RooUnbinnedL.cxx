@@ -97,6 +97,27 @@ bool RooUnbinnedL::setApplyWeightSquared(bool flag)
    return false;
 }
 
+//////////////////////////////////////////////////////////////////////////////////
+
+/// With the vectorizing evaluation backends, the pdf is compiled for a fixed
+/// normalization set and evaluated outside of the RooFit data store, so the
+/// constant term optimization is not applicable. Attempting it anyway is not
+/// only useless: caching constant branches means snapshotting parts of the
+/// compiled computation graph into the data store, which classes like
+/// RooFit::Detail::RooNormalizedPdf don't support. Refuse the request instead.
+void RooUnbinnedL::constOptimizeTestStatistic(RooAbsArg::ConstOpCode opcode, bool doAlsoTrackingOpt)
+{
+   if (evaluator_) {
+      oocoutW((TObject *)nullptr, Optimization)
+         << "RooUnbinnedL::constOptimizeTestStatistic(" << GetName()
+         << ") the constant term optimization only applies to likelihoods evaluated with EvalBackend::Legacy(), "
+            "ignoring the request"
+         << std::endl;
+      return;
+   }
+   RooAbsL::constOptimizeTestStatistic(opcode, doAlsoTrackingOpt);
+}
+
 namespace {
 
 using ComputeResult = std::pair<ROOT::Math::KahanSum<double>, double>;
@@ -141,7 +162,10 @@ ComputeResult computeScalarFunc(const RooAbsPdf *pdfClone, RooAbsData *dataClone
    return {kahanProb, kahanWeight.Sum()};
 }
 
-// For now, almost exact copy of computeScalarFunc.
+// Similar to computeScalarFunc, but the probabilities were already evaluated
+// as a batch, and the weights are also retrieved as batches instead of looping
+// over RooAbsData::get(i), which loads every column of the dataset only to
+// then read a single weight.
 ComputeResult computeBatchFunc(std::span<const double> probas, RooAbsData *dataClone, bool weightSq,
                                std::size_t stepSize, std::size_t firstEvent, std::size_t lastEvent)
 {
@@ -149,15 +173,19 @@ ComputeResult computeBatchFunc(std::span<const double> probas, RooAbsData *dataC
    ROOT::Math::KahanSum<double> kahanProb;
    RooNaNPacker packedNaN(0.f);
 
-   for (auto i = firstEvent; i < lastEvent; i += stepSize) {
-      dataClone->get(i);
+   const std::size_t nEvents = lastEvent - firstEvent;
+   // Empty spans mean the dataset is unweighted, i.e. all weights are one.
+   std::span<const double> weights = dataClone->getWeightBatch(firstEvent, nEvents, /*sumW2=*/false);
+   std::span<const double> weightsSumW2 =
+      weightSq ? dataClone->getWeightBatch(firstEvent, nEvents, /*sumW2=*/true) : std::span<const double>{};
 
-      double weight = dataClone->weight();
+   for (auto i = firstEvent; i < lastEvent; i += stepSize) {
+      double weight = weights.empty() ? 1.0 : weights[i - firstEvent];
 
       if (0. == weight * weight)
          continue;
       if (weightSq)
-         weight = dataClone->weightSquared();
+         weight = weightsSumW2.empty() ? 1.0 : weightsSumW2[i - firstEvent];
 
       double logProba = std::log(probas[i]);
       const double term = -weight * logProba;
@@ -206,6 +234,18 @@ RooUnbinnedL::evaluatePartition(Section events, std::size_t /*components_begin*/
       std::tie(result, sumWeight) =
          computeBatchFunc(probas, data_.get(), apply_weight_squared, 1, events.begin(N_events_), events.end(N_events_));
    } else {
+      // The cache-and-track optimization tracks staleness of the cached
+      // branches globally, but recalculateCache() only refreshes the requested
+      // event range. A cache that was refreshed for one event section hence
+      // reports itself as up-to-date for all other sections as well, even
+      // though their rows may still hold values from an older parameter point.
+      // This happens when event-range tasks migrate between workers in
+      // RooFit::MultiProcess likelihood splitting. Force a full update of the
+      // cached branches whenever the evaluated section changes.
+      if (!(events == lastCacheSection_)) {
+         data_->store()->forceCacheUpdate();
+         lastCacheSection_ = events;
+      }
       data_->store()->recalculateCache(nullptr, events.begin(N_events_), events.end(N_events_), 1, true);
       std::tie(result, sumWeight) = computeScalarFunc(pdf_.get(), data_.get(), normSet_.get(), apply_weight_squared, 1,
                                                       events.begin(N_events_), events.end(N_events_));

@@ -695,6 +695,35 @@ def make_ConvTranspose2d():
     return _model(graph, opset=17, ir_version=8)
 
 
+def make_ConvTranspose2dOutputShape():
+    """Ops: ConvTranspose"""
+    nodes = [
+        helper.make_node(
+            'ConvTranspose',
+            ['X', 'W'],
+            ['Y'],
+            kernel_shape=[3, 3],
+            strides=[2, 2],
+            output_shape=[6, 6]
+        ),
+    ]
+    graph = helper.make_graph(
+        nodes,
+        'ConvTranspose2dOutputShape',
+        inputs=[
+            _vi('X', FLOAT, [1, 1, 3, 3]),
+            _vi('W', FLOAT, [1, 1, 3, 3]),
+        ],
+        outputs=[
+            _vi('Y', FLOAT, [1, 1, 6, 6]),
+        ],
+        initializer=[
+            _tensor('W', FLOAT, [1, 1, 3, 3], [1.0] * 9),
+        ],
+    )
+    return _model(graph, opset=17, ir_version=8)
+
+
 def make_ConvTransposeBias2d():
     """Ops: ConvTranspose"""
     nodes = [
@@ -1833,6 +1862,54 @@ def make_Gelu():
         ],
     )
     return _model(graph, opset=20, ir_version=13)
+
+
+def make_Gemm_ConstantFolding():
+    """Ops: Gemm"""
+    nodes = [
+        helper.make_node('Gemm', ['A', 'B', 'C'], ['Y'], alpha=1.0, beta=1.0, transA=0, transB=0),
+    ]
+    graph = helper.make_graph(
+        nodes,
+        'Gemm_ConstantFolding',
+        inputs=[
+        ],
+        outputs=[
+            _vi('Y', FLOAT, [2, 2]),
+        ],
+        initializer=[
+            _tensor('A', FLOAT, [2, 3], [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+            _tensor('B', FLOAT, [3, 2], [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]),
+            _tensor('C', FLOAT, [2, 2], [1.0, 1.0, 1.0, 1.0]),
+        ],
+    )
+    return _model(graph, opset=13, ir_version=13)
+
+
+def make_Gemm_ConstantFolding_Shared():
+    """Ops: Gemm x2 (shared initializer)"""
+    nodes = [
+        helper.make_node('Gemm', ['A1', 'B', 'C1'], ['Y1'], alpha=1.0, beta=1.0, transA=0, transB=0),
+        helper.make_node('Gemm', ['A2', 'B', 'C2'], ['Y2'], alpha=1.0, beta=1.0, transA=0, transB=0),
+    ]
+    graph = helper.make_graph(
+        nodes,
+        'Gemm_ConstantFolding_Shared',
+        inputs=[
+            _vi('A2', FLOAT, [2, 2]),
+        ],
+        outputs=[
+            _vi('Y1', FLOAT, [2, 2]),
+            _vi('Y2', FLOAT, [2, 2]),
+        ],
+        initializer=[
+            _tensor('A1', FLOAT, [2, 2], [1.0, 2.0, 3.0, 4.0]),
+            _tensor('B', FLOAT, [2, 2], [1.0, 0.0, 0.0, 1.0]),
+            _tensor('C1', FLOAT, [2, 2], [1.0, 1.0, 1.0, 1.0]),
+            _tensor('C2', FLOAT, [2, 2], [10.0, 10.0, 10.0, 10.0]),
+        ],
+    )
+    return _model(graph, opset=13, ir_version=13)
 
 
 def make_Greater():
@@ -3430,6 +3507,27 @@ def make_Log():
         ],
     )
     return _model(graph, opset=14, ir_version=7, producer_name='pytorch', producer_version='1.13.1')
+
+
+def make_MatMul_1D_Constant():
+    """Ops: MatMul"""
+    nodes = [
+        helper.make_node('MatMul', ['A', 'B'], ['Y']),
+    ]
+    graph = helper.make_graph(
+        nodes,
+        'MatMul_1D_Constant',
+        inputs=[
+        ],
+        outputs=[
+            _vi('Y', FLOAT, [2]),
+        ],
+        initializer=[
+            _tensor('A', FLOAT, [3], [1.0, 2.0, 3.0]),
+            _tensor('B', FLOAT, [3, 2], [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+        ],
+    )
+    return _model(graph, opset=13, ir_version=13)
 
 
 def make_MatMul_Stacked():
@@ -5092,6 +5190,7 @@ MODELS = {
     'ConvAddRelu': make_ConvAddRelu,
     'ConvTranspose1d': make_ConvTranspose1d,
     'ConvTranspose2d': make_ConvTranspose2d,
+    'ConvTranspose2dOutputShape': make_ConvTranspose2dOutputShape,
     'ConvTransposeBias2d': make_ConvTransposeBias2d,
     'ConvTransposeBias2dBatched': make_ConvTransposeBias2dBatched,
     'ConvWithAsymmetricPadding': make_ConvWithAsymmetricPadding,
@@ -5139,6 +5238,8 @@ MODELS = {
     'GatherND_3': make_GatherND_3,
     'GatherNegativeIndices': make_GatherNegativeIndices,
     'Gelu': make_Gelu,
+    'Gemm_ConstantFolding': make_Gemm_ConstantFolding,
+    'Gemm_ConstantFolding_Shared': make_Gemm_ConstantFolding_Shared,
     'Greater': make_Greater,
     'GreaterOrEqual': make_GreaterOrEqual,
     'HardSigmoid': make_HardSigmoid,
@@ -5163,6 +5264,7 @@ MODELS = {
     'Linear_32': make_Linear_32,
     'Linear_64': make_Linear_64,
     'Log': make_Log,
+    'MatMul_1D_Constant': make_MatMul_1D_Constant,
     'MatMul_Stacked': make_MatMul_Stacked,
     'MatMul_Stacked2': make_MatMul_Stacked2,
     'Max': make_Max,
@@ -5307,6 +5409,7 @@ TEST_INPUTS = {
     'ConvAddRelu': [f32(np.arange(-7.0, 9.0), (1, 1, 4, 4))],
     'ConvTranspose1d': [f32(np.arange(0.0, 3.0), (1, 1, 3))],
     'ConvTranspose2d': [f32(np.arange(0.0, 9.0), (1, 1, 3, 3))],
+    'ConvTranspose2dOutputShape': [f32(np.arange(0.0, 9.0), (1, 1, 3, 3))],
     'ConvTransposeBias2d': [f32(np.arange(0.0, 9.0), (1, 1, 3, 3))],
     'ConvTransposeBias2dBatched': [f32(np.arange(0.0, 18.0), (2, 1, 3, 3))],
     'ConvWithAsymmetricPadding': [f32(np.arange(0.0, 35.0), (1, 1, 7, 5))],
@@ -5631,6 +5734,29 @@ def _mean_reference(model, feeds):
     return [np.mean(np.broadcast_arrays(*feeds.values()), axis=0, dtype=np.float32)]
 
 
+def _convtranspose_outputshape_reference(model, feeds):
+    """The ReferenceEvaluator crashes if output_shape is set but pads is not.
+    We temporarily add the correct inferred pads to evaluate it, then remove
+    them so the saved model strictly tests SOFIE's inference logic."""
+    from onnx import helper
+
+    for node in model.graph.node:
+        if node.op_type == "ConvTranspose" and "pads" not in [a.name for a in node.attribute]:
+            node.attribute.extend([helper.make_attribute("pads", [1, 1, 0, 0])])
+
+    from onnx.reference import ReferenceEvaluator
+
+    outputs = ReferenceEvaluator(model).run(None, feeds)
+
+    for node in model.graph.node:
+        if node.op_type == "ConvTranspose":
+            for i, attr in enumerate(node.attribute):
+                if attr.name == "pads":
+                    del node.attribute[i]
+                    break
+    return outputs
+
+
 # Models whose expected outputs the ReferenceEvaluator cannot compute.
 EXPECTED_OVERRIDES = {
     "GRUBidirectional": _recurrent_reference,
@@ -5641,6 +5767,7 @@ EXPECTED_OVERRIDES = {
     "RNNSequenceBatchwise": _recurrent_reference,
     "MaxPool2d_AsymPad": _maxpool2d_reference,
     "MeanMultidirectionalBroadcast": _mean_reference,
+    "ConvTranspose2dOutputShape": _convtranspose_outputshape_reference,
 }
 
 

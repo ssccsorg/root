@@ -43,6 +43,10 @@ std::vector<size_t> ConvertShapeToInt(const std::vector<Dim> & shape){
             ret_shape.clear();
             break;
          }
+         catch (const std::out_of_range& ) {
+            ret_shape.clear();
+            break;
+         }
       } else {
          ret_shape[i] = shape[i].dim;
       }
@@ -54,7 +58,8 @@ std::vector<size_t> ConvertShapeToInt(const std::vector<Dim> & shape){
 std::size_t ConvertShapeToLength(const std::vector<size_t> & shape){
    // Empty shape represent scalar values, so we return a length=1
    std::size_t fLength = 1;
-   for (auto& dim: shape) fLength *= dim;
+   for (const auto &dim : shape)
+   fLength *= dim;
    return fLength;
 }
 
@@ -513,7 +518,7 @@ std::string UTILITY::Clean_name(std::string input_tensor_name){
    std::string s (input_tensor_name);
    std::replace( s.begin(), s.end(), '-', '_');
    // replace all non-alpohanumeric character except for "_"
-   s.erase(std::remove_if(s.begin(), s.end(), []( char const& c ) -> bool { return !std::isalnum(c) && c != '_'; } ), s.end());
+   s.erase(std::remove_if(s.begin(), s.end(), []( char const& c ) -> bool { return !std::isalnum(static_cast<unsigned char>(c)) && c != '_'; } ), s.end());
    return s;
 }
 

@@ -54,6 +54,7 @@ The following people have contributed to this new version:
 * Several enums that are redundant with `ROOT::ESTLType` are deprecated and will be removed in ROOT 6.44: `TClassEdit::ESTLType`, `TDictionary::ESTLType`, `TStreamerElement::ESTLType`. Please use `ROOT::ESTLType` instead.
 * The inclusion by external projects of Makefile templates contained within ROOT is deprecated in 6.42, a warning will be raised if you use them. These files will be removed in ROOT 7.
 * The conversion from Python set to **RooArgSet** is deprecated and won't work anymore in ROOT 6.44. The problem is that Python sets are unordered while RooArgSets are ordered, and this mismatch can lead to subtle problems later on. Prefer conversion from Python lists or tuples, which are ordered too.
+* The **TMPIFile** class and the `mpi` build option (not to be confused with `minuit2_mpi`, which is unaffected) are deprecated and will be removed in ROOT 6.44.
 * The ROOT IO capability for the `TMVA::Experimental::SOFIE::RModel` has been removed. Users should not be encouraged to serialize models in experimental classes. For the serialization of ONNX models one can already use ONNX directly, and even serialize the ONNX bytes to a ROOT file if required.
 * The Keras and PyTorch parsers for SOFIE (`TMVA::Experimental::SOFIE::PyKeras` and `PyTorch`) are now removed, so `RSofieReader` only accepts ONNX files.
 These parsers relied on private implementation details of Keras and PyTorch, which change faster than is appropriate for ROOT's stability standards.
@@ -62,6 +63,7 @@ Users are encouraged to export their models to ONNX and use the retained ONNX pa
 * The **JsMVA** feature for interactive TMVA training in Jupyter notebooks is now removed. It was not functional for years and was therefore already excluded from ROOT 6.38. This also removes the `TMVA::IPythonInteractive` class and the related interactive-training interfaces from the TMVA method and fitter classes, such as `MethodBase::ExitFromTraining()` or `FitterBase::SetIPythonInteractive()`.
 * The **RooStats::DebuggingSampler** and **RooStats::DebuggingTestStat** classes are removed. They were mock implementations of the `TestStatSampler` and `TestStatistic` interfaces that returned uniform random numbers independent of the data, only meant for debugging the RooStats framework itself during its initial development.
 * The `RooTrace` class is deprecated and will be removed in ROOT 6.44. It was a RooFit-specific memory tracer whose instrumentation hooks are compiled out by default, so it has been inert and untested for years. For memory debugging, please use general-purpose tools such as AddressSanitizer or Valgrind instead.
+* Support for the AIX operating system has been removed from the codebase. This support has not been tested since the late v5 releases and the LLVM JIT is not yet supporting AIX.
 
 ## Build System
 
@@ -115,6 +117,18 @@ maps) will now obtain different, mathematically consistent values.
 
 * Added `RedefinePerSample` transformation. Works similarly to `DefinePerSample`, but allows to redefine existing values
   of a column on a per-sample basis. This operation is supported in local and distributed mode.
+
+## Trees
+
+### Behavior change: `sqrt()` of negative arguments in TTreeFormula now returns NaN
+
+Since its introduction in 1995, the formula engine used by `TTree::Draw()`, `TTree::Scan()` and `TTreeFormula`
+silently evaluated `sqrt(x)` as `sqrt(abs(x))` for negative arguments (or as `0` in the optimized evaluation path
+of the legacy `ROOT::v5::TFormula`). This could produce silently wrong results, e.g. in selections involving
+`sqrt` of an expression that can become negative. `sqrt()` now returns NaN for negative arguments, consistent
+with `TMath::Sqrt()`, the standard C `sqrt()`, and the modern `TFormula` used by `TF1`.
+Note that in a selection, a NaN evaluates as `false`, so entries where the `sqrt` argument is negative now fail
+the cut instead of being selected based on `sqrt(abs(x))`.
 
 ## RooFit
 
@@ -196,6 +210,8 @@ Such file can be loaded locally in any web browser or send as attachment in emai
 The [TGeometry](https://root.cern/doc/master/classTGeometry.html) classes (Geant 3 shapes) have been moved out of Graf3D into their own library.
 To link to these classes, use the cmake target `TGeometry` (preferred), `root-config --libs`, or link with `-lTGeometry`.
 When ROOT is configured with `-Dgeom=Off`, these classes are now off as well.
+
+The header X3DBuffer.h is no longer part of the installed ROOT headers.
 
 ## Documentation and Examples
 

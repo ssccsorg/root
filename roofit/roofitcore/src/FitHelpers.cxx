@@ -48,6 +48,10 @@
 #ifdef ROOFIT_LEGACY_EVAL_BACKEND
 #include "RooChi2Var.h"
 #include "RooNLLVar.h"
+
+#ifdef ROOFIT_MULTIPROCESS
+#include "RooFit/MultiProcess/Config.h"
+#endif
 #endif
 
 using RooFit::Detail::RooNLLVarNew;
@@ -247,6 +251,8 @@ struct MinimizerConfig {
    int parallelize = 0;
    bool enableParallelGradient = false;
    bool enableParallelDescent = false;
+   int parallelDescentNumSplits = 0;
+   int parallelDescentSplitStrategy = 0;
    bool timingAnalysis = false;
    const RooArgSet *minosSet = nullptr;
    std::string minType;
@@ -489,7 +495,12 @@ std::unique_ptr<RooAbsReal> createNLLNew(RooAbsPdf &pdf, RooAbsData &data, std::
    RooAbsPdf &finalPdf = applyIntegrateBinsWrapping(pdf, data, integrateOverBinsPrecision, binSamplingPdfs);
 
    RooArgList nllTerms;
-   if (auto *simPdf = dynamic_cast<RooSimultaneous *>(&finalPdf)) {
+   auto *simPdf = dynamic_cast<RooSimultaneous *>(&finalPdf);
+   // A RooSimultaneous whose index category is not among the data columns is
+   // a "switch" pdf selecting the component given by the current index state
+   // (analogous to RooMultiPdf): there are no channels to split the NLL into,
+   // so it is treated like an ordinary pdf.
+   if (simPdf && simPdf->indexCatIsObservable(*data.get())) {
       nllTerms.addOwned(createSimultaneousNLL(*simPdf, isExtended, rangeName, offset));
    } else {
       RooNLLVarNew::Config cfg;
@@ -539,6 +550,9 @@ void defineMinimizationOptions(RooCmdConfig &pc)
    pc.defineInt("parallelize", "Parallelize", 0, minimizerDefaults.parallelize); // Three parallelize arguments
    pc.defineInt("enableParallelGradient", "ParallelGradientOptions", 0, minimizerDefaults.enableParallelGradient);
    pc.defineInt("enableParallelDescent", "ParallelDescentOptions", 0, minimizerDefaults.enableParallelDescent);
+   pc.defineInt("parallelDescentNumSplits", "ParallelDescentOptions", 1, minimizerDefaults.parallelDescentNumSplits);
+   pc.defineInt("parallelDescentSplitStrategy", "ParallelDescentOptions", 2,
+                minimizerDefaults.parallelDescentSplitStrategy);
    pc.defineInt("timingAnalysis", "TimingAnalysis", 0, minimizerDefaults.timingAnalysis);
    pc.defineString("mintype", "Minimizer", 0, minimizerDefaults.minType.c_str());
    pc.defineString("minalg", "Minimizer", 1, minimizerDefaults.minAlg.c_str());
@@ -582,6 +596,8 @@ std::unique_ptr<RooFitResult> minimize(RooAbsReal &pdf, RooAbsReal &nll, RooAbsD
    cfg.parallelize = pc.getInt("parallelize");
    cfg.enableParallelGradient = pc.getInt("enableParallelGradient");
    cfg.enableParallelDescent = pc.getInt("enableParallelDescent");
+   cfg.parallelDescentNumSplits = pc.getInt("parallelDescentNumSplits");
+   cfg.parallelDescentSplitStrategy = pc.getInt("parallelDescentSplitStrategy");
    cfg.timingAnalysis = pc.getInt("timingAnalysis");
 
    // Determine if the dataset has weights
@@ -624,6 +640,23 @@ std::unique_ptr<RooFitResult> minimize(RooAbsReal &pdf, RooAbsReal &nll, RooAbsD
       oocoutE(&pdf, InputArguments) << msgPrefix
                                     << "ERROR: Cannot compute both asymptotically correct and SumW2 errors.\n";
       return nullptr;
+   }
+
+   // Apply the experimental likelihood-splitting settings from
+   // ParallelDescentOptions(). A numSplits value of zero keeps the automatic
+   // task-splitting defaults of RooFit::MultiProcess.
+   if (cfg.parallelDescentNumSplits > 0) {
+#ifdef ROOFIT_MULTIPROCESS
+      if (cfg.parallelDescentSplitStrategy == 0) {
+         RooFit::MultiProcess::Config::LikelihoodJob::defaultNEventTasks = cfg.parallelDescentNumSplits;
+      } else {
+         RooFit::MultiProcess::Config::LikelihoodJob::defaultNComponentTasks = cfg.parallelDescentNumSplits;
+      }
+#else
+      oocoutW(&pdf, InputArguments) << "Likelihood-splitting settings passed via ParallelDescentOptions() are "
+                                       "ignored, because ROOT was built without RooFit::MultiProcess support"
+                                    << std::endl;
+#endif
    }
 
    // Instantiate RooMinimizer
@@ -831,7 +864,8 @@ std::unique_ptr<RooAbsReal> createNLL(RooAbsPdf &pdf, RooAbsData &data, const Ro
       RooArgSet normSet;
       pdf.getObservables(data.get(), normSet);
 
-      if (dynamic_cast<RooSimultaneous const *>(&pdf)) {
+      auto *simPdfForProjDeps = dynamic_cast<RooSimultaneous const *>(&pdf);
+      if (simPdfForProjDeps && simPdfForProjDeps->indexCatIsObservable(normSet)) {
          for (auto i : projDeps) {
             auto res = normSet.find(i->GetName());
             if (res != nullptr) {
@@ -1088,7 +1122,10 @@ std::unique_ptr<RooAbsReal> createChi2(RooAbsReal &real, RooDataHist &data, cons
             applyIntegrateBinsWrapping(*pdfClone, data, pc.getDouble("integrate_bins"), binSamplingPdfs);
 
          std::unique_ptr<RooAbsReal> chi2;
-         if (auto *simPdfClone = dynamic_cast<RooSimultaneous *>(&finalPdf)) {
+         auto *simPdfClone = dynamic_cast<RooSimultaneous *>(&finalPdf);
+         // Like in createNLLNew(): a "switch"-mode RooSimultaneous (index
+         // category not among the data columns) is treated as an ordinary pdf.
+         if (simPdfClone && simPdfClone->indexCatIsObservable(*data.get())) {
             chi2 = std::unique_ptr<RooAbsReal>{dynamic_cast<RooAbsReal *>(
                createSimultaneousChi2(*simPdfClone, rangeName ? rangeName : "", extended, etype).release())};
          } else {
@@ -1164,13 +1201,27 @@ std::unique_ptr<RooFitResult> fitTo(RooAbsReal &real, RooAbsData &data, const Ro
 
    RooLinkedList fitCmdList(cmdList);
    std::string nllCmdListString;
+
+   // Check on the raw command list whether parallel minimization is requested,
+   // because in that case ModularL(true) is implied below. The check needs to
+   // happen before filtering the command list: with a modular likelihood,
+   // offsetting is configured on the minimizer instead of the likelihood, so
+   // the OffsetLikelihood argument must not be forwarded to createNLL(), where
+   // it is mutually exclusive with ModularL.
+   auto cmdEnabled = [&cmdList](const char *cmdName) {
+      auto *arg = static_cast<RooCmdArg *>(cmdList.FindObject(cmdName));
+      return arg && arg->getInt(0) != 0;
+   };
+   const bool parallelRequested =
+      cmdEnabled("Parallelize") || cmdEnabled("ParallelGradientOptions") || cmdEnabled("ParallelDescentOptions");
+
    if (!chi2) {
       nllCmdListString = "ProjectedObservables,Extended,Range,"
                          "RangeWithName,SumCoefRange,NumCPU,SplitRange,Constrained,Constrain,ExternalConstraints,"
                          "CloneData,GlobalObservables,GlobalObservablesSource,GlobalObservablesTag,"
                          "EvalBackend,IntegrateBins,ModularL";
 
-      if (!cmdList.FindObject("ModularL") || static_cast<RooCmdArg *>(cmdList.FindObject("ModularL"))->getInt(0) == 0) {
+      if (!parallelRequested && !cmdEnabled("ModularL")) {
          nllCmdListString += ",OffsetLikelihood";
       }
    } else {
@@ -1231,7 +1282,7 @@ std::unique_ptr<RooFitResult> fitTo(RooAbsReal &real, RooAbsData &data, const Ro
    }
 
    RooCmdArg modularL_option;
-   if (pc.getInt("parallelize") != 0 || pc.getInt("enableParallelGradient") || pc.getInt("enableParallelDescent")) {
+   if (parallelRequested) {
       // Set to new style likelihood if parallelization is requested
       modularL_option = RooFit::ModularL(true);
       nllCmdList.Add(&modularL_option);
@@ -1244,6 +1295,12 @@ std::unique_ptr<RooFitResult> fitTo(RooAbsReal &real, RooAbsData &data, const Ro
       }
    } else {
       nll = std::unique_ptr<RooAbsReal>{dynamic_cast<RooAbsPdf &>(real).createNLL(data, nllCmdList)};
+   }
+
+   if (!nll) {
+      oocoutE(&real, InputArguments) << "RooFit::FitHelpers::fitTo(" << real.GetName()
+                                     << ") could not create the test statistic, no fit performed" << std::endl;
+      return nullptr;
    }
 
    return RooFit::FitHelpers::minimize(real, *nll, data, pc);

@@ -402,10 +402,14 @@ if(testing)
 endif()
 add_subdirectory (net)
 add_subdirectory (builtins/mathtext) # hard coded builtin for graf2d
+if (x11)
+  add_subdirectory (builtins/xvertext) # hard coded builtin for graf2d/x11
+endif()
 add_subdirectory (graf2d)
 if (opengl)
   add_subdirectory (builtins/glad) # hard coded builtin for graf3d
 endif()
+add_subdirectory (builtins/x3d) # hard coded builtin for graf3d
 add_subdirectory (graf3d)
 if(NOT minimal)
   add_subdirectory (gui)
