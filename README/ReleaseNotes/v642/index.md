@@ -36,6 +36,7 @@ The following people have contributed to this new version:
  Devajith Valaparambil Sreeramaswamy, CERN/EP-SFT,\
  Vassil Vassilev, Princeton,\
  Sandro Wenzel, CERN/EP-ALICE,\
+ Tristan Wenzel, ETHZ,\
 
 ## Deprecation and Removal
 
@@ -93,7 +94,11 @@ Replace `obj.Connect(signal, "TPyDispatcher", disp, "Dispatch()")` with
 
 ## I/O
 
+* Reading a collection without its dictionary no longer crashes when the elements hold a `std::string` or a `TString`. The emulated collection proxy relocated its elements with a raw memory copy when its buffer had to grow, which corrupts an object that points into itself, such as a `std::string` using the small string optimization; the invalid pointer was then freed when the object was destroyed. Such elements are now destroyed and reconstructed at the new location instead. This affected for instance a `std::vector<std::pair<std::string,double>>` read back without a dictionary.
+
 ## Core
+
+* `TClass::IsTriviallyRelocatable()` reports whether an object of a class can be moved to a new address with a raw memory copy, i.e. without running a move or copy constructor (trivial relocatability in the C++26 sense). It is backed by the new `kClassIsTriviallyRelocatable` class property, which `TInterpreter::ClassInfo_ClassProperty()` now fills in. A class the interpreter does not know about, in particular an emulated one, is conservatively reported as not relocatable.
 
 ## Histograms
 
@@ -207,6 +212,15 @@ Such file can be loaded locally in any web browser or send as attachment in emai
 
 ## Geometry
 
+### Improved multithreaded `TGeo` navigation
+
+Multithreaded `TGeo` navigation is now faster and more scalable, with improved thread-local state management that avoids
+false sharing, releases temporary memory during geometry cleanup, and correctly supports concurrent navigation of
+multiple geometries.
+
+For ALICE material-budget lookup-table generation on 28 cores, these changes reduced the runtime from 139 s to 72 s
+and improved scaling from 12x to 23x.
+
 The [TGeometry](https://root.cern/doc/master/classTGeometry.html) classes (Geant 3 shapes) have been moved out of Graf3D into their own library.
 To link to these classes, use the cmake target `TGeometry` (preferred), `root-config --libs`, or link with `-lTGeometry`.
 When ROOT is configured with `-Dgeom=Off`, these classes are now off as well.
@@ -216,6 +230,28 @@ The header X3DBuffer.h is no longer part of the installed ROOT headers.
 ## Documentation and Examples
 
 ## Build, Configuration and Testing
+
+### Building the CUDA backend of RooFit separately
+
+RooFit evaluates its models with backend libraries that `libRooBatchCompute`
+loads at runtime, one of which, `libRooBatchCompute_CUDA`, is the only part of
+ROOT that requires the CUDA toolkit. It is now possible to build that backend
+on its own against an already installed ROOT, so that distributions can ship a
+CUDA-free ROOT and provide the GPU backend as a separate package:
+
+```bash
+cmake -S <root-source-dir>/roofit/batchcompute -B build -DCMAKE_PREFIX_PATH=<root-install-prefix>
+cmake --build build
+cmake --install build
+```
+
+`roofit/batchcompute/CMakeLists.txt` doubles as the top-level `CMakeLists.txt`
+of that standalone project, so no CMake code has to be maintained downstream.
+By default the library is installed into the library directory of the ROOT
+installation it was configured against, which is where RooFit looks for it. See
+`roofit/batchcompute/README.md` for the details. Nothing changes for the regular
+ROOT build: `-Dcuda=ON` still builds the CUDA backend together with everything
+else.
 
 ## Versions of built-in packages
 

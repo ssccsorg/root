@@ -17,6 +17,7 @@
 
 class TVirtualPad;
 class TVirtualPS;
+class TImage;
 class TAttFill;
 class TAttLine;
 class TAttMarker;
@@ -117,7 +118,7 @@ public:
    virtual void     NewPage() {}
 
    //Methods for text dimensions handling
-   virtual Bool_t    HasTTFonts() const;
+   virtual Bool_t    HasTTFonts() const { return kFALSE; }
    virtual void      GetTextExtent(Font_t /* font */, Double_t /* size */, UInt_t & /* w */, UInt_t & /* h */, const char * /* mess */) {}
    virtual void      GetTextExtent(Font_t /* font */, Double_t /* size */, UInt_t & /* w */, UInt_t & /* h */, const wchar_t * /* mess */) {}
    virtual void      GetTextAscentDescent(Font_t /* font */, Double_t /* size */, UInt_t & /* w */, UInt_t & /* h */, const char * /* mess */) {}
@@ -150,6 +151,8 @@ public:
    virtual void     DrawTextNDC(Double_t u, Double_t v, const wchar_t *text, ETextMode mode) = 0;
 
    virtual void     DrawTextUrl(Double_t x, Double_t y, const char *text, const char *url);
+
+   virtual void     DrawImage(TImage *img, Int_t x, Int_t y, Int_t flags = 0);
 
    //gif, jpg, png, bmp output.
    virtual void     SaveImage(TVirtualPad *pad, const char *fileName, Int_t type) const = 0;

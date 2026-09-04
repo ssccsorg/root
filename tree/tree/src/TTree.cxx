@@ -4904,64 +4904,45 @@ static TBranch *R__FindBranchHelper(TObjArray *list, const char *branchname) {
    return nullptr;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-/// Return the branch that correspond to the path 'branchname', which can
-/// include the name of the tree or the omitted name of the parent branches.
-/// In case of ambiguity, returns the first match.
-/// \sa TTree::GetBranch
-
-TBranch* TTree::FindBranch(const char* branchname)
+TBranch *TTree::FindBranchFromSelf(const char *branchName)
 {
-   // We already have been visited while recursively looking
-   // through the friends tree, let return
-   if (kFindBranch & fFriendLockStatus) {
-      return nullptr;
-   }
-
-   if (!branchname)
-      return nullptr;
-
-   TBranch* branch = nullptr;
    // If the first part of the name match the TTree name, look for the right part in the
-   // list of branches.
-   // This will allow the branchname to be preceded by
-   // the name of this tree.
-   if (strncmp(fName.Data(),branchname,fName.Length())==0 && branchname[fName.Length()]=='.') {
-      branch = R__FindBranchHelper( GetListOfBranches(), branchname + fName.Length() + 1);
-      if (branch) return branch;
-   }
+   // list of branches. This will allow the branchName to be preceded by the name of this tree.
+   if (strncmp(fName.Data(), branchName, fName.Length()) == 0 && branchName[fName.Length()] == '.')
+      if (auto *br = R__FindBranchHelper(GetListOfBranches(), branchName + fName.Length() + 1))
+         return br;
+
    // If we did not find it, let's try to find the full name in the list of branches.
-   branch = R__FindBranchHelper(GetListOfBranches(), branchname);
-   if (branch) return branch;
+   if (auto *br = R__FindBranchHelper(GetListOfBranches(), branchName))
+      return br;
 
-   // If we still did not find, let's try to find it within each branch assuming it does not the branch name.
-   TIter next(GetListOfBranches());
-   while ((branch = (TBranch*) next())) {
-      TBranch* nestedbranch = branch->FindBranch(branchname);
-      if (nestedbranch) {
+   // If we still did not find, let's try to find it within each branch assuming it does not contain the branch name.
+   for (auto *branch : ROOT::Detail::TRangeStaticCast<TBranch>(*GetListOfBranches()))
+      if (auto *nestedbranch = branch->FindBranch(branchName))
          return nestedbranch;
-      }
-   }
 
-   // Search in list of friends.
+   return nullptr;
+}
+
+TBranch *TTree::FindBranchFromFriends(const char *branchName)
+{
    if (!fFriends) {
       return nullptr;
    }
+
    TFriendLock lock(this, kFindBranch);
-   TIter nextf(fFriends);
-   TFriendElement* fe = nullptr;
-   while ((fe = (TFriendElement*) nextf())) {
-      TTree* t = fe->GetTree();
+   for (auto *frEl : ROOT::Detail::TRangeStaticCast<TFriendElement>(*fFriends)) {
+      TTree *t = frEl->GetTree();
       if (!t) {
          continue;
       }
       // If the alias is present replace it with the real name.
-      const char *subbranch = strstr(branchname, fe->GetName());
-      if (subbranch != branchname) {
+      const char *subbranch = strstr(branchName, frEl->GetName());
+      if (subbranch != branchName) {
          subbranch = nullptr;
       }
       if (subbranch) {
-         subbranch += strlen(fe->GetName());
+         subbranch += strlen(frEl->GetName());
          if (*subbranch != '.') {
             subbranch = nullptr;
          } else {
@@ -4972,13 +4953,38 @@ TBranch* TTree::FindBranch(const char* branchname)
       if (subbranch) {
          name << t->GetName() << "." << subbranch;
       } else {
-         name << branchname;
+         name << branchName;
       }
-      branch = t->FindBranch(name.str().c_str());
-      if (branch) {
-         return branch;
-      }
+      if (auto *br = t->FindBranch(name.str().c_str()))
+         return br;
    }
+
+   return nullptr;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Return the branch that correspond to the path 'branchname', which can
+/// include the name of the tree or the omitted name of the parent branches.
+/// In case of ambiguity, returns the first match.
+/// \sa TTree::GetBranch
+
+TBranch *TTree::FindBranch(const char *branchname)
+{
+   // We already have been visited while recursively looking
+   // through the friends tree, let return
+   if (kFindBranch & fFriendLockStatus) {
+      return nullptr;
+   }
+
+   if (!branchname)
+      return nullptr;
+
+   if (auto *br = FindBranchFromSelf(branchname))
+      return br;
+
+   if (auto *br = FindBranchFromFriends(branchname))
+      return br;
+
    return nullptr;
 }
 
@@ -6305,51 +6311,30 @@ TIterator* TTree::GetIteratorOnAllLeaves(bool dir)
    return new TTreeFriendLeafIter(this, dir);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-/// Return pointer to the 1st Leaf named name in any Branch of this
-/// Tree or any branch in the list of friend trees.
-///
-/// The leaf name can contain the name of a friend tree with the
-/// syntax: friend_dir_and_tree.full_leaf_name
-/// the friend_dir_and_tree can be of the form:
-/// ~~~ {.cpp}
-///     TDirectoryName/TreeName
-/// ~~~
-
-TLeaf* TTree::GetLeafImpl(const char* branchname, const char *leafname)
+TLeaf *TTree::SearchLeafInListOfLeaves(const char *branchName, const char *leafName)
 {
-   TLeaf *leaf = nullptr;
-   if (branchname) {
-      TBranch *branch = FindBranch(branchname);
-      if (branch) {
-         leaf = branch->GetLeaf(leafname);
-         if (leaf) {
-            return leaf;
-         }
-      }
-   }
-   TIter nextl(GetListOfLeaves());
-   while ((leaf = (TLeaf*)nextl())) {
-      if (strcmp(leaf->GetFullName(), leafname) != 0 && strcmp(leaf->GetName(), leafname) != 0)
-         continue; // leafname does not match GetName() nor GetFullName(), this is not the right leaf
-      if (branchname) {
-         // check the branchname is also a match
+   for (auto *leaf : ROOT::Detail::TRangeStaticCast<TLeaf>(*GetListOfLeaves())) {
+      if (strcmp(leaf->GetFullName(), leafName) != 0 && strcmp(leaf->GetName(), leafName) != 0)
+         continue; // leafName does not match GetName() nor GetFullName(), this is not the right leaf
+      if (branchName) {
+         // check the branchName is also a match
          TBranch *br = leaf->GetBranch();
          // if a quick comparison with the branch full name is a match, we are done
-         if (!strcmp(br->GetFullName(), branchname))
+         if (!strcmp(br->GetFullName(), branchName))
             return leaf;
-         UInt_t nbch = strlen(branchname);
+         UInt_t nbch = strlen(branchName);
          const char* brname = br->GetName();
          TBranch *mother = br->GetMother();
-         if (strncmp(brname,branchname,nbch)) {
+         if (strncmp(brname, branchName, nbch)) {
             if (mother != br) {
                const char *mothername = mother->GetName();
                UInt_t motherlen = strlen(mothername);
-               if (!strcmp(mothername, branchname)) {
+               if (!strcmp(mothername, branchName)) {
                   return leaf;
-               } else if (nbch > motherlen && strncmp(mothername,branchname,motherlen)==0 && (mothername[motherlen-1]=='.' || branchname[motherlen]=='.')) {
+               } else if (nbch > motherlen && strncmp(mothername, branchName, motherlen) == 0 &&
+                          (mothername[motherlen - 1] == '.' || branchName[motherlen] == '.')) {
                   // The left part of the requested name match the name of the mother, let's see if the right part match the name of the branch.
-                  if (strncmp(brname,branchname+motherlen+1,nbch-motherlen-1)) {
+                  if (strncmp(brname, branchName + motherlen + 1, nbch - motherlen - 1)) {
                      // No it does not
                      continue;
                   } // else we have match so we can proceed.
@@ -6371,48 +6356,61 @@ TLeaf* TTree::GetLeafImpl(const char* branchname, const char *leafname)
       }
       return leaf;
    }
+
+   return nullptr;
+}
+
+TLeaf *TTree::SearchLeafInListOfFriends(const char *branchName, const char *leafName)
+{
    if (!fFriends) return nullptr;
-   TFriendLock lock(this,kGetLeaf);
-   TIter next(fFriends);
-   TFriendElement *fe;
-   while ((fe = (TFriendElement*)next())) {
-      TTree *t = fe->GetTree();
-      if (t) {
-         leaf = t->GetLeaf(branchname, leafname);
-         if (leaf) return leaf;
-      }
+   // The corresponding check is in GetLeaf
+   TFriendLock lock(this, kGetLeaf);
+
+   for (auto *frEl : ROOT::Detail::TRangeStaticCast<TFriendElement>(*fFriends))
+      if (auto *t = frEl->GetTree())
+         if (auto *leaf = t->GetLeaf(branchName, leafName))
+            return leaf;
+
+   // Second pass in the list of friends when the leaf name is prefixed by the tree name
+   TString strippedArg;
+   for (auto *frEl : ROOT::Detail::TRangeStaticCast<TFriendElement>(*fFriends)) {
+      TTree *t = frEl->GetTree();
+      if (!t) continue;
+      const char *subLeafName = strstr(leafName, frEl->GetName());
+      if (subLeafName != leafName)
+         continue;
+      Int_t l = strlen(frEl->GetName());
+      subLeafName += l;
+      if (*subLeafName != '.')
+         continue;
+      subLeafName++;
+      strippedArg += subLeafName;
+      if (auto *leaf = t->GetLeaf(branchName, subLeafName))
+         return leaf;
    }
 
-   //second pass in the list of friends when the leaf name
-   //is prefixed by the tree name
-   TString strippedArg;
-   next.Reset();
-   while ((fe = (TFriendElement*)next())) {
-      TTree *t = fe->GetTree();
-      if (!t) continue;
-      const char *subname = strstr(leafname,fe->GetName());
-      if (subname != leafname) continue;
-      Int_t l = strlen(fe->GetName());
-      subname += l;
-      if (*subname != '.') continue;
-      subname++;
-      strippedArg += subname;
-      leaf = t->GetLeaf(branchname,subname);
-      if (leaf) return leaf;
-   }
    return nullptr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// Return pointer to the 1st Leaf named name in any Branch of this
-/// Tree or any branch in the list of friend trees.
+/// Searches in this tree and any of its friends for a leaf named \p leafname in branch \p branchname , returns first
+/// match or nullptr if no match.
 ///
-/// The leaf name can contain the name of a friend tree with the
-/// syntax: friend_dir_and_tree.full_leaf_name
-/// the friend_dir_and_tree can be of the form:
+/// Search order:
 ///
-///     TDirectoryName/TreeName
-
+/// 1. Look for a \p branchname match (via FindBranch(branchname)):
+///     a. In the list of branches of this tree
+///     b. Recursively in nested branches of each branch of this tree
+///     c. In the friends of this tree
+/// 2. Look for matching \p branchname and \p leafname in list of leaves of this tree
+/// 3. Look for matching \p branchname and \p leafname in friends of this tree (eventually calling GetLeaf on each
+/// friend)
+///
+/// \note \p branchname can be an empty string, in which case the function will return the first leaf with matching
+///       \p leafname in any branch of this tree or any of its friends following the search order above.
+///
+/// \note \p leafname can contain the name of a friend tree with the syntax: `friend_dir_and_tree.full_leaf_name`. In
+///       particular, `friend_dir_and_tree` can be of the form `TDirectoryName/TreeName`.
 TLeaf* TTree::GetLeaf(const char* branchname, const char *leafname)
 {
    if (leafname == nullptr) return nullptr;
@@ -6423,16 +6421,27 @@ TLeaf* TTree::GetLeaf(const char* branchname, const char *leafname)
       return nullptr;
    }
 
-   return GetLeafImpl(branchname,leafname);
+   if (auto *br = FindBranch(branchname))
+      if (auto leaf = br->GetLeaf(leafname))
+         return leaf;
+
+   if (auto *leaf = SearchLeafInListOfLeaves(branchname, leafname))
+      return leaf;
+
+   if (auto *leaf = SearchLeafInListOfFriends(branchname, leafname))
+      return leaf;
+
+   return nullptr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// Return pointer to first leaf named "name" in any branch of this
-/// tree or its friend trees.
+/// Searches in this tree and any of its friends for a leaf named \p leafname , returns first leaf matching in any
+/// branch.
 ///
-/// \param[in] name may be in the form 'branch/leaf'
+/// See TTree::GetLeaf(const char* branchname, const char *leafname) for a description of the search order.
 ///
-
+/// \note \p name may be in the form `branch/leaf`
+///
 TLeaf* TTree::GetLeaf(const char *name)
 {
    // Return nullptr if name is invalid or if we have
@@ -6443,9 +6452,166 @@ TLeaf* TTree::GetLeaf(const char *name)
    std::string path(name);
    const auto sep = path.find_last_of('/');
    if (sep != std::string::npos)
-      return GetLeafImpl(path.substr(0, sep).c_str(), name+sep+1);
+      return GetLeaf(path.substr(0, sep).c_str(), name + sep + 1);
 
-   return GetLeafImpl(nullptr, name);
+   return GetLeaf(nullptr, name);
+}
+
+namespace {
+
+////////////////////////////////////////////////////////////////////////////////
+/// \brief Helper detecting *any* file transition of a tree dataset
+///
+/// This is a generic helper, works if the dataset is a TTree or a TChain, and
+/// transitively detects transitions in friends.
+///
+/// Comparing `TChain::GetTreeNumber()` before and after a call to
+/// `TChain::LoadTree` only detects that the chain itself switched to another of
+/// its own sub-trees. It does *not* detect that one of the (possibly indirect)
+/// friends of the chain switched to a new file: in that case the cached
+/// TLeaf/TBranch pointers become dangling even though the tree number of the
+/// chain is unchanged.
+///
+/// `TChain::LoadTree` (both when the chain itself moves to a new tree and, via
+/// `TChain::RefreshFriendAddresses`, when only a friend was updated) calls
+/// `fNotify->Notify()`. Subscribing to that notification is therefore the
+/// reliable way to know that anything in the friend graph moved.
+///
+/// This derives directly from TNotifyLinkBase rather than using TNotifyLink<T>
+/// because the latter would require a dictionary for the instantiation.
+///
+/// We could also use
+/// ```
+/// struct TLeafRefresher {
+///    bool fDirty = true;
+///    bool Notify() { fDirty = true; return true; }
+/// };
+/// ```
+/// declared in TChain.h or InternalTreeUtils.hxx and genereate a dictionary for
+/// TNotifyLink<TLeafRefresher>.
+class FileTransitionDetector final : public TNotifyLinkBase {
+   /// Set to true initially so that the very first iteration performs the lookup.
+   bool fChanged = true;
+   TTree &fChain;
+
+public:
+   FileTransitionDetector(TTree &chain) : fChain(chain) { PrependLink(fChain); }
+
+   ~FileTransitionDetector() override { RemoveLink(fChain); }
+   FileTransitionDetector(const FileTransitionDetector &) = delete;
+   FileTransitionDetector &operator=(const FileTransitionDetector &) = delete;
+   FileTransitionDetector(FileTransitionDetector &&) = delete;
+   FileTransitionDetector &operator=(FileTransitionDetector &&) = delete;
+
+   /// Must return true: returning false would make TChain::LoadTree fail with -6.
+   Bool_t Notify() override
+   {
+      fChanged = true;
+      // Propagate to the rest of the list of subscribers, as TNotifyLink does.
+      if (fNext)
+         return fNext->Notify();
+      return true;
+   }
+
+   /// Returns true (once) if the chain or any of its direct or indirect friends
+   /// switched to a new tree since the last call.
+   bool CheckAndReset()
+   {
+      bool changed = fChanged;
+      fChanged = false;
+      return changed;
+   }
+};
+} // anonymous namespace
+
+////////////////////////////////////////////////////////////////////////////////
+/// Computes the extremum (minimum or maximum) for the input column name
+///
+/// It takes into account the following situations:
+///
+/// * The dataset is a TTree and contains the input column
+/// * The dataset is a TChain and contains the input column, in which case the methods detect file switching and update
+/// the leaf pointer correctly.
+/// * The dataset is a TChain, contains the input column, but some files miss it, in which case the methods skip the
+/// entries from those files.
+/// * The dataset has a friend TTree which contains the input column
+/// * The dataset is a TChain and has a friend TChain which contains the input column, in which case the methods detect
+/// file switching on the friend and update the leaf pointer correctly.
+/// * The dataset is a TChain and has a friend TChain. The input column is partially available in either the main or the
+/// friend chain. This can happen for example if the main chain has some files missing the input column and the user
+/// knowingly injects the input column in the files of the friend chain. In this case, the methods detect file switching
+/// at the boundary between files of the main chain, but also detect if there are file switches in the friend chain.
+/// Notably, the entries must still be overall aligned between the main chain and the friend one.
+double TTree::ComputeExtremum(const char *columname, double errVal, bool (*cmp)(double, double))
+{
+   // Ensure the TTree cursor is brought back to the current entry after computing the value
+   struct CurrentEntryRAII {
+
+      Long64_t fCurrentEntry;
+      TTree &fTree;
+
+      CurrentEntryRAII(TTree &tree) : fCurrentEntry(tree.GetReadEntry()), fTree(tree) {}
+
+      ~CurrentEntryRAII() { fTree.LoadTree(fCurrentEntry); }
+   } raii{*this};
+
+   // Initial lookup of the leaf name, this will find it whether it's in the
+   // current tree or in any of its friends
+   TLeaf *leaf = GetLeaf(columname);
+   if (!leaf) {
+      return 0;
+   }
+   TBranch *branch = leaf->GetBranch();
+   assert(branch); // leaf without a branch is not allowed by construction
+
+   // create cache if wanted
+   if (fCacheDoAutoInit)
+      SetCacheSizeAux();
+
+   FileTransitionDetector fileTransition{*this};
+   double extremum{errVal};
+   for (Long64_t i = 0; i < fEntries; ++i) {
+      const auto entryNumber = GetEntryNumber(i);
+      if (entryNumber < 0) break;
+      const auto localEntryNumber = LoadTree(entryNumber);
+      if (localEntryNumber < 0)
+         break;
+
+      // At every entry, we check if the processing has triggered a switch to
+      // a new file. We detect both a switch of the current tree in the chain
+      // (if this tree is a TChain) as well as a switch in any of its direct
+      // and indirect friends (if they are also a TChain)
+      if (fileTransition.CheckAndReset()) {
+         branch = nullptr;
+         leaf = GetLeaf(columname);
+         if (leaf) {
+            branch = leaf->GetBranch();
+            assert(branch); // leaf without a branch is not allowed by construction
+         }
+      }
+
+      // We accept that the leaf may not be present in one or more files in case
+      // it was found in a chain, we just continue processing the next entry
+      if (!leaf)
+         continue;
+
+      // If the branch belongs to a friend, the local entry number of the friend
+      // may differ from the one of the chain (e.g. when the friend is indexed).
+      // The owning TTree has already been positioned by TChain::LoadTree, so
+      // its read entry is the correct one to use.
+      auto *owningTree = branch->GetTree();
+      branch->GetEntry(owningTree->GetReadEntry());
+
+      auto leafLen{leaf->GetLen()};
+      for (decltype(leafLen) j = 0; j < leafLen; ++j) {
+         auto val = leaf->GetValue(j);
+         if (cmp(val, extremum)) {
+            extremum = val;
+         }
+      }
+   }
+
+   return extremum;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -6453,31 +6619,9 @@ TLeaf* TTree::GetLeaf(const char *name)
 /// if the Tree has an associated TEventList or TEntryList, the maximum
 /// is computed for the entries in this list.
 
-Double_t TTree::GetMaximum(const char* columname)
+Double_t TTree::GetMaximum(const char *columname)
 {
-   TLeaf* leaf = this->GetLeaf(columname);
-   if (!leaf) {
-      return 0;
-   }
-
-   // create cache if wanted
-   if (fCacheDoAutoInit)
-      SetCacheSizeAux();
-
-   TBranch* branch = leaf->GetBranch();
-   Double_t cmax = -DBL_MAX;
-   for (Long64_t i = 0; i < fEntries; ++i) {
-      Long64_t entryNumber = this->GetEntryNumber(i);
-      if (entryNumber < 0) break;
-      branch->GetEntry(entryNumber);
-      for (Int_t j = 0; j < leaf->GetLen(); ++j) {
-         Double_t val = leaf->GetValue(j);
-         if (val > cmax) {
-            cmax = val;
-         }
-      }
-   }
-   return cmax;
+   return ComputeExtremum(columname, std::numeric_limits<double>::lowest(), [](double a, double b) { return a > b; });
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -6495,29 +6639,7 @@ Long64_t TTree::GetMaxTreeSize()
 
 Double_t TTree::GetMinimum(const char* columname)
 {
-   TLeaf* leaf = this->GetLeaf(columname);
-   if (!leaf) {
-      return 0;
-   }
-
-   // create cache if wanted
-   if (fCacheDoAutoInit)
-      SetCacheSizeAux();
-
-   TBranch* branch = leaf->GetBranch();
-   Double_t cmin = DBL_MAX;
-   for (Long64_t i = 0; i < fEntries; ++i) {
-      Long64_t entryNumber = this->GetEntryNumber(i);
-      if (entryNumber < 0) break;
-      branch->GetEntry(entryNumber);
-      for (Int_t j = 0;j < leaf->GetLen(); ++j) {
-         Double_t val = leaf->GetValue(j);
-         if (val < cmin) {
-            cmin = val;
-         }
-      }
-   }
-   return cmin;
+   return ComputeExtremum(columname, std::numeric_limits<double>::max(), [](double a, double b) { return a < b; });
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -212,10 +212,10 @@ void TVirtualPadPainter::SetCursor(Int_t device, ECursor cursor)
       gVirtualX->SetCursor(device, cursor);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-/// Return true if TTF font can be used
 
-Bool_t TVirtualPadPainter::HasTTFonts() const
+////////////////////////////////////////////////////////////////////////////////
+/// Draw image, need to be implemented in correspondent
+
+void TVirtualPadPainter::DrawImage(TImage *, Int_t, Int_t, Int_t)
 {
-   return gVirtualX ? gVirtualX->HasTTFonts() : kFALSE;
 }

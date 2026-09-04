@@ -20,10 +20,6 @@
 
 #include <Cocoa/Cocoa.h>
 
-#  include <ft2build.h>
-#  include FT_FREETYPE_H
-#  include FT_GLYPH_H
-
 #include "QuartzFillArea.h"
 #include "TColorGradient.h"
 #include "QuartzMarker.h"
@@ -35,6 +31,7 @@
 #include "QuartzText.h"
 #include "QuartzLine.h"
 #include "CocoaUtils.h"
+#include "TTFhandle.h"
 #include "TGQuartz.h"
 #include "TString.h"
 #include "TPoint.h"
@@ -43,11 +40,6 @@
 #include "TROOT.h"
 #include "TMath.h"
 #include "TEnv.h"
-#include "TTF.h"
-
-// To scale fonts to the same size as the TTF version
-const Float_t kScale = 0.93376068;
-
 
 namespace X11 = ROOT::MacOSX::X11;
 namespace Quartz = ROOT::Quartz;
@@ -438,24 +430,17 @@ void TGQuartz::DrawPolyMarker(Int_t n, TPoint *xy)
 
 
 //______________________________________________________________________________
-
-std::vector<UniChar> quartz_get_greek_unicars(const char *text)
+void TGQuartz::DrawTextW(WinContext_t wctxt, Int_t x, Int_t y, Float_t angle, Float_t /* mgn */,
+                         const char *text, ETextMode mode)
 {
-   //This is a hack. Correct way is to extract glyphs from symbol.ttf,
-   //find correct mapping, place this glyphs. This requires manual layout though (?),
-   //and as usually, I have to many things to do, may be, one day I'll fix text rendering also.
-   //This hack work only on MacOSX 10.7.3, does not work on iOS and I'm not sure about future/previous
-   //versions of MacOSX.
-   std::vector<UniChar> unichars(std::strlen(text));
-   for (std::size_t i = 0; i < unichars.size(); ++i)
-      unichars[i] = 0xF000 + (unsigned char)text[i];
-   return unichars;
-}
+   if (!text || !*text)
+      return;
 
-//______________________________________________________________________________
-void TGQuartz::DrawTextW(WinContext_t wctxt, Int_t x, Int_t y, Float_t /* angle */ , Float_t /* mgn */,
-                         const char *text, ETextMode /* mode */)
-{
+   if (!TTFhandle::Init()) {
+      Error("DrawTextW", "char string to draw, but TTF initialization failed");
+      return;
+   }
+
    auto drawable0 = (NSObject<X11Drawable> * const) wctxt;
    if (!drawable0)
       return;
@@ -463,40 +448,27 @@ void TGQuartz::DrawTextW(WinContext_t wctxt, Int_t x, Int_t y, Float_t /* angle 
    if ([drawable0 isDirectDraw])
       return;
 
-   if (!text || !text[0])//Can this ever happen? TPad::PaintText does not check this.
+   UInt_t width = 0, height = 0;
+   Int_t xy = 0;
+   GetWindowSize((Drawable_t) drawable0.fID, xy, xy, width, height);
+
+   auto &att = GetAttText(wctxt);
+
+   //Do not draw anything when pixel size too small
+   if (att.GetTextSize() < 1.5)
       return;
 
-   auto &atttext = GetAttText(wctxt);
+   TTFhandle ttf;
 
-   if (atttext.GetTextSize() < 1.5)//Do not draw anything, or CoreText will create some small (but not of size 0 font).
-      return;
+   ttf.SetSmoothing(kTRUE);
+   ttf.SetTextFont(att.GetTextFont());
+   ttf.SetTextSize(att.GetTextSize());
+   ttf.SetRotationMatrix(angle);
+   ttf.PrepareString(text);
+   ttf.LayoutGlyphs();
 
-   auto drawable = (NSObject<X11Drawable> * const) GetPixmapDrawable(drawable0, "DrawTextW");
-   if (!drawable)
-      return;
-
-   CGContextRef ctx = drawable.fContext;
-   const Quartz::CGStateGuard ctxGuard(ctx);
-
-   //Before any core text drawing operations, reset text matrix.
-   CGContextSetTextMatrix(ctx, CGAffineTransformIdentity);
-
-   try {
-      if (CTFontRef currentFont = fPimpl->fFontManager.SelectFont(atttext.GetTextFont(), kScale * atttext.GetTextSize())) {
-         const unsigned fontIndex = atttext.GetTextFont() / 10;
-         if (fontIndex == 12 || fontIndex == 15) {
-            //Greek and math symbols.
-            auto unichars = quartz_get_greek_unicars(text);
-            Quartz::TextLine ctLine(unichars, currentFont, atttext.GetTextColor());
-            ctLine.DrawLine(ctx, x, X11::LocalYROOTToCocoa(drawable, y), atttext);
-         } else {
-            const Quartz::TextLine ctLine(text, currentFont, atttext.GetTextColor());
-            ctLine.DrawLine(ctx, x, X11::LocalYROOTToCocoa(drawable, y), atttext);
-         }
-      }
-   } catch (const std::exception &e) {
-      Error("DrawTextW", "Exception from Quartz::TextLine: %s", e.what());
-   }
+   if (ttf.ApplyAlignRotate(x, y, att.GetTextAlign(), width, height))
+      DrawTTFglyphsW(wctxt, x, y, ttf, mode);
 }
 
 //______________________________________________________________________________
@@ -525,56 +497,44 @@ void TGQuartz::DrawTextW(WinContext_t wctxt, Int_t x, Int_t y, Float_t angle, Fl
    if ([drawable0 isDirectDraw])
       return;
 
-   auto drawable = (NSObject<X11Drawable> * const) GetPixmapDrawable(drawable0, "DrawTextW");
-   if (!drawable)
-      return;
+   UInt_t width = 0, height = 0;
+   Int_t xy = 0;
+   GetWindowSize((Drawable_t) drawable0.fID, xy, xy, width, height);
 
-
-   //Do not draw anything, or CoreText will create some small (but not of size 0 font).
    auto &att = GetAttText(wctxt);
 
-   if (att.GetTextSize() < 1.5)//Do not draw anything, or CoreText will create some small (but not of size 0 font).
+   //Do not draw anything, or CoreText will create some small (but not of size 0 font).
+   if (att.GetTextSize() < 1.5)
       return;
-
-   TTFhandle::SetSmoothing(kTRUE);
 
    TTFhandle ttf;
 
+   ttf.SetSmoothing(kTRUE);
    ttf.SetTextFont(att.GetTextFont());
    ttf.SetTextSize(att.GetTextSize());
    ttf.SetRotationMatrix(angle);
    ttf.PrepareString(text);
    ttf.LayoutGlyphs();
 
-   Int_t txalh = att.GetTextAlign() / 10;
-   Int_t txalv = att.GetTextAlign() % 10;
-   FT_Vector   align_vect;                 ///< alignment vector
+   if (ttf.ApplyAlignRotate(x, y, att.GetTextAlign(), width, height))
+      DrawTTFglyphsW(wctxt, x, y, ttf, mode);
+}
 
-   // const EAlign align = EAlign(fTextAlign);
-   // vertical alignment
-   if (txalv == 3) // align == kTLeft || align == kTCenter || align == kTRight)
-      align_vect.y = ttf.GetAscent();
-   else if (txalv == 2) //  if (align == kMLeft || align == kMCenter || align == kMRight) {
-      align_vect.y = ttf.GetAscent() / 2;
-   else
-      align_vect.y = 0;
+//______________________________________________________________________________
+void TGQuartz::DrawTTFglyphsW(WinContext_t wctxt, Int_t x1, Int_t y1, TTFhandle &ttf, ETextMode mode)
+{
+   auto drawable0 = (NSObject<X11Drawable> * const) wctxt;
+   if (!drawable0)
+      return;
 
-   // horizontal alignment
-   if (txalh == 3) // align == kTRight || align == kMRight || align == kBRight) {
-      align_vect.x = ttf.GetWidth();
-   else if (txalh == 2) // (align == kTCenter || align == kMCenter || align == kBCenter) {
-      align_vect.x = ttf.GetWidth() / 2;
-   else
-      align_vect.x = 0;
+   if ([drawable0 isDirectDraw])
+      return;
 
-   FT_Vector_Transform(&align_vect, ttf.GetRotMatrix());
-   //This shift is from the original code.
-   align_vect.x = align_vect.x >> 6;
-   align_vect.y = align_vect.y >> 6;
-
+   auto drawable = (NSObject<X11Drawable> * const) GetPixmapDrawable(drawable0, "DrawTTFglyphsW");
+   if (!drawable)
+      return;
 
    //This code is a modified (for Quartz) version of TG11TTF text drawing
-
    QuartzPixmap *dstPixmap = nil;
    if ([drawable isKindOfClass : [QuartzPixmap class]])
       dstPixmap = (QuartzPixmap *)drawable;
@@ -583,38 +543,17 @@ void TGQuartz::DrawTextW(WinContext_t wctxt, Int_t x, Int_t y, Float_t angle, Fl
 
    if (!dstPixmap) {
       //I can not read pixels from a window (I can, but this is too slow and unreliable).
-      Error("DrawTextW", "fSelectedDrawable is neither QuartzPixmap nor a double buffered window");
+      Error("DrawTTFglyphsW", "fSelectedDrawable is neither QuartzPixmap nor a double buffered window");
       return;
    }
 
-   //Comment from TGX11TTF:
-   // compute the size and position of the XImage that will contain the text
-   const Int_t xOff = TMath::Max(0, (Int_t) -ttf.GetBox().xMin);
-   const Int_t yOff = TMath::Max(0, (Int_t) -ttf.GetBox().yMin);
-
-   const Int_t w = ttf.GetBox().xMax + xOff;
-   const Int_t h = ttf.GetBox().yMax + yOff;
-
-   // If w or h is 0, very likely the string is only blank characters
-   if (w <= 0 || h <= 0)
-      return;
-
-   const Int_t x1 = x - xOff - align_vect.x;
-   const Int_t y1 = y + yOff + align_vect.y - h;
-
-   UInt_t width = 0, height = 0;
-   Int_t xy = 0;
-
-   GetWindowSize((Drawable_t) drawable0.fID, xy, xy, width, height);
-
-   // If string falls outside window, there is probably no need to draw it.
-   if (x1 + w <= 0 || x1 >= (Int_t)width || y1 + h <= 0 || y1 >= (Int_t)height)
-      return;
+   Int_t w    = ttf.GetGlyphsWidth();
+   Int_t h    = ttf.GetGlyphsHeight();
 
    //By default, all pixels are set to 0 (all components, that's what code in TGX11TTF also does here).
    Util::NSScopeGuard<QuartzPixmap> pixmap([[QuartzPixmap alloc] initWithW : w H : h scaleFactor : 1.f]);
    if (!pixmap.Get()) {
-      Error("DrawTextW", "pixmap creation failed");
+      Error("DrawTTFglyphsW", "pixmap creation failed");
       return;
    }
 
@@ -631,7 +570,7 @@ void TGQuartz::DrawTextW(WinContext_t wctxt, Int_t x, Int_t y, Float_t angle, Fl
          arrayGuard.Reset([dstPixmap readColorBits : bbox]);
 
       if (!arrayGuard.Get()) {
-         Error("DrawTextW", "problem with reading background pixels");
+         Error("DrawTTFglyphsW", "problem with reading background pixels");
          return;
       }
 
@@ -654,15 +593,112 @@ void TGQuartz::DrawTextW(WinContext_t wctxt, Int_t x, Int_t y, Float_t angle, Fl
    CGContextRef ctx = drawable.fContext;
    const Quartz::CGStateGuard ctxGuard(ctx);
 
+   auto &att = GetAttText(wctxt);
+
+   ULong_t fore = TGCocoa::GetPixel(att.GetTextColor());
+   ULong_t back = 0xffffff;
+
    CGContextSetRGBStrokeColor(ctx, 0., 0., 1., 1.);
    // paint the glyphs in the pixmap.
-   for (UInt_t n = 0; n < ttf.GetNumGlyphs(); ++n) {
-      if (auto bitmap = ttf.GetGlyphBitmap(n)) {
-         const Int_t bx = bitmap->left + xOff;
-         const Int_t by = h - bitmap->top - yOff;
+   for (UInt_t nglyph = 0; nglyph < ttf.GetNumGlyphs(); nglyph++) {
+      Int_t bx = 0, by = 0;
+      UChar_t *buffer = nullptr;
+      UInt_t width = 0, rows = 0, pitch = 0;
+      if (!ttf.GetGlyphData(nglyph, bx, by, buffer, width, rows, pitch))
+         continue;
 
-         DrawFTGlyph(pixmap.Get(), &bitmap->bitmap, TGCocoa::GetPixel(att.GetTextColor()),
-                     mode == kClear ? ULong_t(-1) : 0xffffff, bx, by);
+      if (ttf.GetSmoothing()) {
+         ColorStruct_t col[5];
+         // background kClear, i.e. transparent, we take as background color
+         // the average of the rgb values of all pixels covered by this character
+         if (mode == kClear) {
+            const UInt_t maxDots = TMath::Min((UInt_t) 50000, width * rows);
+
+            //In original code, they first have to extract
+            //pixels and call XQueryColors.
+            //I have only one loop here.
+            ULong_t r = 0, g = 0, b = 0;
+            UInt_t dotCnt = 0;
+            for (unsigned y = 0; y < rows; y++) {
+               for (unsigned x = 0; x < width; x++) {
+                  if (x + bx < pixmap.Get().fWidth && y + by < pixmap.Get().fHeight) {
+                     const unsigned char * const pixels = pixmap.Get().fData + (y + by) * pixmap.Get().fWidth * 4 + (x + bx) * 4;
+                     r += UShort_t(pixels[0] / 255. * 0xffff);
+                     g += UShort_t(pixels[1] / 255. * 0xffff);
+                     b += UShort_t(pixels[2] / 255. * 0xffff);
+                     if (++dotCnt >= maxDots)
+                        break;
+                  }
+               }
+            }
+
+            if (dotCnt > 0) {
+               r /= dotCnt;
+               g /= dotCnt;
+               b /= dotCnt;
+            }
+
+            col[0].fRed = (UShort_t) r;
+            col[0].fGreen = (UShort_t) g;
+            col[0].fBlue = (UShort_t) b;
+         } else {
+            // request background color
+            col[0].fPixel = back;
+            TGCocoa::QueryColor(kNone, col[0]);
+         }
+
+         // request foreground color
+         col[4].fPixel = fore;
+         TGCocoa::QueryColor(kNone, col[4]);//calculate fRed/fGreen/fBlue triple from fPixel.
+
+         // interpolate between fore and background colors
+         for (int x = 3; x > 0; --x) {
+            col[x].fRed   = (col[4].fRed   * x + col[0].fRed   * (4 - x)) / 4;
+            col[x].fGreen = (col[4].fGreen * x + col[0].fGreen * (4 - x)) / 4;
+            col[x].fBlue  = (col[4].fBlue  * x + col[0].fBlue  * (4 - x)) / 4;
+            TGCocoa::AllocColor(kNone, col[x]);//Calculate fPixel from fRed/fGreen/fBlue triplet.
+         }
+
+         // put smoothed character, character pixmap values are an index
+         // into the 5 colors used for aliasing (4 = foreground, 0 = background)
+         const unsigned char *s = buffer;
+         for (unsigned y = 0; y < rows; ++y) {
+            for (unsigned x = 0; x < width; ++x) {
+               unsigned char d = (((*s++ & 0xff) + 10) * 5) / 256;
+               if (d > 4)
+                  d = 4;
+               if (d > 0) {
+                  const UChar_t pixel[] = {UChar_t(double(col[d].fRed) / 0xffff * 255),
+                                          UChar_t(double(col[d].fGreen) / 0xffff * 255),
+                                          UChar_t(double(col[d].fBlue) / 0xffff * 255), 255};
+                  [pixmap.Get() putPixel : pixel X : bx + x Y : by + y];
+               }
+            }
+         }
+      } else {
+         // no smoothing, just put character using foreground color
+         unsigned char rgba[4] = {};
+         rgba[3] = 255;
+         X11::PixelToRGB(fore, rgba);
+         unsigned char d = 0;
+
+         const unsigned char *row = buffer;
+         for (unsigned y = 0; y < rows; ++y) {
+            unsigned n = 0;
+            const unsigned char *s = row;
+            for (unsigned x = 0; x < width; ++x) {
+               if (!n)
+                  d = *s++;
+
+               if (TESTBIT(d,7 - n))
+                  [pixmap.Get() putPixel : rgba X : bx + x Y : by + y];
+
+               if (++n == kBitsPerByte)
+                  n = 0;
+            }
+
+            row += pitch;
+         }
       }
    }
 
@@ -671,169 +707,13 @@ void TGQuartz::DrawTextW(WinContext_t wctxt, Int_t x, Int_t y, Float_t angle, Fl
    [dstPixmap copy : pixmap.Get() area : copyArea withMask : nil clipOrigin : X11::Point() toPoint : dstPoint];
 }
 
+
+
 //______________________________________________________________________________
 void TGQuartz::DrawText(Int_t x, Int_t y, Float_t angle, Float_t mgn,
                         const wchar_t *text, ETextMode mode)
 {
    DrawTextW(GetSelectedContext(), x, y, angle, mgn, text, mode);
-}
-
-//______________________________________________________________________________
-void TGQuartz::GetTextExtent(UInt_t &w, UInt_t &h, char *text)
-{
-   // Returns the size of the specified character string "mess".
-   //
-   // w    - the text width
-   // h    - the text height
-   // text - the string
-
-   w = h = 0;
-
-   if (!text || !*text)
-      return;
-
-   auto fontref = fPimpl->fFontManager.SelectFont(GetTextFont(), kScale*GetTextSize());
-   if (!fontref)
-      return;
-   const unsigned fontIndex = GetTextFont() / 10;
-   if (fontIndex == 12 || fontIndex == 15) {
-      //Greek and math symbols.
-      auto unichars = quartz_get_greek_unicars(text);
-      fPimpl->fFontManager.GetTextBounds(fontref, w, h, unichars);
-   } else {
-      fPimpl->fFontManager.GetTextBounds(fontref, w, h, text);
-   }
-}
-
-//______________________________________________________________________________
-Bool_t TGQuartz::GetTextExtentA(Font_t font, Double_t size, UInt_t &w, UInt_t &h, const char *text)
-{
-   if (!text || !*text) {
-      w = h = 0;
-      return kTRUE;
-   }
-
-   auto fontref = fPimpl->fFontManager.SelectFont(font, kScale * size);
-   if (!fontref)
-      return kFALSE;
-
-   const unsigned fontIndex = font / 10;
-   if (fontIndex == 12 || fontIndex == 15) {
-      //Greek and math symbols.
-      auto unichars = quartz_get_greek_unicars(text);
-      fPimpl->fFontManager.GetTextBounds(fontref, w, h, unichars);
-   } else {
-      fPimpl->fFontManager.GetTextBounds(fontref, w, h, text);
-   }
-
-   return kTRUE;
-}
-
-//______________________________________________________________________________
-Bool_t TGQuartz::GetTextExtentA(Font_t, Double_t, UInt_t &w, UInt_t &h, const wchar_t *)
-{
-   // do not handle wchar, pad painter will switch to TTF
-   w = h = 0;
-   return kFALSE;
-}
-
-
-//______________________________________________________________________________
-Int_t TGQuartz::GetFontAscent() const
-{
-   // Returns the ascent of the current font (in pixels).
-   // The ascent of a font is the distance from the baseline
-   // to the highest position characters extend to.
-   if (auto fontref = fPimpl->fFontManager.SelectFont(GetTextFont(), kScale*GetTextSize()))
-      return Int_t(fPimpl->fFontManager.GetAscent(fontref));
-
-   return 0;
-}
-
-//______________________________________________________________________________
-Int_t TGQuartz::GetFontAscent(const char *text) const
-{
-   // Returns the ascent of the current font (in pixels).
-   // The ascent of a font is the distance from the baseline
-   // to the highest position characters extend to.
-
-   //In case of any problem we can always resort to the old version:
-   if (!text || !*text)
-      return GetFontAscent();
-
-   if (auto fontref = fPimpl->fFontManager.SelectFont(GetTextFont(), kScale*GetTextSize())) {
-      const unsigned fontIndex = GetTextFont() / 10;
-      if (fontIndex == 12 || fontIndex == 15) {
-         //Greek and math symbols.
-         auto unichars = quartz_get_greek_unicars(text);
-         return Int_t(fPimpl->fFontManager.GetAscent(fontref, unichars));
-      } else
-         return Int_t(fPimpl->fFontManager.GetAscent(fontref, text));
-   }
-
-   return 0;
-}
-
-//______________________________________________________________________________
-Int_t TGQuartz::GetFontDescent() const
-{
-   // Returns the descent of the current font (in pixels.
-   // The descent is the distance from the base line
-   // to the lowest point characters extend to.
-   if (auto fontref = fPimpl->fFontManager.SelectFont(GetTextFont(), kScale*GetTextSize()))
-      return Int_t(fPimpl->fFontManager.GetDescent(fontref));
-
-   return 0;
-}
-
-//______________________________________________________________________________
-Int_t TGQuartz::GetFontDescent(const char *text) const
-{
-   // Returns the descent of the current font (in pixels.
-   // The descent is the distance from the base line
-   // to the lowest point characters extend to.
-
-   //That's how it's tested in ROOT:
-   if (!text || !*text)
-      return GetFontDescent();
-
-   if (auto fontref = fPimpl->fFontManager.SelectFont(GetTextFont(), kScale*GetTextSize())) {
-      const unsigned fontIndex = GetTextFont() / 10;
-      if (fontIndex == 12 || fontIndex == 15) {
-         //Greek and math symbols.
-         auto unichars = quartz_get_greek_unicars(text);
-         return Int_t(fPimpl->fFontManager.GetDescent(fontref, unichars));
-      } else
-         return Int_t(fPimpl->fFontManager.GetDescent(fontref, text));
-   }
-
-   return 0;
-}
-
-//______________________________________________________________________________
-Bool_t TGQuartz::GetFontAscentDescent(Font_t font, Double_t size, UInt_t &a, UInt_t &d, const char *text)
-{
-   a = d = 0;
-
-   auto fontref = fPimpl->fFontManager.SelectFont(font, kScale * size);
-   if (!fontref)
-      return kFALSE;
-
-   const unsigned fontIndex = font / 10;
-   if (!text || !*text) {
-      a = fPimpl->fFontManager.GetAscent(fontref);
-      d = fPimpl->fFontManager.GetDescent(fontref);
-   } else if (fontIndex == 12 || fontIndex == 15) {
-      //Greek and math symbols.
-      auto unichars = quartz_get_greek_unicars(text);
-      a = fPimpl->fFontManager.GetAscent(fontref, unichars);
-      d = fPimpl->fFontManager.GetDescent(fontref, unichars);
-   } else {
-      a = fPimpl->fFontManager.GetAscent(fontref, text);
-      d = fPimpl->fFontManager.GetDescent(fontref, text);
-   }
-
-   return kTRUE;
 }
 
 
@@ -1039,114 +919,6 @@ void TGQuartz::SetAttText(WinContext_t wctxt, const TAttText &att)
 
 //TTF related part.
 
-//______________________________________________________________________________
-void TGQuartz::DrawFTGlyph(void *_pixmap, void *_source, ULong_t fore, ULong_t back, Int_t bx, Int_t by)
-{
-   //This function is a "remake" of TGX11FFT::DrawImage.
-
-   //I'm using this code to reproduce the same text as generated by TGX11TTF.
-   //It's quite sloppy, as in original version. I tried to make it not so ugly and
-   //more or less readable.
-
-   auto pixmap = (QuartzPixmap *)_pixmap;
-   auto source = (FT_Bitmap *) _source;
-   assert(pixmap != nil && "DrawFTGlyph, pixmap parameter is nil");
-   assert(source != nil && "DrawFTGlyph, source parameter is null");
-
-   if (TTFhandle::GetSmoothing()) {
-      ColorStruct_t col[5];
-      // background kClear, i.e. transparent, we take as background color
-      // the average of the rgb values of all pixels covered by this character
-      if (back == ULong_t(-1)) {
-         const UInt_t maxDots = TMath::Min((UInt_t) 50000, source->width * source->rows);
-
-         //In original code, they first have to extract
-         //pixels and call XQueryColors.
-         //I have only one loop here.
-         ULong_t r = 0, g = 0, b = 0;
-         UInt_t dotCnt = 0;
-         for (unsigned y = 0; y < source->rows; y++) {
-            for (unsigned x = 0; x < source->width; x++) {
-               if (x + bx < pixmap.fWidth && y + by < pixmap.fHeight) {
-                  const unsigned char * const pixels = pixmap.fData + (y + by) * pixmap.fWidth * 4 + (x + bx) * 4;
-                  r += UShort_t(pixels[0] / 255. * 0xffff);
-                  g += UShort_t(pixels[1] / 255. * 0xffff);
-                  b += UShort_t(pixels[2] / 255. * 0xffff);
-                  if (++dotCnt >= maxDots)
-                     break;
-               }
-            }
-         }
-
-         if (dotCnt > 0) {
-            r /= dotCnt;
-            g /= dotCnt;
-            b /= dotCnt;
-         }
-
-         col[0].fRed = (UShort_t) r;
-         col[0].fGreen = (UShort_t) g;
-         col[0].fBlue = (UShort_t) b;
-      } else {
-         // request background color
-         col[0].fPixel = back;
-         TGCocoa::QueryColor(kNone, col[0]);
-      }
-
-      // request foreground color
-      col[4].fPixel = fore;
-      TGCocoa::QueryColor(kNone, col[4]);//calculate fRed/fGreen/fBlue triple from fPixel.
-
-      // interpolate between fore and background colors
-      for (int x = 3; x > 0; --x) {
-         col[x].fRed   = (col[4].fRed   * x + col[0].fRed   * (4 - x)) / 4;
-         col[x].fGreen = (col[4].fGreen * x + col[0].fGreen * (4 - x)) / 4;
-         col[x].fBlue  = (col[4].fBlue  * x + col[0].fBlue  * (4 - x)) / 4;
-         TGCocoa::AllocColor(kNone, col[x]);//Calculate fPixel from fRed/fGreen/fBlue triplet.
-      }
-
-      // put smoothed character, character pixmap values are an index
-      // into the 5 colors used for aliasing (4 = foreground, 0 = background)
-      const unsigned char *s = source->buffer;
-      for (unsigned y = 0; y < source->rows; ++y) {
-         for (unsigned x = 0; x < source->width; ++x) {
-            unsigned char d = (((*s++ & 0xff) + 10) * 5) / 256;
-            if (d > 4)
-               d = 4;
-            if (d > 0) {
-               const UChar_t pixel[] = {UChar_t(double(col[d].fRed) / 0xffff * 255),
-                                        UChar_t(double(col[d].fGreen) / 0xffff * 255),
-                                        UChar_t(double(col[d].fBlue) / 0xffff * 255), 255};
-               [pixmap putPixel : pixel X : bx + x Y : by + y];
-            }
-         }
-      }
-   } else {
-      // no smoothing, just put character using foreground color
-      unsigned char rgba[4] = {};
-      rgba[3] = 255;
-      X11::PixelToRGB(fore, rgba);
-      unsigned char d = 0;
-
-      const unsigned char *row = source->buffer;
-      for (unsigned y = 0; y < source->rows; ++y) {
-         unsigned n = 0;
-         const unsigned char *s = row;
-         for (unsigned x = 0; x < source->width; ++x) {
-            if (!n)
-               d = *s++;
-
-            if (TESTBIT(d,7 - n))
-               [pixmap putPixel : rgba X : bx + x Y : by + y];
-
-            if (++n == kBitsPerByte)
-               n = 0;
-         }
-
-         row += source->pitch;
-      }
-   }
-}
 
 //Aux. functions.
 

@@ -57,10 +57,6 @@ Several examples showing how to use this class are available in the
 ROOT tutorials: `$ROOTSYS/tutorials/visualisation/image/`
 */
 
-#include <ft2build.h>
-#include FT_FREETYPE_H
-#include FT_GLYPH_H
-
 #include "RConfigure.h"
 #include "TArrayD.h"
 #include "TArrayL.h"
@@ -82,7 +78,7 @@ ROOT tutorials: `$ROOTSYS/tutorials/visualisation/image/`
 #include "TStyle.h"
 #include "TSystem.h"
 #include "TText.h"
-#include "TTF.h"
+#include "TTFhandle.h"
 #include "TVectorD.h"
 #include "TVirtualPad.h"
 #include "TVirtualPadPainter.h"
@@ -90,6 +86,7 @@ ROOT tutorials: `$ROOTSYS/tutorials/visualisation/image/`
 #include "TVirtualX.h"
 
 #include <iostream>
+#include <vector>
 #include <memory>
 
 #include "snprintf.h"
@@ -1234,13 +1231,13 @@ void TASImage::Image2Drawable(ASImage *im, Drawable_t wid, Int_t x, Int_t y,
                               Int_t xsrc, Int_t ysrc, UInt_t wsrc, UInt_t hsrc,
                               Option_t *opt)
 {
-   if (!im) return;
+   if (!im)
+      return;
 
    wsrc = wsrc ? wsrc : im->width;
    hsrc = hsrc ? hsrc : im->height;
 
-   static int x11 = -1;
-   if (x11 < 0) x11 = gVirtualX->InheritsFrom("TGX11");
+   static int x11 = gVirtualX->InheritsFrom("TGX11");
 
    Pixmap_t mask = kNone;
 
@@ -1249,21 +1246,18 @@ void TASImage::Image2Drawable(ASImage *im, Drawable_t wid, Int_t x, Int_t y,
       UInt_t ow = wsrc%8;
       UInt_t ww = wsrc - ow + (ow ? 8 : 0);
 
-      UInt_t bit = 0;
-      int i = 0;
-      UInt_t yy = 0;
-      UInt_t xx = 0;
+      UInt_t bit = 0, i = 0;
 
-      char *bits = new char[ww*hh]; //an array of bits
+      std::vector<char> bits(ww*hh); //an array of bits
 
       ASImageDecoder *imdec = start_image_decoding(fgVisual, im, SCL_DO_ALPHA,
                                                    xsrc, ysrc, ww, 0, nullptr);
       if (imdec) {
-         for (yy = 0; yy < hh; yy++) {
+         for (UInt_t yy = 0; yy < hh; yy++) {
             imdec->decode_image_scanline(imdec);
             CARD32 *a = imdec->buffer.alpha;
 
-            for (xx = 0; xx < ww; xx++) {
+            for (UInt_t xx = 0; xx < ww; xx++) {
                if (a[xx]) {
                   SETBIT(bits[i], bit);
                } else {
@@ -1281,8 +1275,7 @@ void TASImage::Image2Drawable(ASImage *im, Drawable_t wid, Int_t x, Int_t y,
       stop_image_decoding(&imdec);
 
       mask = gVirtualX->CreateBitmap(gVirtualX->GetDefaultRootWindow(),
-                                          (const char *)bits, ww, hh);
-      delete [] bits;
+                                     bits.data(), ww, hh);
    }
 
    GCValues_t gv;
@@ -1299,7 +1292,7 @@ void TASImage::Image2Drawable(ASImage *im, Drawable_t wid, Int_t x, Int_t y,
       gVirtualX->ChangeGC(gc, &gv);
    }
 
-   if (x11 && (!gPad || gPad->GetGLDevice() == -1)) { //use built-in optimized version
+   if (x11) { //use built-in optimized version
       asimage2drawable(fgVisual, wid, im, (GC)gc, xsrc, ysrc, x, y, wsrc, hsrc, 1);
    } else {
       ASImage *img = nullptr;
@@ -1315,33 +1308,29 @@ void TASImage::Image2Drawable(ASImage *im, Drawable_t wid, Int_t x, Int_t y,
          TString option(opt);
          option.ToLower();
 
-         if (gPad && gPad->GetGLDevice() != -1) {
-            if (TVirtualPadPainter *painter = gPad->GetPainter())
-               painter->DrawPixels(bits, wsrc, hsrc, x, y, !option.Contains("opaque"));
-         } else {
-            Pixmap_t pic = gVirtualX->CreatePixmapFromData(bits, wsrc, hsrc);
-            if (pic) {
-               if (!option.Contains("opaque")) {
-                  SETBIT(wsrc,31);
-                  SETBIT(hsrc,31);
-               }
-               gVirtualX->CopyArea(pic, wid, gc, 0, 0, wsrc, hsrc, x, y);
-               gVirtualX->DeletePixmap(pic);
+         Pixmap_t pic = gVirtualX->CreatePixmapFromData(bits, wsrc, hsrc);
+         if (pic) {
+            if (!option.Contains("opaque")) {
+               SETBIT(wsrc,31);
+               SETBIT(hsrc,31);
             }
+            gVirtualX->CopyArea(pic, wid, gc, 0, 0, wsrc, hsrc, x, y);
+            gVirtualX->DeletePixmap(pic);
          }
       }
 
-      if (img) {
+      if (img)
          destroy_asimage(&img);
-      }
    }
 
    // free mask pixmap
-   if (gv.fClipMask != kNone) gVirtualX->DeletePixmap(gv.fClipMask);
+   if (mask != kNone)
+      gVirtualX->DeletePixmap(mask);
 
    gv.fMask = kGCClipMask;
    gv.fClipMask = kNone;
-   if (gc) gVirtualX->ChangeGC(gc, &gv);
+   if (gc)
+      gVirtualX->ChangeGC(gc, &gv);
 }
 
 
@@ -1414,6 +1403,9 @@ void TASImage::Paint(Option_t *option)
          Vectorize(256);
       }
    }
+
+   // opaque flag used in some X11
+   Int_t flags = opt.Contains("opaque") ? 0 : 1;
 
    ASImage *image = fImage;
 
@@ -1540,173 +1532,42 @@ void TASImage::Paint(Option_t *option)
    int tox = expand  ? 0 : int(gPad->UtoPixel(1.) * gPad->GetLeftMargin());
    int toy = expand  ? 0 : int(gPad->VtoPixel(0.) * gPad->GetTopMargin());
 
-   auto ps = gPad->GetPainter()->GetPS();
+   auto pp = gPad->GetPainter();
 
-   if (!ps) {
-      Window_t wid = (Window_t)gVirtualX->GetWindowID(gPad->GetPixmapID());
-      Image2Drawable(fScaledImage ? fScaledImage->fImage : fImage, wid, tox, toy);
+   pp->DrawImage(fScaledImage ? fScaledImage : this, tox, toy, flags);
 
-      if (grad_im && fPaletteEnabled) {
-         // draw color bar
-         Image2Drawable(grad_im, wid, pal_x, pal_y);
+   if (grad_im && fPaletteEnabled) {
+      TASImage pimg;
+      pimg.fImage = grad_im;
+      grad_im = nullptr; // will be delete with pimg destructor
 
-         // values of palette
-         TGaxis axis;
-         Int_t ndiv = 510;
-         double min = fMinValue;
-         double max = fMaxValue;
+      // draw color bar
+      pp->DrawImage(&pimg, pal_x, pal_y, flags);
+
+      // values of palette
+      TGaxis axis;
+      Int_t ndiv = 510;
+      Double_t min = fMinValue;
+      Double_t max = fMaxValue;
+      Double_t pal_Xpos = gPad->AbsPixeltoX(pal_Ax + pal_w);
+      if (!pp->GetPS()) {
+         // TODO: check why here special drawing for none-PS
          axis.SetLineColor(0);       // draw white ticks
-         Double_t pal_Xpos = gPad->AbsPixeltoX(pal_Ax + pal_w);
          axis.PaintAxis(pal_Xpos, gPad->PixeltoY(pal_Ay + pal_h - 1),
                         pal_Xpos, gPad->PixeltoY(pal_Ay),
                         min, max, ndiv, "+LU");
          min = fMinValue;
          max = fMaxValue;
-         axis.SetLineColor(1);       // draw black ticks
-         axis.PaintAxis(pal_Xpos, gPad->AbsPixeltoY(pal_Ay + pal_h),
-                        pal_Xpos, gPad->AbsPixeltoY(pal_Ay + 1),
-                        min, max, ndiv, "+L");
-      }
-   } else {
-      // loop over pixmap and draw image to PostScript
-
-      Bool_t paint_as_png = kFALSE;
-
-      if (ps->InheritsFrom("TImageDump")) { // PostScript is asimage
-         TImage *dump = (TImage *)ps->GetStream();
-         if (!dump) return;
-         dump->Merge(fScaledImage ? fScaledImage : this, "alphablend",
-                     gPad->XtoAbsPixel(0), gPad->YtoAbsPixel(1));
-
-         if (grad_im) {
-            TASImage tgrad;
-            tgrad.fImage = grad_im;
-            dump->Merge(&tgrad, "alphablend", pal_Ax, pal_Ay);
-
-            // values of palette
-            TGaxis axis;
-            Int_t ndiv = 510;
-            double min = fMinValue;
-            double max = fMaxValue;
-            axis.SetLineColor(1);       // draw black ticks
-            Double_t pal_Xpos = gPad->AbsPixeltoX(pal_Ax + pal_w);
-            axis.PaintAxis(pal_Xpos, gPad->AbsPixeltoY(pal_Ay + pal_h),
-                           pal_Xpos, gPad->AbsPixeltoY(pal_Ay + 1),
-                           min, max, ndiv, "+L");
-         }
-         return;
-      } else if (ps->InheritsFrom("TSVG")) {
-         paint_as_png = kTRUE;
       }
 
-      Double_t dx = gPad->GetX2() - gPad->GetX1();
-      Double_t dy = gPad->GetY2() - gPad->GetY1();
-      Double_t x1, x2, y1, y2;
-
-      if (expand) {
-         x1 = gPad->GetX1();
-         x2 = x1+dx/image->width;
-         y1 = gPad->GetY2();
-         y2 = y1+dy/image->height;
-      } else {
-         x1 = gPad->GetX1()+dx*gPad->GetLeftMargin();
-         x2 = x1+(dx*(1-gPad->GetRightMargin()-gPad->GetLeftMargin()))/image->width;
-         y1 = gPad->GetY2()-dy*gPad->GetTopMargin();
-         y2 = y1+(dy*(1-gPad->GetTopMargin()-gPad->GetBottomMargin()))/image->height;
-      }
-
-      // get special color cell to be reused during image printing
-      ps->SetFillColor(TColor::GetColor((Float_t) 1., (Float_t) 1., (Float_t) 1.));
-      ps->SetFillStyle(1001);
-
-      ps->CellArrayBegin(image->width, image->height, x1, x2, y1, y2);
-
-      if (paint_as_png) {
-         char *buffer = nullptr;
-         int size = 0;
-         ASImageExportParams params;
-         params.png.type = ASIT_Png;
-         params.png.flags = EXPORT_ALPHA;
-         params.png.compression = GetImageCompression();
-         if (!params.png.compression)
-            params.png.compression = -1;
-         if (ASImage2PNGBuff(image, (CARD8 **)&buffer, &size, &params)) {
-            ps->CellArrayPng(buffer, size);
-            free(buffer);
-         }
-      } else {
-         auto imdec = start_image_decoding(fgVisual, image, SCL_DO_ALL,
-                                           0, 0, image->width, image->height, nullptr);
-         if (imdec)
-            for (Int_t yt = 0; yt < (Int_t)image->height; yt++) {
-               imdec->decode_image_scanline(imdec);
-               for (Int_t xt = 0; xt < (Int_t)image->width; xt++)
-                  ps->CellArrayFill(imdec->buffer.red[xt],
-                                    imdec->buffer.green[xt],
-                                    imdec->buffer.blue[xt]);
-            }
-         stop_image_decoding(&imdec);
-      }
-      ps->CellArrayEnd();
-
-      // print the color bar
-      if (grad_im) {
-         Double_t xconv = (gPad->AbsPixeltoX(pal_Ax + pal_w) - gPad->AbsPixeltoX(pal_Ax)) / grad_im->width;
-         Double_t yconv = (gPad->AbsPixeltoY(pal_Ay - pal_h) - gPad->AbsPixeltoY(pal_Ay)) / grad_im->height;
-         x1 = gPad->AbsPixeltoX(pal_Ax);
-         x2 = x1 + xconv;
-         y2 = gPad->AbsPixeltoY(pal_Ay);
-         y1 = y2 - yconv;
-         ps->CellArrayBegin(grad_im->width, grad_im->height,
-                            x1, x2, y1, y2);
-
-         if (paint_as_png) {
-            char *buffer = nullptr;
-            int size = 0;
-            ASImageExportParams params;
-            params.png.type = ASIT_Png;
-            params.png.flags = EXPORT_ALPHA;
-            params.png.compression = GetImageCompression();
-            if (!params.png.compression)
-               params.png.compression = -1;
-
-            if (ASImage2PNGBuff(grad_im, (CARD8 **)&buffer, &size, &params)) {
-               ps->CellArrayPng(buffer, size);
-               free(buffer);
-            }
-         } else {
-            auto imdec = start_image_decoding(fgVisual, grad_im, SCL_DO_ALL,
-                                              0, 0, grad_im->width, grad_im->height, nullptr);
-            if (imdec)
-               for (Int_t yt = 0; yt < (Int_t)grad_im->height; yt++) {
-                  imdec->decode_image_scanline(imdec);
-                  for (Int_t xt = 0; xt < (Int_t)grad_im->width; xt++)
-                     ps->CellArrayFill(imdec->buffer.red[xt],
-                                       imdec->buffer.green[xt],
-                                       imdec->buffer.blue[xt]);
-               }
-            stop_image_decoding(&imdec);
-         }
-         ps->CellArrayEnd();
-
-         // values of palette
-         TGaxis axis;
-         Int_t ndiv = 510;
-         double min = fMinValue;
-         double max = fMaxValue;
-         axis.SetLineColor(1);       // draw black ticks
-         Double_t pal_Xpos = gPad->AbsPixeltoX(pal_Ax + pal_w);
-         // TODO: provide PaintAxisOn method
-         axis.PaintAxis(pal_Xpos, gPad->AbsPixeltoY(pal_Ay + pal_h),
-                        pal_Xpos, gPad->AbsPixeltoY(pal_Ay + 1),
-                        min, max, ndiv, "+L");
-
-      }
+      axis.SetLineColor(1);       // draw black ticks
+      axis.PaintAxis(pal_Xpos, gPad->AbsPixeltoY(pal_Ay + pal_h),
+                     pal_Xpos, gPad->AbsPixeltoY(pal_Ay + 1),
+                     min, max, ndiv, "+L");
    }
 
-   if (grad_im) {
+   if (grad_im)
       destroy_asimage(&grad_im);
-   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -5604,56 +5465,10 @@ void TASImage::DrawWideLine(UInt_t x1, UInt_t y1, UInt_t x2, UInt_t y2,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// Draw glyph bitmap.
+/// Draw TTF glyphs .
 
-void TASImage::DrawFTGlyph(void *bitmap, UInt_t color, Int_t bx, Int_t by, TVirtualPad *clippad, Int_t offx, Int_t offy)
+void TASImage::DrawFTGlyphs(TTFhandle &ttf, UInt_t color, Int_t px, Int_t py, TVirtualPad *clippad, Int_t offx, Int_t offy)
 {
-   UInt_t col[5];
-   Bool_t has_alpha = (color & 0xff000000) != 0xff000000;
-
-   FT_Bitmap *source = (FT_Bitmap *) bitmap;
-
-   auto ndots = source->width * source->rows;
-   ULong_t r = 0, g = 0, b = 0;
-
-   const Int_t y0 = by > 0 ? by * fImage->width : 0;
-   Int_t yy = y0;
-   for (UInt_t y = 0; y < source->rows; y++) {
-      Int_t byy = by + y;
-      if ((byy >= (Int_t) fImage->height) || (byy < 0)) continue;
-
-      for (UInt_t x = 0; x < source->width; x++) {
-         Int_t bxx = bx + x;
-         if ((bxx >= (Int_t) fImage->width) || (bxx < 0)) continue;
-
-         auto idx = Idx(bxx + yy);
-         r += ((fImage->alt.argb32[idx] & 0xff0000) >> 16);
-         g += ((fImage->alt.argb32[idx] & 0x00ff00) >> 8);
-         b += (fImage->alt.argb32[idx] & 0x0000ff);
-      }
-      yy += fImage->width;
-   }
-   if (ndots > 0) {
-      r /= ndots;
-      g /= ndots;
-      b /= ndots;
-   }
-
-   col[0] = (r << 16) + (g << 8) + b;
-   col[4] = color;
-   Int_t col4r = (col[4] & 0xff0000) >> 16;
-   Int_t col4g = (col[4] & 0x00ff00) >> 8;
-   Int_t col4b = (col[4] & 0x0000ff);
-
-   // interpolate between fore and background colors
-   for (Int_t x = 3; x > 0; x--) {
-      Int_t xx = 4 - x;
-      Int_t colxr = (col4r*x + r*xx) >> 2;
-      Int_t colxg = (col4g*x + g*xx) >> 2;
-      Int_t colxb = (col4b*x + b*xx) >> 2;
-      col[x] = (colxr << 16) + (colxg << 8) + colxb;
-   }
-
    Int_t clipx1 = 0, clipx2 = 0, clipy1 = 0, clipy2 = 0;
    Bool_t noClip = kTRUE;
 
@@ -5666,33 +5481,95 @@ void TASImage::DrawFTGlyph(void *bitmap, UInt_t color, Int_t bx, Int_t by, TVirt
       noClip = kFALSE;
    }
 
-   yy = y0;
-   UChar_t *s = source->buffer;
+   UInt_t col[5];
+   Bool_t has_alpha = (color & 0xff000000) != 0xff000000;
 
-   for (UInt_t y = 0; y < source->rows; y++) {
-      Int_t byy = by + y;
+   ttf.SetSmoothing(kTRUE);
 
-      for (UInt_t x = 0; x < source->width; x++) {
-         Int_t bxx = bx + x;
+   for (UInt_t nglyph = 0; nglyph < ttf.GetNumGlyphs(); nglyph++) {
+      Int_t bx = 0, by = 0;
+      UChar_t *buffer = nullptr;
+      UInt_t width = 0, rows = 0, pitch = 0;
+      if (!ttf.GetGlyphData(nglyph, bx, by, buffer, width, rows, pitch))
+         continue;
 
-         UChar_t d = *s++ & 0xff;
-         d = ((d + 10) * 5) >> 8;
-         if (d > 4) d = 4;
+      bx += px;
+      by += py;
 
-         if (d > 0) {
-            if (noClip || ((bxx <  clipx2) && (bxx >= clipx1) &&
-                           (byy >= clipy2) && (byy <  clipy1))) {
-               auto idx = Idx(bxx + yy);
-               auto acolor = (ARGB32) col[d];
-               if (has_alpha) {
-                  _alphaBlend(&fImage->alt.argb32[idx], &acolor);
-               } else {
-                  fImage->alt.argb32[idx] = acolor;
+      auto ndots = width * rows;
+      ULong_t r = 0, g = 0, b = 0;
+
+      const Int_t y0 = by > 0 ? by * fImage->width : 0;
+      Int_t yy = y0;
+      for (UInt_t y = 0; y < rows; y++) {
+         Int_t byy = by + y;
+         if ((byy >= (Int_t) fImage->height) || (byy < 0)) continue;
+
+         for (UInt_t x = 0; x < width; x++) {
+            Int_t bxx = bx + x;
+            if ((bxx >= (Int_t) fImage->width) || (bxx < 0)) continue;
+
+            auto idx = Idx(bxx + yy);
+            r += ((fImage->alt.argb32[idx] & 0xff0000) >> 16);
+            g += ((fImage->alt.argb32[idx] & 0x00ff00) >> 8);
+            b += (fImage->alt.argb32[idx] & 0x0000ff);
+         }
+         yy += fImage->width;
+      }
+      if (ndots > 0) {
+         r /= ndots;
+         g /= ndots;
+         b /= ndots;
+      }
+
+      col[0] = (r << 16) + (g << 8) + b;
+      col[4] = color;
+      Int_t col4r = (col[4] & 0xff0000) >> 16;
+      Int_t col4g = (col[4] & 0x00ff00) >> 8;
+      Int_t col4b = (col[4] & 0x0000ff);
+
+      // interpolate between fore and background colors
+      for (Int_t x = 3; x > 0; x--) {
+         Int_t xx = 4 - x;
+         Int_t colxr = (col4r*x + r*xx) >> 2;
+         Int_t colxg = (col4g*x + g*xx) >> 2;
+         Int_t colxb = (col4b*x + b*xx) >> 2;
+         col[x] = (colxr << 16) + (colxg << 8) + colxb;
+      }
+
+      yy = y0;
+
+      for (UInt_t y = 0; y < rows; y++) {
+         Int_t byy = by + y;
+
+         UChar_t *s = buffer;
+
+         for (UInt_t x = 0; x < width; x++) {
+            Int_t bxx = bx + x;
+
+            UChar_t d = *s++ & 0xff;
+            d = ((d + 10) * 5) >> 8;
+            if (d > 4) d = 4;
+
+            if (d > 0) {
+               if (noClip || ((bxx <  clipx2) && (bxx >= clipx1) &&
+                              (byy >= clipy2) && (byy <  clipy1))) {
+                  auto idx = Idx(bxx + yy);
+                  auto acolor = (ARGB32) col[d];
+                  if (has_alpha) {
+                     _alphaBlend(&fImage->alt.argb32[idx], &acolor);
+                  } else {
+                     fImage->alt.argb32[idx] = acolor;
+                  }
                }
             }
          }
+
+         // ttf has own alignment for rows
+         buffer += pitch;
+
+         yy += fImage->width;
       }
-      yy += fImage->width;
    }
 }
 
@@ -5705,27 +5582,20 @@ void TASImage::DrawText(TText *text, Int_t x, Int_t y)
       DrawTextOnPad(text, x, y, gPad, 0, 0);
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
 /// Draw text at the pixel position (x,y) checking clip on pad.
 
 void TASImage::DrawTextOnPad(TText *text, Int_t x, Int_t y, TVirtualPad *pad, Int_t offx, Int_t  offy)
 {
-   if (!text || !InitImage("DrawTextOnPad"))
+   if (!text || !pad || !InitImage("DrawTextOnPad"))
       return;
 
    TTFhandle ttf;
 
    // set text font
    ttf.SetTextFont(text->GetTextFont());
-
-   UInt_t padw = pad ? pad->GetPadWidth() : 100;
-   UInt_t padh = pad ? pad->GetPadHeight() : 100;
-
    // set text size
-   Float_t ttfsize = text->GetTextSize() * TMath::Min(padw, padh);
-   ttf.SetTextSize(ttfsize*kScale);
-
+   ttf.SetTextSize(text->GetTextSizePixels(*pad)*kScale);
    // set text angle
    ttf.SetRotationMatrix(text->GetTextAngle());
 
@@ -5747,86 +5617,8 @@ void TASImage::DrawTextOnPad(TText *text, Int_t x, Int_t y, TVirtualPad *pad, In
    ARGB32 color = ARGB32_White;
    parse_argb_color(col->AsHexString(), &color);
 
-   // Align()
-   Int_t align = 0;
-   Int_t txalh = text->GetTextAlign()/10;
-   Int_t txalv = text->GetTextAlign()%10;
-
-   switch (txalh) {
-      case 0 :
-      case 1 :
-         switch (txalv) {  //left
-            case 1 :
-               align = 7;   //bottom
-               break;
-            case 2 :
-               align = 4;   //center
-               break;
-            case 3 :
-               align = 1;   //top
-               break;
-         }
-         break;
-      case 2 :
-         switch (txalv) { //center
-            case 1 :
-               align = 8;   //bottom
-               break;
-            case 2 :
-               align = 5;   //center
-               break;
-            case 3 :
-               align = 2;   //top
-               break;
-         }
-         break;
-      case 3 :
-         switch (txalv) {  //right
-            case 1 :
-               align = 9;   //bottom
-               break;
-            case 2 :
-               align = 6;   //center
-               break;
-            case 3 :
-               align = 3;   //top
-               break;
-         }
-         break;
-   }
-
-   FT_Vector ftal;
-
-   // vertical alignment
-   if (align == 1 || align == 2 || align == 3) {
-      ftal.y = ttf.GetAscent();
-   } else if (align == 4 || align == 5 || align == 6) {
-      ftal.y = ttf.GetAscent() / 2;
-   } else {
-      ftal.y = 0;
-   }
-
-   // horizontal alignment
-   if (align == 3 || align == 6 || align == 9) {
-      ftal.x = ttf.GetWidth();
-   } else if (align == 2 || align == 5 || align == 8) {
-      ftal.x = ttf.GetWidth() / 2;
-   } else {
-      ftal.x = 0;
-   }
-
-   FT_Vector_Transform(&ftal, ttf.GetRotMatrix());
-   ftal.x = (ftal.x >> 6);
-   ftal.y = (ftal.y >> 6);
-
-   for (UInt_t n = 0; n < ttf.GetNumGlyphs(); n++) {
-      if (auto bitmap = ttf.GetGlyphBitmap(n, kTRUE)) {
-         Int_t bx = x - ftal.x + bitmap->left;
-         Int_t by = y + ftal.y - bitmap->top;
-
-         DrawFTGlyph(&bitmap->bitmap, color, bx, by, pad, offx, offy);
-      }
-   }
+   if (ttf.ApplyAlignRotate(x, y, text->GetTextAlign(), GetWidth(), GetHeight()))
+      DrawFTGlyphs(ttf, color, x, y, pad, offx, offy);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -5846,18 +5638,8 @@ void TASImage::DrawTextTTF(Int_t x, Int_t y, const char *text, Int_t size,
    ttf.PrepareString(text);
    ttf.LayoutGlyphs();
 
-   // compute the size and position  that will contain the text
-   // Int_t Xoff = TMath::Max(0, (Int_t) -ttf.GetBox().xMin);
-   Int_t Yoff = TMath::Max(0, (Int_t) -ttf.GetBox().yMin);
-   Int_t h    = ttf.GetBox().yMax + Yoff;
-
-   for (UInt_t n = 0; n < ttf.GetNumGlyphs(); n++) {
-      if (auto bitmap = ttf.GetGlyphBitmap(n, kTRUE)) {
-         Int_t bx = x + bitmap->left;
-         Int_t by = y + h - bitmap->top;
-         DrawFTGlyph(&bitmap->bitmap, color, bx, by);
-      }
-   }
+   if (ttf.ApplyAlignRotate(x, y, 13, GetWidth(), GetHeight()))
+      DrawFTGlyphs(ttf, color, x, y);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

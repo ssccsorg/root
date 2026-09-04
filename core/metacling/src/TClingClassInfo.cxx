@@ -121,12 +121,19 @@ TClingClassInfo::TClingClassInfo(cling::Interpreter *interp,
    Init(tag);
 }
 
-TClingClassInfo::TClingClassInfo(cling::Interpreter *interp,
-                                 const Decl *D)
-   : TClingDeclInfo(nullptr), fInterp(interp), fFirstTime(true), fDescend(false), fIterAll(kTRUE),
-     fIsIter(false), fOffsetCache(0)
+TClingClassInfo::TClingClassInfo(cling::Interpreter *interp, const Decl *D, const Type *T)
+   : TClingDeclInfo(nullptr),
+     fInterp(interp),
+     fFirstTime(true),
+     fDescend(false),
+     fIterAll(kTRUE),
+     fIsIter(false),
+     fOffsetCache(0)
 {
    Init(D);
+   // The type as found by the lookup, conserving typedefs like Double32_t
+   // (may be null).
+   fType = T;
 }
 
 void TClingClassInfo::AddBaseOffsetValue(const clang::Decl* decl, ptrdiff_t offset)
@@ -198,6 +205,13 @@ long TClingClassInfo::ClassProperty() const
    if (CRD->isAggregate() || CRD->isPOD()) {
       // according to the C++ standard, being a POD implies being an aggregate
       property |= kClassIsAggregate;
+   }
+   if (CRD->hasDefinition() && fInterp->getSema().IsCXXTriviallyRelocatableType(*CRD)) {
+      // Trivial relocatability in the C++26 sense ([class.prop]), as computed by
+      // Sema. This is more accurate than isTriviallyCopyable(): every trivially
+      // copyable class is trivially relocatable, but not vice versa -- e.g. a
+      // polymorphic class whose bases and members are all trivially relocatable.
+      property |= kClassIsTriviallyRelocatable;
    }
    return property;
 }

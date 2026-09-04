@@ -92,6 +92,8 @@ public:
    void     InvalidateCS() override;
    void     LockPainter() override;
 
+   Bool_t    HasTTFonts() const override;
+
    void     DrawLine(Double_t x1, Double_t y1, Double_t x2, Double_t y2) override;
    void     DrawLineNDC(Double_t u1, Double_t v1, Double_t u2, Double_t v2) override;
 
@@ -113,6 +115,8 @@ public:
    void     DrawText(Double_t, Double_t, const wchar_t *, ETextMode) override;
    void     DrawTextNDC(Double_t x, Double_t y, const char *text, ETextMode mode) override;
    void     DrawTextNDC(Double_t, Double_t, const wchar_t *, ETextMode) override;
+
+   void     DrawImage(TImage *img, Int_t x, Int_t y, Int_t flags = 0) override;
 
    //jpg, png, gif and bmp output.
    void     SaveImage(TVirtualPad *pad, const char *fileName, Int_t type) const override;

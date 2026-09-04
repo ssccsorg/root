@@ -14,7 +14,7 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include FT_GLYPH_H
-#include "TTF.h"
+#include "TTFhandle.h"
 #include "TMathText.h"
 #include "TMath.h"
 #include "TVirtualPad.h"
@@ -22,8 +22,8 @@
 #include "TVirtualPS.h"
 #include "TText.h"
 
-#include "../../../builtins/mathtext/inc/mathtext.h"
-#include "../../../builtins/mathtext/inc/mathrender.h"
+#include "mathtext/mathtext.h"
+#include "mathtext/mathrender.h"
 
 /** \class TMathText
 \ingroup BasicGraphics
@@ -223,7 +223,7 @@ public:
       h.SetTextFont(is_cyrillic_or_cjk(character) ? root_cjk_face_number() : root_face_number(family));
       h.SetTextSize(_current_font_size[family] * _pad_scale);
 
-      auto font_face = h.GetFontFace();
+      auto font_face = (FT_Face) h.GetFontFace();
       if (!font_face || font_face->units_per_EM == 0)
          return mathtext::bounding_box_t(0, 0, 0, 0, 0, 0);
 
@@ -246,10 +246,8 @@ public:
          upper_right_x <= advance ? 0.0F :
          std::max(0.0F, upper_right_x + margin - advance);
       const mathtext::bounding_box_t ret =
-         mathtext::bounding_box_t(
-            lower_left_x, lower_left_y,
-            upper_right_x, upper_right_y,
-            advance, italic_correction) * scale;
+         mathtext::bounding_box_t(lower_left_x * scale, lower_left_y * scale, upper_right_x * scale,
+                                  upper_right_y * scale, advance * scale, italic_correction * scale);
 
       current_x += ret.advance();
 

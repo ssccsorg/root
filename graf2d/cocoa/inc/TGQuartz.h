@@ -65,12 +65,6 @@ public:
    Int_t     SetTextFont(char *fontname, ETextSetMode mode) override;
    void      SetTextSize(Float_t textsize) override;
 
-   void      GetTextExtent(UInt_t &w, UInt_t &h, char *text) override;
-   Int_t     GetFontAscent() const override;
-   Int_t     GetFontAscent(const char *text) const override;
-   Int_t     GetFontDescent() const override;
-   Int_t     GetFontDescent(const char *text) const override;
-
    Float_t   GetTextMagnitude() override;
 
    //---- Methods used for new graphics -----
@@ -88,10 +82,7 @@ public:
    void      DrawPolyMarkerW(WinContext_t wctxt, Int_t n, TPoint *xy) override;
    void      DrawTextW(WinContext_t wctxt, Int_t x, Int_t y, Float_t angle, Float_t mgn, const char *text, ETextMode mode) override;
    void      DrawTextW(WinContext_t wctxt, Int_t x, Int_t y, Float_t angle, Float_t mgn, const wchar_t *text, ETextMode mode) override;
-
-   Bool_t    GetTextExtentA(Font_t font, Double_t size, UInt_t &w, UInt_t &h, const char *mess) override;
-   Bool_t    GetTextExtentA(Font_t font, Double_t size, UInt_t &w, UInt_t &h, const wchar_t *mess) override;
-   Bool_t    GetFontAscentDescent(Font_t font, Double_t size, UInt_t &a, UInt_t &d, const char *mess) override;
+   void      DrawTTFglyphsW(WinContext_t wctxt, Int_t x, Int_t y, TTFhandle &ttf, ETextMode mode) override;
 
 private:
 
@@ -103,8 +94,6 @@ private:
    // switch because it is better to have it off by default.
    bool fUseAA;
    bool fUseFAAA;
-
-   void DrawFTGlyph(void *pixmap, void *source, ULong_t fore, ULong_t back, Int_t bx, Int_t by);
 
    void SetAA();
    TAttFill &GetAttFill(WinContext_t wctxt);

@@ -70,8 +70,6 @@ Implement TVirtualPadPainter which abstracts painting operations.
 
 TPadPainter::TPadPainter()
 {
-   fDoubleBuffer = 1;
-   fWinContext = (WinContext_t) 0;
 }
 
 /*
@@ -205,6 +203,24 @@ void TPadPainter::SetDoubleBuffer(Int_t device, Int_t mode)
    fDoubleBuffer = mode;
 
    gVirtualX->SetDoubleBuffer(device, mode);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Return true if TTF font can be used
+
+Bool_t TPadPainter::HasTTFonts() const
+{
+   return gVirtualX->HasTTFonts();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Draw image on the gVirtualX window
+
+void TPadPainter::DrawImage(TImage *img, Int_t x, Int_t y, Int_t flags)
+{
+   Window_t wid = (Window_t)gVirtualX->GetWindowID(fPad->GetPixmapID());
+   // use old API to draw image on gVirtualX window
+   img->PaintImage(wid, x, y, 0, 0, 0, 0, flags ? "" : "opaque");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -486,7 +502,6 @@ void TPadPainter::DrawPolyMarker(Int_t n, const Double_t *x, const Double_t *y)
    DrawPolyMarkerAux(gPad, fWinContext, fDoubleBuffer, n, x, y);
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
 /// Paint polymarker.
 
@@ -500,45 +515,13 @@ void TPadPainter::DrawPolyMarker(Int_t n, const Float_t *x, const Float_t *y)
    DrawPolyMarkerAux(gPad, fWinContext, fDoubleBuffer, n, x, y);
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
-/// Paint text.
+/// Paint TTF glyps on virtualx device
 
-void TPadPainter::DrawText(Double_t x, Double_t y, const char *text, ETextMode mode)
+void TPadPainter::DrawTTFglyphs(Int_t x, Int_t y, TTFhandle &ttf, ETextMode mode)
 {
-   const Int_t px = gPad->XtoPixel(x);
-   const Int_t py = gPad->YtoPixel(y);
-   const Double_t angle = GetTextAngle();
-   const Double_t mgn = GetTextMagnitude();
-   gVirtualX->DrawTextW(fWinContext, px, py, angle, mgn, text, (TVirtualX::ETextMode)mode);
+   gVirtualX->DrawTTFglyphsW(fWinContext, x, y, ttf, (TVirtualX::ETextMode) mode);
 }
-
-
-////////////////////////////////////////////////////////////////////////////////
-/// Special version working with wchar_t and required by TMathText.
-
-void TPadPainter::DrawText(Double_t x, Double_t y, const wchar_t *text, ETextMode mode)
-{
-   const Int_t px = gPad->XtoPixel(x);
-   const Int_t py = gPad->YtoPixel(y);
-   const Double_t angle = GetTextAngle();
-   const Double_t mgn = GetTextMagnitude();
-   gVirtualX->DrawTextW(fWinContext, px, py, angle, mgn, text, (TVirtualX::ETextMode)mode);
-}
-
-
-////////////////////////////////////////////////////////////////////////////////
-/// Paint text in normalized coordinates.
-
-void TPadPainter::DrawTextNDC(Double_t u, Double_t v, const char *text, ETextMode mode)
-{
-   const Int_t px = gPad->UtoPixel(u);
-   const Int_t py = gPad->VtoPixel(v);
-   const Double_t angle = GetTextAngle();
-   const Double_t mgn = GetTextMagnitude();
-   gVirtualX->DrawTextW(fWinContext, px, py, angle, mgn, text, (TVirtualX::ETextMode)mode);
-}
-
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Save the image displayed in the canvas pointed by "pad" into a binary file.
@@ -605,18 +588,6 @@ void TPadPainter::SaveImage(TVirtualPad *pad, const char *fileName, Int_t type) 
    }
 }
 
-
-////////////////////////////////////////////////////////////////////////////////
-/// Paint text in normalized coordinates.
-
-void TPadPainter::DrawTextNDC(Double_t u, Double_t v, const wchar_t *text, ETextMode mode)
-{
-   const Int_t px = gPad->UtoPixel(u);
-   const Int_t py = gPad->VtoPixel(v);
-   const Double_t angle = GetTextAngle();
-   const Double_t mgn = GetTextMagnitude();
-   gVirtualX->DrawTextW(fWinContext, px, py, angle, mgn, text, (TVirtualX::ETextMode)mode);
-}
 
 //Aux. private functions.
 namespace {

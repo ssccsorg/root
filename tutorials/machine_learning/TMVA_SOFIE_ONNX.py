@@ -7,56 +7,16 @@
 ##  - compiling the model using ROOT Cling
 ##  - run the code and optionally compare with ONNXRuntime
 ##
-## The PyTorch export and ROOT's SOFIE parser are both linked against protobuf,
-## but usually against different versions, so loading them in the same process
-## leads to a symbol clash. We therefore run the PyTorch -> ONNX export in a
-## separate Python process and only import ROOT afterwards.
-##
 ## \macro_code
 ## \macro_output
 ## \author Lorenzo Moneta
 
-import os
-import sys
-import subprocess
+import inspect
 
 import numpy as np
 import ROOT
-
-
-# The PyTorch export, as a small standalone script run in its own process.
-# It takes the model name as its only argument and writes <modelName>.onnx.
-EXPORT_SCRIPT = r"""
-import sys
-import inspect
-import warnings
-import contextlib
-
 import torch
 import torch.nn as nn
-
-modelName = sys.argv[1]
-
-
-@contextlib.contextmanager
-def expect_warning(category, message):
-    # Silence a known third-party warning and raise if it stops firing.
-
-    # Notifies us to drop the workaround once the upstream library is fixed.
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        yield
-    seen = False
-    for w in caught:
-        if issubclass(w.category, category) and message in str(w.message):
-            seen = True
-        else:
-            warnings.warn_explicit(w.message, w.category, w.filename, w.lineno)
-    if not seen:
-        raise RuntimeError(
-            f"Expected {category.__name__} containing {message!r} was not "
-            "emitted. This tutorial's workaround can probably be removed."
-        )
 
 
 def CreateAndTrainModel(modelName):
@@ -101,21 +61,10 @@ def CreateAndTrainModel(modelName):
     )
     print("calling torch.onnx.export with parameters", kwargs)
 
-    try:
-        # torch.onnx.export (dynamo path) pickles its export program through
-        # copyreg, which still references the deprecated LeafSpec. The warning
-        # is emitted from inside PyTorch and cannot be avoided from user code.
-        with expect_warning(FutureWarning, "isinstance(treespec, LeafSpec)"):
-            torch.onnx.export(model, dummy_x, modelFile, **kwargs)
-        print("model exported to ONNX as", modelFile)
-        return modelFile
-    except TypeError:
-        print("Cannot export model from pytorch to ONNX - with version ", torch.__version__)
-        # leave no .onnx behind: which the parent process treats as a RuntimeError
-        sys.exit()
+    torch.onnx.export(model, dummy_x, modelFile, **kwargs)
 
-CreateAndTrainModel(modelName)
-"""
+    print("model exported to ONNX as", modelFile)
+    return modelFile
 
 
 def ParseModel(modelFile, verbose=False):
@@ -145,17 +94,11 @@ def ParseModel(modelFile, verbose=False):
 
 ###################################################################
 ## Step 1 : Create and train the model, export it to ONNX
-##          (done in a separate process to avoid the protobuf clash)
 ###################################################################
 
 # use an arbitrary modelName
 modelName = "LinearModel"
-modelFile = modelName + ".onnx"
-
-subprocess.run([sys.executable, "-c", EXPORT_SCRIPT, modelName])
-if not os.path.exists(modelFile):
-    raise RuntimeError("ONNX model could not be exported")
-
+modelFile = CreateAndTrainModel(modelName)
 
 ###################################################################
 ## Step 2 : Parse model and generate inference code with SOFIE

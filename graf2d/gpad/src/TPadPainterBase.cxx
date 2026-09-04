@@ -12,9 +12,11 @@
 #include "TPadPainterBase.h"
 #include "TColor.h"
 
-#include "TTF.h"
 #include "TVirtualX.h"
+#include "TVirtualPad.h"
 #include "TMathBase.h"
+#include "TError.h"
+#include "TTFhandle.h"
 
 /** \class TPadPainterBase
 \ingroup gpad
@@ -102,8 +104,8 @@ void TPadPainterBase::GetTextAscentDescent(Font_t font, Double_t size, UInt_t &a
       ttf.SetTextSize(size * GetTTFScale());
       UInt_t w, h;
       ttf.GetTextExtent(w, h, mess);
-      a = ttf.GetBox().yMax;
-      d = TMath::Abs(ttf.GetBox().yMin);
+      a = ttf.GetBoxYMax();
+      d = TMath::Abs(ttf.GetBoxYMin());
    }
 }
 
@@ -129,8 +131,8 @@ void TPadPainterBase::GetTextAscentDescent(Font_t font, Double_t size, UInt_t &a
       ttf.SetTextSize(size * GetTTFScale());
       UInt_t w, h;
       ttf.GetTextExtent(w, h, mess);
-      a = ttf.GetBox().yMax;
-      d = TMath::Abs(ttf.GetBox().yMin);
+      a = ttf.GetBoxYMax();
+      d = TMath::Abs(ttf.GetBoxYMin());
    }
 }
 
@@ -153,4 +155,109 @@ UInt_t TPadPainterBase::GetTextAdvance(Font_t font, Double_t size, const char *m
    UInt_t a = 0;
    ttf.GetTextAdvance(a, mess);
    return a;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Performs rendering of TTF glyphs on output device
+/// Can be implemented in derived classes instead of implementing
+/// 4 different signatures of DrawText
+
+void TPadPainterBase::DrawTTFglyphs([[maybe_unused]] Int_t x, [[maybe_unused]] Int_t y, [[maybe_unused]] TTFhandle &ttf, [[maybe_unused]] ETextMode mode)
+{
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Paint text.
+
+void TPadPainterBase::DrawText(Double_t x, Double_t y, const char *text, ETextMode mode)
+{
+   Int_t px = fPad->XtoPixel(x);
+   Int_t py = fPad->YtoPixel(y);
+   const TAttText &att = GetAttText();
+
+   if (HasTTFonts()) {
+      TTFhandle ttf;
+      ttf.SetTextFont(att.GetTextFont());
+      ttf.SetTextSize(att.GetTextSizePixels(*fPad));
+      ttf.SetRotationMatrix(att.GetTextAngle());
+      ttf.PrepareString(text);
+      ttf.LayoutGlyphs();
+      if (ttf.ApplyAlignRotate(px, py, att.GetTextAlign(), fPad->GetPadWidth(), fPad->GetPadHeight()))
+         DrawTTFglyphs(px, py, ttf, mode);
+   } else if (fWinContext && gVirtualX) {
+      gVirtualX->DrawTextW(fWinContext, px, py, att.GetTextAngle(), GetTextMagnitude(), text,
+                           (TVirtualX::ETextMode)mode);
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Paint wtext.
+
+void TPadPainterBase::DrawText(Double_t x, Double_t y, const wchar_t *text, ETextMode mode)
+{
+   Int_t px = fPad->XtoPixel(x);
+   Int_t py = fPad->YtoPixel(y);
+   const TAttText &att = GetAttText();
+
+   if (HasTTFonts()) {
+      TTFhandle ttf;
+      ttf.SetTextFont(att.GetTextFont());
+      ttf.SetTextSize(att.GetTextSizePixels(*fPad));
+      ttf.SetRotationMatrix(att.GetTextAngle());
+      ttf.PrepareString(text);
+      ttf.LayoutGlyphs();
+      if (ttf.ApplyAlignRotate(px, py, att.GetTextAlign(), fPad->GetPadWidth(), fPad->GetPadHeight()))
+         DrawTTFglyphs(px, py, ttf, mode);
+   } else if (fWinContext && gVirtualX) {
+      gVirtualX->DrawTextW(fWinContext, px, py, att.GetTextAngle(), GetTextMagnitude(), text,
+                           (TVirtualX::ETextMode)mode);
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Paint text at NDC coordinates.
+
+void TPadPainterBase::DrawTextNDC(Double_t u, Double_t v, const char *text, ETextMode mode)
+{
+   Int_t px = fPad->UtoPixel(u);
+   Int_t py = fPad->VtoPixel(v);
+   const TAttText &att = GetAttText();
+
+   if (HasTTFonts()) {
+      TTFhandle ttf;
+      ttf.SetTextFont(att.GetTextFont());
+      ttf.SetTextSize(att.GetTextSizePixels(*fPad));
+      ttf.SetRotationMatrix(att.GetTextAngle());
+      ttf.PrepareString(text);
+      ttf.LayoutGlyphs();
+      if (ttf.ApplyAlignRotate(px, py, att.GetTextAlign(), fPad->GetPadWidth(), fPad->GetPadHeight()))
+         DrawTTFglyphs(px, py, ttf, mode);
+   } else if (fWinContext && gVirtualX) {
+      gVirtualX->DrawTextW(fWinContext, px, py, att.GetTextAngle(), GetTextMagnitude(), text,
+                           (TVirtualX::ETextMode)mode);
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Paint wtext at NDC coordinates.
+
+void TPadPainterBase::DrawTextNDC(Double_t u, Double_t v, const wchar_t *text, ETextMode mode)
+{
+   Int_t px = fPad->UtoPixel(u);
+   Int_t py = fPad->VtoPixel(v);
+   const TAttText &att = GetAttText();
+
+   if (HasTTFonts()) {
+      TTFhandle ttf;
+      ttf.SetTextFont(att.GetTextFont());
+      ttf.SetTextSize(att.GetTextSizePixels(*fPad));
+      ttf.SetRotationMatrix(att.GetTextAngle());
+      ttf.PrepareString(text);
+      ttf.LayoutGlyphs();
+      if (ttf.ApplyAlignRotate(px, py, att.GetTextAlign(), fPad->GetPadWidth(), fPad->GetPadHeight()))
+         DrawTTFglyphs(px, py, ttf, mode);
+   } else if (fWinContext && gVirtualX) {
+      gVirtualX->DrawTextW(fWinContext, px, py, att.GetTextAngle(), GetTextMagnitude(), text,
+                           (TVirtualX::ETextMode)mode);
+   }
 }

@@ -32,20 +32,15 @@ foreach(directoryName IN ITEMS ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR} ${CMAKE_I
 endforeach()
 
 set(policy_new CMP0072 CMP0076 CMP0077 CMP0079
+    CMP0116 # Ninja generators transform DEPFILEs from add_custom_command()
     CMP0135 # Timestamps of downloaded archives are set to time of extraction
     CMP0144 # <PACKAGENAME>_ROOT (converted to upper case) can be used to search for dependencies
     CMP0156 CMP0179 #deduplicate static libraries when linker supports it
+    CMP0218 # no special handling for `CMAKE_WARN_DEPRECATED` and `CMAKE_ERROR_DEPRECATED` variables
 )
 foreach(policy ${policy_new})
   if(POLICY ${policy})
     cmake_policy(SET ${policy} NEW)
-  endif()
-endforeach()
-
-set(policy_old CMP0116)
-foreach(policy ${policy_old})
-  if(POLICY ${policy})
-    cmake_policy(SET ${policy} OLD)
   endif()
 endforeach()
 
@@ -401,7 +396,7 @@ if(testing)
   add_subdirectory (benchmarks)
 endif()
 add_subdirectory (net)
-add_subdirectory (builtins/mathtext) # hard coded builtin for graf2d
+add_subdirectory (builtins/libmathtext) # hard coded builtin for graf2d
 if (x11)
   add_subdirectory (builtins/xvertext) # hard coded builtin for graf2d/x11
 endif()
