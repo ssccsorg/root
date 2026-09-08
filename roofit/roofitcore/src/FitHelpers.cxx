@@ -60,6 +60,19 @@ namespace {
 
 constexpr int extendedFitDefault = 2;
 
+#ifdef ROOFIT_LEGACY_EVAL_BACKEND
+/// Print a deprecation warning when the legacy evaluation backend is selected for a fit.
+void printLegacyEvalBackendWarning(RooAbsReal const &topLevelArg)
+{
+   oocoutW(&topLevelArg, InputArguments)
+      << "The legacy evaluation backend is deprecated and will be removed in ROOT 6.44.\n"
+         "Please use the default \"cpu\" evaluation backend instead, i.e., don't pass RooFit::EvalBackend(\"legacy\")\n"
+         "or RooFit::BatchMode(\"off\") anymore. If the default backend does not work for your use case, please\n"
+         "report it by opening an issue on the ROOT GitHub repository."
+      << std::endl;
+}
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////
 /// Use the asymptotically correct approach to estimate errors in the presence of weights.
 /// This is slower but more accurate than `SumW2Error`. See also https://arxiv.org/abs/1911.01303).
@@ -232,7 +245,6 @@ int calcSumW2CorrectedCovariance(RooAbsReal const &pdf, RooMinimizer &minimizer,
 /// that also should be taken as the default values for RooAbsPdf::fitTo.
 struct MinimizerConfig {
    double recoverFromNaN = 10.;
-   int optConst = 0;
    int verbose = 0;
    int doSave = 0;
    int doTimer = 0;
@@ -258,6 +270,37 @@ struct MinimizerConfig {
    std::string minType;
    std::string minAlg = "minuit";
 };
+
+/// Validates the NumCPU() argument for the non-legacy evaluation backends and
+/// returns the effective number of worker threads for the RooFit::Evaluator.
+int effectiveNumWorkers(RooAbsArg const &arg, RooFit::EvalBackend::Value evalBackend, int numCpu)
+{
+   using Value = RooFit::EvalBackend::Value;
+
+   if (numCpu <= 1) {
+      return 1;
+   }
+   if (evalBackend == Value::Cuda) {
+      oocoutW(&arg, Fitting) << "The NumCPU() option is ignored by the CUDA evaluation backend." << std::endl;
+      return 1;
+   }
+   if (evalBackend == Value::CodegenNoGrad) {
+      oocoutW(&arg, Fitting) << "The NumCPU() option has no effect with EvalBackend(\"codegen_no_grad\"), "
+                                "because the test statistic is evaluated with single-threaded generated code."
+                             << std::endl;
+      return 1;
+   }
+   if (evalBackend == Value::Codegen) {
+      oocxcoutI(&arg, Fitting) << "NumCPU(" << numCpu << ") enables multi-threaded evaluation of large batches "
+                               << "for test statistic values. The generated gradient code is not affected."
+                               << std::endl;
+      return numCpu;
+   }
+   oocxcoutI(&arg, Fitting) << "NumCPU(" << numCpu << ") enables multi-threaded evaluation of large batches in "
+                            << "the RooBatchCompute library. The interleaving strategy argument of NumCPU() is "
+                            << "ignored." << std::endl;
+   return numCpu;
+}
 
 bool interpretExtendedCmdArg(RooAbsPdf const &pdf, int extendedCmdArg)
 {
@@ -531,7 +574,6 @@ void defineMinimizationOptions(RooCmdConfig &pc)
    MinimizerConfig minimizerDefaults;
 
    pc.defineDouble("RecoverFromUndefinedRegions", "RecoverFromUndefinedRegions", 0, minimizerDefaults.recoverFromNaN);
-   pc.defineInt("optConst", "Optimize", 0, minimizerDefaults.optConst);
    pc.defineInt("verbose", "Verbose", 0, minimizerDefaults.verbose);
    pc.defineInt("doSave", "Save", 0, minimizerDefaults.doSave);
    pc.defineInt("doTimer", "Timer", 0, minimizerDefaults.doTimer);
@@ -574,7 +616,6 @@ std::unique_ptr<RooFitResult> minimize(RooAbsReal &pdf, RooAbsReal &nll, RooAbsD
 {
    MinimizerConfig cfg;
    cfg.recoverFromNaN = pc.getDouble("RecoverFromUndefinedRegions");
-   cfg.optConst = pc.getInt("optConst");
    cfg.verbose = pc.getInt("verbose");
    cfg.doSave = pc.getInt("doSave");
    cfg.doTimer = pc.getInt("doTimer");
@@ -676,8 +717,6 @@ std::unique_ptr<RooFitResult> minimize(RooAbsReal &pdf, RooAbsReal &nll, RooAbsD
       m.setMaxFunctionCalls(cfg.maxCalls);
    if (cfg.printLevel != 1)
       m.setPrintLevel(cfg.printLevel);
-   if (cfg.optConst)
-      m.optimizeConst(cfg.optConst); // Activate constant term optimization
    if (cfg.verbose)
       m.setVerbose(true); // Activate verbose options
    if (cfg.doTimer)
@@ -712,8 +751,6 @@ std::unique_ptr<RooFitResult> minimize(RooAbsReal &pdf, RooAbsReal &nll, RooAbsD
          ret->setCovQual(corrCovQual);
    }
 
-   if (cfg.optConst)
-      m.optimizeConst(0);
    return ret;
 }
 
@@ -738,8 +775,7 @@ std::unique_ptr<RooAbsReal> createNLL(RooAbsPdf &pdf, RooAbsData &data, const Ro
    pc.defineInt("numcpu", "NumCPU", 0, 1);
    pc.defineInt("interleave", "NumCPU", 1, 0);
    pc.defineInt("verbose", "Verbose", 0, 0);
-   pc.defineInt("optConst", "Optimize", 0, 0);
-   pc.defineInt("cloneData", "CloneData", 0, 2);
+   pc.defineInt("cloneData", "CloneData", 0, 0);
    pc.defineSet("projDepSet", "ProjectedObservables", 0, nullptr);
    pc.defineSet("cPars", "Constrain", 0, nullptr);
    pc.defineSet("glObs", "GlobalObservables", 0, nullptr);
@@ -800,14 +836,8 @@ std::unique_ptr<RooAbsReal> createNLL(RooAbsPdf &pdf, RooAbsData &data, const Ro
    const bool ext = interpretExtendedCmdArg(pdf, pc.getInt("ext"));
 
    int splitRange = pc.getInt("splitRange");
-   int optConst = pc.getInt("optConst");
    int cloneData = pc.getInt("cloneData");
    auto offset = static_cast<RooFit::OffsetMode>(pc.getInt("doOffset"));
-
-   // If no explicit cloneData command is specified, cloneData is set to true if optimization is activated
-   if (cloneData == 2) {
-      cloneData = optConst;
-   }
 
    if (pc.hasProcessed("Range")) {
       double rangeLo = pc.getDouble("rangeLo");
@@ -913,9 +943,11 @@ std::unique_ptr<RooAbsReal> createNLL(RooAbsPdf &pdf, RooAbsData &data, const Ro
          nll = std::move(correctedNLL);
       }
 
+      const int nWorkers = effectiveNumWorkers(pdf, evalBackend, pc.getInt("numcpu"));
+
       auto nllWrapper = std::make_unique<RooFit::Experimental::RooEvaluatorWrapper>(
          *nll, &data, evalBackend == RooFit::EvalBackend::Value::Cuda, rangeName ? rangeName : "", pdfClone.get(),
-         takeGlobalObservablesFromData);
+         takeGlobalObservablesFromData, nWorkers);
 
       // We destroy the timing scrope for createNLL prematurely, because we
       // separately measure the time for jitting and gradient creation
@@ -938,6 +970,8 @@ std::unique_ptr<RooAbsReal> createNLL(RooAbsPdf &pdf, RooAbsData &data, const Ro
    std::unique_ptr<RooAbsReal> nll;
 
 #ifdef ROOFIT_LEGACY_EVAL_BACKEND
+   printLegacyEvalBackendWarning(pdf);
+
    bool verbose = pc.getInt("verbose");
 
    int numcpu = pc.getInt("numcpu");
@@ -995,10 +1029,6 @@ std::unique_ptr<RooAbsReal> createNLL(RooAbsPdf &pdf, RooAbsData &data, const Ro
       nll = std::make_unique<RooAddition>((baseName + "_with_constr").c_str(), "nllWithCons",
                                           RooArgSet(*orignll, *constraintTerm));
       nll->addOwnedComponents(std::move(orignll), std::move(constraintTerm));
-   }
-
-   if (optConst) {
-      nll->constOptimizeTestStatistic(RooAbsArg::Activate, optConst > 1);
    }
 
    if (offset == RooFit::OffsetMode::Initial) {
@@ -1089,6 +1119,8 @@ std::unique_ptr<RooAbsReal> createChi2(RooAbsReal &real, RooDataHist &data, cons
 
       std::unique_ptr<RooFit::Experimental::RooEvaluatorWrapper> wrapper;
 
+      const int nWorkers = effectiveNumWorkers(real, evalBackend, pc.getInt("numcpu"));
+
       // Function mode: the input is a non-pdf RooAbsReal. We can short-circuit
       // the pdf-compilation pipeline since there's no real pdf to normalize.
       if (!pdf) {
@@ -1101,7 +1133,7 @@ std::unique_ptr<RooAbsReal> createChi2(RooAbsReal &real, RooDataHist &data, cons
          wrapper = std::make_unique<RooFit::Experimental::RooEvaluatorWrapper>(
             *chi2, &data, evalBackend == RooFit::EvalBackend::Value::Cuda, rangeName ? rangeName : "",
             /*simPdf=*/nullptr,
-            /*takeGlobalObservablesFromData=*/true);
+            /*takeGlobalObservablesFromData=*/true, nWorkers);
          wrapper->addOwnedComponents(std::move(chi2));
       } else {
          const bool extended = interpretExtendedCmdArg(*pdf, pc.getInt("extended"));
@@ -1140,7 +1172,7 @@ std::unique_ptr<RooAbsReal> createChi2(RooAbsReal &real, RooDataHist &data, cons
 
          wrapper = std::make_unique<RooFit::Experimental::RooEvaluatorWrapper>(
             *chi2, &data, evalBackend == RooFit::EvalBackend::Value::Cuda, rangeName ? rangeName : "", pdfClone.get(),
-            /*takeGlobalObservablesFromData=*/true);
+            /*takeGlobalObservablesFromData=*/true, nWorkers);
          wrapper->addOwnedComponents(std::move(binSamplingPdfs));
          wrapper->addOwnedComponents(std::move(chi2));
          wrapper->addOwnedComponents(std::move(pdfClone));
@@ -1158,6 +1190,8 @@ std::unique_ptr<RooAbsReal> createChi2(RooAbsReal &real, RooDataHist &data, cons
    }
 
 #ifdef ROOFIT_LEGACY_EVAL_BACKEND
+   printLegacyEvalBackendWarning(real);
+
    RooAbsTestStatistic::Configuration cfg;
 
    RooAbsReal::setEvalErrorLoggingMode(RooAbsReal::CollectErrors);
@@ -1225,7 +1259,7 @@ std::unique_ptr<RooFitResult> fitTo(RooAbsReal &real, RooAbsData &data, const Ro
          nllCmdListString += ",OffsetLikelihood";
       }
    } else {
-      auto createChi2DataHistCmdArgs = "Range,RangeWithName,NumCPU,Optimize,IntegrateBins,ProjectedObservables,"
+      auto createChi2DataHistCmdArgs = "Range,RangeWithName,NumCPU,IntegrateBins,ProjectedObservables,"
                                        "AddCoefRange,SplitRange,DataError,Extended,EvalBackend";
       auto createChi2DataSetCmdArgs = "YVar,Integrate,RangeWithName,NumCPU,Verbose";
       nllCmdListString += isDataHist ? createChi2DataHistCmdArgs : createChi2DataSetCmdArgs;

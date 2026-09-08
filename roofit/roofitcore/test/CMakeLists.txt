@@ -35,6 +35,7 @@ ROOT_ADD_GTEST(testRooFitCore
     testRooLinkedList.cxx
     testRooPolyFunc.cxx
     testRooProdPdf.cxx
+    testRooRealSumPdf.cxx
     testRooSTLRefCountList.cxx
     testRooWrapperPdf.cxx
     testSimple.cxx
@@ -81,18 +82,20 @@ if(clad)
   ROOT_ADD_GTEST(testRooFuncWrapper testRooFuncWrapper.cxx LIBRARIES RooFitCore RooFit HistFactory)
 endif()
 ROOT_ADD_GTEST(testNaNPacker testNaNPacker.cxx LIBRARIES RooFitCore)
+ROOT_ADD_GTEST(testRooBatchCompute testRooBatchCompute.cxx LIBRARIES RooBatchCompute)
+ROOT_ADD_GTEST(testRooEfficiency testRooEfficiency.cxx LIBRARIES RooFitCore RooFit)
 ROOT_ADD_GTEST(testRooExtendedBinding testRooExtendedBinding.cxx LIBRARIES RooFitCore RooFit)
 ROOT_ADD_GTEST(testRooMCStudy testRooMCStudy.cxx LIBRARIES RooFitCore RooFit)
 ROOT_ADD_GTEST(testRooMinimizer testRooMinimizer.cxx LIBRARIES RooFitCore RooFit)
 ROOT_ADD_GTEST(testRooMulti testRooMulti.cxx LIBRARIES RooFitCore RooFit)
+ROOT_ADD_GTEST(testRooProfileLL testRooProfileLL.cxx LIBRARIES RooFitCore RooFit)
 ROOT_ADD_GTEST(testRooRombergIntegrator testRooRombergIntegrator.cxx LIBRARIES MathCore RooFitCore)
 ROOT_ADD_GTEST(testRooSimultaneous testRooSimultaneous.cxx LIBRARIES RooFitCore RooFit)
 ROOT_ADD_GTEST(testRooTruthModel testRooTruthModel.cxx LIBRARIES RooFitCore RooFit
   COPY_TO_BUILDDIR ${CMAKE_CURRENT_SOURCE_DIR}/rooAbsAnaConvPdf_classV3.root)
 
 if (roofit_multiprocess)
-  ROOT_ADD_GTEST(testTestStatisticsPlot TestStatistics/testPlot.cxx LIBRARIES RooFitMultiProcess RooFitCore RooFit
-                   COPY_TO_BUILDDIR ${CMAKE_CURRENT_SOURCE_DIR}/TestStatistics/TestStatistics_ref.root)
+  ROOT_ADD_GTEST(testTestStatisticsPlot TestStatistics/testPlot.cxx LIBRARIES RooFitMultiProcess RooFitCore RooFit)
   ROOT_ADD_GTEST(testLikelihoodGradientJob TestStatistics/testLikelihoodGradientJob.cxx LIBRARIES RooFitMultiProcess RooFitCore m ROOT::TestSupport)
   target_include_directories(testLikelihoodGradientJob PRIVATE ${RooFitCore_MultiProcess_TestStatistics_INCLUDE_DIR})
   ROOT_ADD_GTEST(testLikelihoodJob TestStatistics/testLikelihoodJob.cxx LIBRARIES RooFitMultiProcess RooFitCore m)

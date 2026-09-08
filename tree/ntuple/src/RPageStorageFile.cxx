@@ -46,10 +46,7 @@ using ROOT::Experimental::Detail::RNTupleAtomicTimer;
 using ROOT::Experimental::Detail::RNTupleCalcPerf;
 using ROOT::Experimental::Detail::RNTupleMetrics;
 using ROOT::Internal::RCluster;
-using ROOT::Internal::RNTupleCompressor;
-using ROOT::Internal::RNTupleDecompressor;
 using ROOT::Internal::RNTupleFileWriter;
-using ROOT::Internal::RNTupleSerializer;
 using ROOT::Internal::ROnDiskPage;
 using ROOT::Internal::ROnDiskPageMap;
 
@@ -516,6 +513,7 @@ std::unique_ptr<ROOT::Internal::RPageSource> ROOT::Internal::RPageSourceFile::Cl
    auto clone = new RPageSourceFile(fNTupleName, fOptions);
    clone->fFile = fFile->Clone();
    clone->fReader = ROOT::Internal::RMiniFileReader(clone->fFile.get());
+   clone->fHasStreamerInfo = fHasStreamerInfo;
    return std::unique_ptr<RPageSourceFile>(clone);
 }
 
@@ -714,5 +712,9 @@ ROOT::Internal::RPageSourceFile::LoadClusters(std::span<RCluster::RKey> clusterK
 
 void ROOT::Internal::RPageSourceFile::LoadStreamerInfo()
 {
+   if (fHasStreamerInfo)
+      return;
+
    fReader.LoadStreamerInfo();
+   fHasStreamerInfo = true;
 }

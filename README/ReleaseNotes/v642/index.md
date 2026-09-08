@@ -45,6 +45,7 @@ The following people have contributed to this new version:
   Note that `all=ON` enables several of these options, so building with `-Dall=ON` now requires all of their dependencies to be installed, or the unwanted ones to be disabled explicitly.
   Build options that are enabled by default, such as `pyroot`, `opengl`, `xml`, `sqlite`, `davix`, `curl`, `tmva-cpu` or `tpython` are not affected: they are still disabled automatically when their dependencies are missing.
 * The option `fail-on-missing=OFF` will no longer be honored for CMake ROOT build options that have easy-to-install dependencies (e.g. via homebrew or apt-get), such as those required by options `cfitsio`, `civetweb`, `fftw3`, `imt`, `mathmore`, `nlohmann_json`, `tmva-cpu`, `unuran`, `vdt` or `xrootd`. Before, associated `builtin_option` was automatically turned ON (or the opt-in feature turned to OFF), now, user has to install system package or manually set `builtin_option` to `ON` or opt-in feature to `OFF`.
+* The legacy evaluation backend of RooFit and the related `RooFit::BatchMode()` command argument are deprecated and will be removed in ROOT 6.44. See the RooFit section below for details.
 * The method `RooRealVar::removeRange()` and the corresponding method in `RooErrorVar` that were deprecated in ROOT 6.40 are now removed.
 * The overloads of `RooAbsReal::createChi2()` and `RooAbsReal::chi2FitTo()` that take unbinned **RooDataSet** data objects were deprecated in ROOT 6.40 and are now removed.
 * The **RooStats::HybridPlot** class and the related **HybridResult::GetPlot** method were deprecated in ROOT 6.40 and are now removed.
@@ -60,11 +61,16 @@ The following people have contributed to this new version:
 * The Keras and PyTorch parsers for SOFIE (`TMVA::Experimental::SOFIE::PyKeras` and `PyTorch`) are now removed, so `RSofieReader` only accepts ONNX files.
 These parsers relied on private implementation details of Keras and PyTorch, which change faster than is appropriate for ROOT's stability standards.
 Users are encouraged to export their models to ONNX and use the retained ONNX parser instead.
+* **PyMVA**, the TMVA interface to Python machine-learning libraries (the `PyKeras`, `PyTorch`, `PyRandomForest`, `PyGTB` and `PyAdaBoost` methods), and the corresponding `tmva-pymva` build option are deprecated and will be removed in ROOT 6.44. Like the SOFIE Keras and PyTorch parsers, PyMVA relies on implementation details of the underlying Python libraries that change faster than is appropriate for ROOT's stability standards. Users are encouraged to train and evaluate their models directly with the Python machine-learning libraries, which integrate well with ROOT via the `ROOT::Experimental::ML::DataLoader`. For high-performance inference in C++, models can be exported to ONNX and evaluated with SOFIE (see `RSofieReader`).
 * The ROOT IO capability for the `TMVA::Experimental::RBDT` class has been removed, along with the `TMVA.Experimental.SaveXGBoost` Python function. Experimental classes should not be persistified since their on-disk layout is not guaranteed to be stable. An `RBDT` is now built directly from an XGBoost model in its native JSON serialization with the new `TMVA::Experimental::RBDT::LoadXGBoost(jsonPath)`, which works both from C++ and Python. To convert a trained model, save it first with XGBoost's `Booster.save_model("model.json")` and then load it with `LoadXGBoost`.
 * The **JsMVA** feature for interactive TMVA training in Jupyter notebooks is now removed. It was not functional for years and was therefore already excluded from ROOT 6.38. This also removes the `TMVA::IPythonInteractive` class and the related interactive-training interfaces from the TMVA method and fitter classes, such as `MethodBase::ExitFromTraining()` or `FitterBase::SetIPythonInteractive()`.
 * The **RooStats::DebuggingSampler** and **RooStats::DebuggingTestStat** classes are removed. They were mock implementations of the `TestStatSampler` and `TestStatistic` interfaces that returned uniform random numbers independent of the data, only meant for debugging the RooStats framework itself during its initial development.
 * The `RooTrace` class is deprecated and will be removed in ROOT 6.44. It was a RooFit-specific memory tracer whose instrumentation hooks are compiled out by default, so it has been inert and untested for years. For memory debugging, please use general-purpose tools such as AddressSanitizer or Valgrind instead.
 * Support for the AIX operating system has been removed from the codebase. This support has not been tested since the late v5 releases and the LLVM JIT is not yet supporting AIX.
+* The headers Htypes.h and Gtypes.h that were deprecated in ROOT 6.20 will now emit warnings and will be fully removed in ROOT 6.44.
+* The header GLConstants.h is no longer part of ROOT installed headers.
+* The `ROOT::Math::ParamFunctionBase`, `ROOT::Math::ParamFunctorHandler` and `ROOT::Math::ParamMemFunHandler` classes in `Math/ParamFunctor.h` are removed, together with the `ParamFunctor::GetImpl()` and `ParamFunctor::SetFunction()` methods that exposed them. They implemented the type erasure that `ParamFunctor` now gets from `std::function`, mirroring what was already done for `ROOT::Math::Functor`. Constructing and calling a `ParamFunctor` is unchanged, except that the constructor from an object and one of its member functions now takes a plain pointer to the object instead of anything dereferenceable, so smart pointers are no longer accepted there.
+* The header `Rpair.h` is deprecated and will be removed after ROOT 6.44.
 
 ## Build System
 
@@ -118,6 +124,12 @@ maps) will now obtain different, mathematically consistent values.
 
 ## Math
 
+### Skipping identically-vanishing second derivatives in numerical Hessian evaluation
+
+Minuit2 objective functions can now advertise pairs of parameters whose mixed second derivative is identically zero, via the new virtual function `ROOT::Minuit2::FCNBase::SecondDerivativeAlwaysVanishes()` (with corresponding setters on `ROOT::Minuit2::FCNAdapter` and `ROOT::Minuit2::Minuit2Minimizer`).
+The numerical Hessian computation in Minuit2 (`MnHesse`) skips the finite-difference evaluations for such parameter pairs, which can speed up Hesse significantly for likelihoods with many mutually independent parameters.
+The parameter indices in this interface always refer to the function's own full (external) parameter space, including parameters that are fixed in the minimizer, and the advertised information must hold for all parameter values; see the `FCNBase` documentation for the full contract.
+
 ## RDataFrame
 
 * Added `RedefinePerSample` transformation. Works similarly to `DefinePerSample`, but allows to redefine existing values
@@ -141,12 +153,58 @@ the cut instead of being selected based on `sqrt(abs(x))`.
 
 * The `RooMinimizer::Strategy` enum has been removed. It named the Minuit strategies that are usually referred to just by integers, but caused confusion because it didn't include the unnamed "Strategy 3". Since people usually set the strategy with integer values anyway, it was decided that the simplest solution to avoid the confusion was simply to remove the `RooMinimizer::Strategy` enum
 
-### Removal of the the constant term optimization for legacy test statistic classes
+### Faster Hesse for likelihoods with many independent parameters
 
-The **RooFit::Optimize()** option (constant term optimization) has been deprecated in ROOT 6.40 its functionality was now removed.
+RooFit now analyzes the computation graph of the minimized function to find pairs of parameters that never appear in the same additive term of the likelihood, meaning their mixed second derivative is identically zero.
+This information is forwarded to Minuit2, which skips the corresponding finite-difference evaluations in the numerical Hessian computation (see the Math section above).
+For likelihoods with many mutually independent parameters, such as the per-channel nuisance parameters of large combined HistFactory models, this can speed up `RooMinimizer::hesse()` by 30 % or more, with results identical up to floating-point noise.
+This optimization is automatic and requires no user action.
+
+### Deprecation of the legacy evaluation backend
+
+The `legacy` evaluation backend for likelihood and chi-square fits is deprecated and will be removed in ROOT 6.44.
+It was superseded by the vectorized `cpu` backend, which is the default since ROOT 6.32.
+After the removal of the constant term optimization (see below), the legacy backend also has no performance-relevant feature left that would justify its continued maintenance.
+
+Selecting the legacy backend with `RooFit::EvalBackend("legacy")` now prints a deprecation warning whenever a likelihood or chi-square object is created with it, and the `RooFit::EvalBackend::Legacy()` factory function is marked as deprecated, resulting in compiler warnings.
+
+The **RooFit::BatchMode()** command argument, which was superseded by `RooFit::EvalBackend()` in ROOT 6.28, is deprecated at the same time and will also be removed in ROOT 6.44.
+Note that the C++ declarations of `RooFit::BatchMode()` had been unintentionally absent since ROOT 6.30; they are restored in this release, marked as deprecated, to give downstream code a proper migration window.
+
+The removal in ROOT 6.44 will also include:
+
+  * the implementation classes of the legacy test statistics: **RooNLLVar**, **RooChi2Var**, **RooAbsOptTestStatistic** and **RooAbsTestStatistic** (their headers are not part of the public interface anymore since ROOT 6.32, but they are still installed),
+  * the old multiprocessing mechanism of the legacy backend, consisting of the **RooRealMPFE** class and the underlying **BidirMMapPipe**,
+  * the `nll::name[pdf,data]` and `chi2::name[pdf,data]` expressions in the `RooWorkspace::factory()` language, which instantiate the removed classes directly.
+
+Users are strongly encouraged to switch to the default `cpu` evaluation backend, i.e., to simply not pass any `EvalBackend()` or `BatchMode()` command argument.
+If the default backend does not work for a given use case, **please report it by opening an issue on the ROOT GitHub repository**.
+
+### Removal of the constant term optimization for legacy test statistic classes
+
+The **RooFit::Optimize()** option (constant term optimization) was deprecated in ROOT 6.40, and its functionality is now removed.
 The `RooFit::Optimize()` and `RooMinimizer::optimizeConst()` methods are kept for API consistency across ROOT versions, but they have no effect anymore.
 
-This option only affected the `legacy` evaluation backend.
+In practice this option only affected the `legacy` evaluation backend.
+
+Together with the mechanism itself, the public interfaces that only existed to
+drive it were removed. Code that called or overrode any of the following needs
+to be adapted:
+
+  * `RooAbsArg::constOptimizeTestStatistic()`, `RooAbsArg::findConstantNodes()`,
+    `RooAbsArg::setCacheAndTrackHints()`, `RooAbsArg::canNodeBeCached()` and the
+    `RooAbsArg::ConstOpCode` and `RooAbsArg::CacheMode` enums.
+  * `RooAbsData::cacheArgs()`, `resetCache()`, `setArgStatus()`, `attachCache()`,
+    `optimizeReadingWithCaching()`, `allClientsCached()` and `hasFilledCache()`,
+    together with the corresponding `RooAbsDataStore` interface (`cacheArgs()`,
+    `cacheOwner()`, `attachCache()`, `setArgStatus()`, `resetCache()`,
+    `cachedVars()`, `recalculateCache()` and `forceCacheUpdate()`). Classes
+    deriving from `RooAbsDataStore` no longer need to implement them.
+  * `RooFit::TestStatistics::RooAbsL::constOptimizeTestStatistic()` and
+    `RooFit::TestStatistics::LikelihoodWrapper::constOptimizeTestStatistic()`.
+
+Since the cache-and-track hints are gone, the `"CacheAndTrack"`,
+`"NOCacheAndTrack"` and `"NeverConstant"` attributes no longer have any effect.
 
 The default vectorized CPU evaluation backend (introduced in ROOT 6.32) already performs these optimizations automatically and is not affected by this change.
 Users are strongly encouraged to switch to the vectorized CPU backend if they are still using the legacy backend.

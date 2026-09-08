@@ -54,6 +54,9 @@ public:
                                                    : ROOT::Minuit2::GradientParameterSpace::External;
    }
 
+   // TODO: Implement this
+   bool SecondDerivativeAlwaysVanishes(unsigned int /*i*/, unsigned int /*j*/) const override { return false; }
+
 private:
    MinuitFcnGrad const &_fcn;
    double _up;
@@ -90,7 +93,7 @@ MinuitFcnGrad::MinuitFcnGrad(const std::shared_ptr<RooFit::TestStatistics::RooAb
                              LikelihoodGradientMode likelihoodGradientMode)
    : RooAbsMinimizerFcn(*absL->getParameters(), context), _minuitInternalX(getNDim(), 0), _minuitExternalX(getNDim(), 0)
 {
-   synchronizeParameterSettings(parameters, true);
+   synchronizeParameterSettings(parameters);
 
    _calculationIsClean = std::make_unique<WrapperCalculationCleanFlags>();
 
@@ -267,7 +270,7 @@ void MinuitFcnGrad::GradientWithPrevResult(const double *x, double *grad, double
 
 bool MinuitFcnGrad::Synchronize(std::vector<ROOT::Fit::ParameterSettings> &parameters)
 {
-   bool returnee = synchronizeParameterSettings(parameters, _optConst);
+   bool returnee = synchronizeParameterSettings(parameters);
    applyToLikelihood([&](auto &l) { l.synchronizeParameterSettings(parameters); });
    _gradient->synchronizeParameterSettings(parameters);
 
