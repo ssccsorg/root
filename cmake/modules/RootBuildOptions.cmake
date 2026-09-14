@@ -99,6 +99,7 @@ ROOT_BUILD_OPTION(builtin_llvm ON "Build bundled copy of LLVM (advanced option)"
 MARK_AS_ADVANCED(builtin_llvm)
 ROOT_BUILD_OPTION(builtin_lz4 OFF "Build lz4 from an automatically downloaded source tarball (requires network)")
 ROOT_BUILD_OPTION(builtin_lzma OFF "Build lzma from an automatically downloaded source tarball (requires network)")
+ROOT_BUILD_OPTION(builtin_mathtext ON "Build mathtext from an in-built source tarball (does not require network)")
 ROOT_BUILD_OPTION(builtin_nlohmannjson OFF "Build nlohmann/json from an automatically downloaded source tarball (requires network)")
 ROOT_BUILD_OPTION(builtin_openssl OFF "Build OpenSSL from an automatically downloaded source tarball (requires network)")
 ROOT_BUILD_OPTION(builtin_mathjax OFF "Install mathjax package for mathtext rendering in JSROOT (requires network)")
@@ -153,7 +154,6 @@ ROOT_BUILD_OPTION(pyroot ON "Enable support for automatic Python bindings (PyROO
 ROOT_BUILD_OPTION(pythia8 OFF "Enable support for Pythia 8.x [GPL]")
 ROOT_BUILD_OPTION(qt6web OFF "Enable support for Qt6 web-based display (requires Qt6::WebEngineCore and Qt6::WebEngineWidgets)")
 ROOT_BUILD_OPTION(roofit ON "Build the advanced fitting package RooFit, and RooStats for statistical tests. If xml is available, also build HistFactory.")
-ROOT_BUILD_OPTION(roofit_multiprocess OFF "Build RooFit::MultiProcess and multi-process RooFit::TestStatistics classes (requires ZeroMQ >= 4.3.5 built with -DENABLE_DRAFTS and cppzmq).")
 ROOT_BUILD_OPTION(root7 ON "Build ROOT 7 experimental components of ROOT")
 ROOT_BUILD_OPTION(runtime_cxxmodules ON "Enable runtime support for C++ modules")
 ROOT_BUILD_OPTION(shadowpw OFF "Enable support for shadow passwords")
@@ -267,6 +267,7 @@ if(builtin_all)
   set(builtin_llvm_defvalue ON)
   set(builtin_lz4_defvalue ON)
   set(builtin_lzma_defvalue ON)
+  set(builtin_mathtext_defvalue ON)
   set(builtin_nlohmannjson_defvalue ON)
   if(APPLE)
     set(builtin_openssl_defvalue ON)
@@ -304,11 +305,6 @@ if(builtin_openssl AND NOT APPLE)
     message(FATAL_ERROR ">>> Option 'builtin_openssl' is only supported on macOS.")
 endif()
 
-# MultiProcess is not possible on Windows, so fail if it is manually set:
-if(roofit_multiprocess AND WIN32)
-    message(FATAL_ERROR ">>> Option 'roofit_multiprocess' is not supported on Windows.")
-endif()
-
 #---Options depending of CMake Generator-------------------------------------------------------
 if( CMAKE_GENERATOR STREQUAL Ninja)
    set(fortran_defvalue OFF)
@@ -316,7 +312,7 @@ endif()
 
 #---Apply minimal or gminimal------------------------------------------------------------------
 foreach(opt ${root_build_options})
-  if(NOT opt MATCHES "builtin_llvm|builtin_clang|builtin_cling|shared|runtime_cxxmodules|thisroot_scripts")
+  if(NOT opt MATCHES "builtin_llvm|builtin_clang|builtin_cling|builtin_mathtext|shared|runtime_cxxmodules|thisroot_scripts")
     if(minimal)
       set(${opt}_defvalue OFF)
     elseif(gminimal AND NOT opt MATCHES "x11|cocoa")
@@ -392,6 +388,10 @@ foreach(opt afdsmgrd afs alien bonjour builtin_afterimage builtin_davix builtin_
 endforeach()
 
 #---Deprecated options------------------------------------------------------------------------
+if(DEFINED roofit_multiprocess)
+  message(DEPRECATION ">>> Option 'roofit_multiprocess' has no effect anymore and will be removed in the next release of ROOT: RooFit::MultiProcess no longer needs ZeroMQ and is now always built on all platforms except Windows.")
+endif()
+
 foreach(opt mpi r tmva-pymva)
   if(${opt})
     message(DEPRECATION ">>> Option '${opt}' is deprecated and will be removed in the next release of ROOT. Please contact root-dev@cern.ch should you still need it.")

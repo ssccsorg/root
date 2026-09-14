@@ -397,7 +397,6 @@ if(testing)
   add_subdirectory (benchmarks)
 endif()
 add_subdirectory (net)
-add_subdirectory (builtins/libmathtext) # hard coded builtin for graf2d
 if (x11)
   add_subdirectory (builtins/xvertext) # hard coded builtin for graf2d/x11
 endif()
