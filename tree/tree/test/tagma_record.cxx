@@ -17,12 +17,16 @@
 
 #include "ROOT/TTagmaStore.hxx"
 
+#include "TClass.h"
 #include "TFile.h"
+#include "TStreamerElement.h"
+#include "TStreamerInfo.h"
 #include "TTree.h"
 
 #include "gtest/gtest.h"
 
 #include <memory>
+#include <string>
 
 TEST(TTagmaRecord, GetTagmaRecordReadsOneRecordPerEntry)
 {
@@ -162,4 +166,31 @@ TEST(TTagmaRecord, OversizedRecordSizeLayoutIsRejected)
    char buf[64];
    EXPECT_EQ(tree->GetTagmaRecord(0, buf, 64), -1);
    EXPECT_EQ(tree->GetEntry(0), 0);
+}
+
+// The coordinate members of TTree hold runtime buffers, so the streamer
+// must not carry them. A member that is streamed while its ClassDef
+// version matches the one recorded in a file makes the reader take it
+// from the file, where another build wrote no such member: the vector
+// length it reads is then arbitrary, and opening any file written by
+// another ROOT build aborts in the vector allocation. This test is the
+// guard for that, in the streamer info rather than in a fixture file,
+// because the failure needs a file whose TTree class version equals the
+// current one.
+TEST(TTagmaRecord, CoordinateMembersAreNotStreamed)
+{
+   TClass *cls = TClass::GetClass("TTree");
+   ASSERT_NE(cls, nullptr);
+   const TStreamerInfo *info =
+       dynamic_cast<const TStreamerInfo *>(cls->GetStreamerInfo());
+   ASSERT_NE(info, nullptr);
+   TIter next(info->GetElements());
+   while (TObject *o = next()) {
+      const auto *element = dynamic_cast<const TStreamerElement *>(o);
+      ASSERT_NE(element, nullptr);
+      const std::string name = element->GetName();
+      EXPECT_NE(name.rfind("fTagma", 0), 0u)
+          << name << " is streamed; mark it transient with ///<! so a file "
+                      "written by another build still reads";
+   }
 }

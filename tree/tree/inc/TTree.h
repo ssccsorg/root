@@ -140,10 +140,10 @@ protected:
    std::vector<char> fTagmaData;         ///<! Data region slice of the entry in fTagmaRecord
    /// Element buffers of the array branches, one per collection field, sized
    /// by the collection maximum. The branches hold addresses inside them.
-   std::vector<std::vector<char>> fTagmaFields;
+   std::vector<std::vector<char>> fTagmaFields; ///<!
    /// The array branches, in the order of fTagmaFields. The tree-level read
    /// drives them so a leaf read after TTree::GetEntry sees the entry.
-   std::vector<TBranch *> fTagmaFieldBranches;
+   std::vector<TBranch *> fTagmaFieldBranches; ///<!
    std::vector<std::uint64_t> fTagmaCounts; ///<! Object counts of the loaded entry
    Bool_t         fTagmaCountError = kFALSE; ///<! Set once when a count passes the schema bound
    TObjArray      fBranches;              ///<  List of Branches
