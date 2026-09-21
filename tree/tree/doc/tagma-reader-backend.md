@@ -135,6 +135,17 @@ against the file. The mechanism is the standard one, a count branch and an
 array branch whose leaflist names the count, so the work is in the store side,
 not in a new leaf type.
 
+One constraint the leaf machinery imposes decides the chunk layout. A leaf
+created from a count-carrying leaflist reads element i at its address plus i
+times the element size, so the elements of one field have to be contiguous in
+memory at a fixed address. A collection chunk therefore places its fields one
+after the other rather than object by object, and the reader copies the fields
+whose branches are active into fixed per-field buffers, at offsets that follow
+from the count. Because the copy set follows the branch activation state, the
+bytes copied per event scale with the columns the analysis reads: column
+pruning at field granularity, inside the addressing unit rather than instead
+of it.
+
 P6. Dataset addressing and concurrency.
 A dataset object holding per-file axis ranges so a (run, luminosity block,
 event number) coordinate resolves to a file and an offset, with the axis
