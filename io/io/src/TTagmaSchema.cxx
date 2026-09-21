@@ -12,9 +12,33 @@
 
 #include <algorithm>
 #include <fstream>
+#include <limits>
 #include <sstream>
 
 namespace ROOT {
+
+namespace {
+
+// Parses a decimal unsigned integer. Rejects an empty string, a non-digit,
+// and an overflow.
+bool ParseUint(const std::string &text, std::uint64_t *value)
+{
+   if (text.empty())
+      return false;
+   std::uint64_t result = 0;
+   for (char c : text) {
+      if (c < '0' || c > '9')
+         return false;
+      const std::uint64_t digit = static_cast<std::uint64_t>(c - '0');
+      if (result > (std::numeric_limits<std::uint64_t>::max() - digit) / 10)
+         return false;
+      result = result * 10 + digit;
+   }
+   *value = result;
+   return true;
+}
+
+}  // namespace
 
 std::uint64_t TTagmaSchema::SizeOf(EType type)
 {
@@ -104,44 +128,143 @@ bool TTagmaSchema::ParseType(const std::string &name, EType *type)
    return true;
 }
 
+bool TTagmaSchema::IsIntegral(EType type)
+{
+   switch (type) {
+   case EType::kInt32:
+   case EType::kUInt32:
+   case EType::kInt64:
+   case EType::kUInt64:
+   case EType::kInt16:
+   case EType::kUInt16:
+   case EType::kInt8:
+   case EType::kUInt8:
+      return true;
+   case EType::kDouble:
+   case EType::kFloat:
+   case EType::kBool:
+      return false;
+   }
+   return false;
+}
+
+std::uint64_t TTagmaSchema::Collection::ElementBytes() const
+{
+   std::uint64_t bytes = 0;
+   for (const auto &field : fFields)
+      bytes += field.Size();
+   return bytes;
+}
+
 void TTagmaSchema::AddField(const Field &field)
 {
    fFields.push_back(field);
+   Rebuild();
 }
 
-std::uint64_t TTagmaSchema::Extent() const
+void TTagmaSchema::Rebuild()
+{
+   fScalars.clear();
+   fCollections.clear();
+   for (const auto &field : fFields) {
+      if (!field.IsArray()) {
+         fScalars.push_back(field);
+         continue;
+      }
+      auto match = std::find_if(
+          fCollections.begin(), fCollections.end(),
+          [&field](const Collection &c) { return c.fCountField == field.fCountField; });
+      if (match == fCollections.end()) {
+         Collection collection;
+         collection.fCountField = field.fCountField;
+         fCollections.push_back(collection);
+         match = fCollections.end() - 1;
+      }
+      match->fFields.push_back(field);
+      match->fMaxCount = std::max(match->fMaxCount, field.fMaxCount);
+   }
+}
+
+std::uint64_t TTagmaSchema::ScalarExtent() const
 {
    std::uint64_t extent = 0;
-   for (const auto &field : fFields)
+   for (const auto &field : fScalars)
       extent = std::max(extent, field.fOffset + field.Size());
    return extent;
+}
+
+std::uint64_t TTagmaSchema::IndexRecordSize() const
+{
+   // The data base field is present only when the schema carries a
+   // collection, so a scalar-only schema keeps the flat record of the
+   // fixed-width store.
+   const std::uint64_t payload =
+       ScalarExtent() + (HasCollections() ? sizeof(std::uint64_t) : 0);
+   return (payload + 7) & ~static_cast<std::uint64_t>(7);
+}
+
+std::uint64_t TTagmaSchema::DataBaseOffset() const
+{
+   return HasCollections() ? IndexRecordSize() - sizeof(std::uint64_t)
+                           : IndexRecordSize();
+}
+
+std::uint64_t TTagmaSchema::ChunkOffset(std::size_t collectionIndex,
+                                        const std::uint64_t *counts) const
+{
+   std::uint64_t offset = 0;
+   for (std::size_t i = 0; i < collectionIndex && i < fCollections.size(); ++i)
+      offset += counts[i] * fCollections[i].ElementBytes();
+   return offset;
+}
+
+std::uint64_t TTagmaSchema::FieldOffset(const Collection &collection,
+                                        const std::string &fieldName,
+                                        std::uint64_t count) const
+{
+   std::uint64_t base = 0;
+   for (const auto &field : collection.fFields) {
+      if (field.fName == fieldName)
+         return base * count;
+      base += field.Size();
+   }
+   return 0;
+}
+
+std::uint64_t TTagmaSchema::SliceBytes(const std::uint64_t *counts) const
+{
+   std::uint64_t bytes = 0;
+   for (std::size_t i = 0; i < fCollections.size(); ++i)
+      bytes += counts[i] * fCollections[i].ElementBytes();
+   return bytes;
 }
 
 bool TTagmaSchema::AddLine(const std::string &line)
 {
    std::istringstream stream(line);
-   std::string name;
-   std::string offset;
-   std::string typeName;
-   std::string trailing;
-   if (!(stream >> name >> offset >> typeName))
+   std::vector<std::string> tokens;
+   std::string token;
+   while (stream >> token)
+      tokens.push_back(token);
+   if (tokens.size() < 3 || tokens.size() > 5)
       return false;
-   if (stream >> trailing)
-      return false;
-   if (name.empty())
-      return false;
-
-   char *end = nullptr;
-   const unsigned long long value = std::strtoull(offset.c_str(), &end, 10);
-   if (end == offset.c_str() || *end != '\0')
+   if (tokens[0].empty())
       return false;
 
    Field field;
-   if (!ParseType(typeName, &field.fType))
+   if (!ParseUint(tokens[1], &field.fOffset))
       return false;
-   field.fName = name;
-   field.fOffset = static_cast<std::uint64_t>(value);
-   fFields.push_back(field);
+   if (!ParseType(tokens[2], &field.fType))
+      return false;
+   field.fName = tokens[0];
+   if (tokens.size() >= 4) {
+      field.fCountField = tokens[3];
+      if (field.fCountField.empty())
+         return false;
+      if (tokens.size() == 5 && !ParseUint(tokens[4], &field.fMaxCount))
+         return false;
+   }
+   AddField(field);
    return true;
 }
 
@@ -153,6 +276,7 @@ bool TTagmaSchema::Read(const char *path)
    if (!in)
       return false;
    fFields.clear();
+   Rebuild();
    std::string line;
    while (std::getline(in, line)) {
       std::istringstream probe(line);
@@ -162,49 +286,76 @@ bool TTagmaSchema::Read(const char *path)
          continue;
       if (!AddLine(line)) {
          fFields.clear();
+         Rebuild();
          return false;
       }
    }
    return !fFields.empty();
 }
 
-bool TTagmaSchema::Validate(std::uint64_t recordSize, std::string *why) const
+bool TTagmaSchema::Validate(std::uint64_t indexRecordSize, std::string *why) const
 {
-   if (fFields.empty()) {
+   const auto reject = [why](const std::string &reason) {
       if (why)
-         *why = "the schema holds no field";
+         *why = reason;
       return false;
-   }
-   std::vector<Field> ordered(fFields);
+   };
+   if (fFields.empty())
+      return reject("the schema holds no field");
+   if (IndexRecordSize() > indexRecordSize)
+      return reject("the index record needs " +
+                    std::to_string(IndexRecordSize()) + " bytes, the store holds " +
+                    std::to_string(indexRecordSize));
+
+   // The scalars live in the index record, which reserves the data base.
+   std::vector<Field> ordered(fScalars);
    std::sort(ordered.begin(), ordered.end(),
              [](const Field &a, const Field &b) { return a.fOffset < b.fOffset; });
    std::uint64_t previousEnd = 0;
    for (const auto &field : ordered) {
-      if (field.fName.empty()) {
-         if (why)
-            *why = "a field has an empty name";
-         return false;
-      }
-      if (field.fOffset < previousEnd) {
-         if (why)
-            *why = "field " + field.fName + " overlaps the preceding field";
-         return false;
-      }
-      const std::uint64_t end = field.fOffset + field.Size();
-      if (end > recordSize) {
-         if (why)
-            *why = "field " + field.fName + " extends past the record size";
-         return false;
-      }
-      previousEnd = end;
+      if (field.fName.empty())
+         return reject("a field has an empty name");
+      if (field.fOffset < previousEnd)
+         return reject("scalar field " + field.fName + " overlaps the preceding field");
+      // The index record size follows from this extent, so a field can only
+      // exceed it by making the record larger than the store holds, which the
+      // size check above already reports.
+      previousEnd = field.fOffset + field.Size();
    }
-   for (std::size_t i = 0; i < ordered.size(); ++i)
-      for (std::size_t j = i + 1; j < ordered.size(); ++j)
-         if (ordered[i].fName == ordered[j].fName) {
-            if (why)
-               *why = "field name " + ordered[i].fName + " repeats";
-            return false;
-         }
+
+   // Each collection is bound by a scalar field of integral type, and its
+   // object fields do not overlap.
+   for (const auto &collection : fCollections) {
+      auto count = std::find_if(fScalars.begin(), fScalars.end(),
+                                [&collection](const Field &field) {
+                                   return field.fName == collection.fCountField;
+                                });
+      if (count == fScalars.end())
+         return reject("collection count field " + collection.fCountField +
+                       " is not a scalar field of the schema");
+      if (!IsIntegral(count->fType))
+         return reject("collection count field " + collection.fCountField +
+                       " is not integral");
+      if (collection.fMaxCount == 0)
+         return reject("collection " + collection.fCountField +
+                       " carries no maximum object count");
+      std::vector<Field> fields(collection.fFields);
+      std::sort(fields.begin(), fields.end(),
+                [](const Field &a, const Field &b) { return a.fOffset < b.fOffset; });
+      std::uint64_t objectEnd = 0;
+      for (const auto &field : fields) {
+         if (field.fOffset < objectEnd)
+            return reject("array field " + field.fName +
+                          " overlaps the preceding field of its object");
+         objectEnd = field.fOffset + field.Size();
+      }
+   }
+
+   // Names are unique across the whole schema.
+   for (std::size_t i = 0; i < fFields.size(); ++i)
+      for (std::size_t j = i + 1; j < fFields.size(); ++j)
+         if (fFields[i].fName == fFields[j].fName)
+            return reject("field name " + fFields[i].fName + " repeats");
    return true;
 }
 

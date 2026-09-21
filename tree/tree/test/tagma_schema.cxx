@@ -121,7 +121,7 @@ TEST(TTagmaSchema, LeavesReadTheStoreRecord)
    ROOT::TTagmaSchema schema;
    ASSERT_TRUE(schema.Read(kLayoutPath));
    ASSERT_EQ(schema.GetFields().size(), 3u);
-   ASSERT_EQ(schema.Extent(), std::uint64_t(13));
+   ASSERT_EQ(schema.ScalarExtent(), std::uint64_t(13));
    ASSERT_TRUE(tree.SetTagmaSchema(schema));
 
    TLeaf *xLeaf = tree.GetLeaf("x");
@@ -187,7 +187,7 @@ TEST(TTagmaSchema, SetTagmaSchemaRejectsInvalidSchemas)
    EXPECT_FALSE(why.empty());
    ROOT_EXPECT_ERROR_PARTIAL(EXPECT_FALSE(tree.SetTagmaSchema(oversized)),
                              "TTree::SetTagmaSchema",
-                             "field past extends past the record size");
+                             "the index record needs 24 bytes, the store holds 16");
 
    // Overlapping fields are rejected.
    ROOT::TTagmaSchema overlapping;
@@ -258,18 +258,97 @@ TEST(TTagmaSchema, ReaderValuesAdvanceFromTheStore)
    delete file;
 }
 
+TEST(TTagmaSchema, CollectionsPackByCount)
+{
+   ROOT::TTagmaSchema schema;
+   EXPECT_TRUE(schema.AddLine("nMuon 0 uint"));
+   EXPECT_TRUE(schema.AddLine("Muon_pt 0 float nMuon 20"));
+   EXPECT_TRUE(schema.AddLine("Muon_eta 4 float nMuon 20"));
+   EXPECT_TRUE(schema.AddLine("nJet 4 uint"));
+   EXPECT_TRUE(schema.AddLine("Jet_pt 0 float nJet 32"));
+
+   const auto &collections = schema.GetCollections();
+   ASSERT_EQ(collections.size(), 2u);
+   EXPECT_EQ(collections[0].fCountField, "nMuon");
+   EXPECT_EQ(collections[0].fMaxCount, 20u);
+   EXPECT_EQ(collections[0].ElementBytes(), 8u);
+   EXPECT_EQ(collections[1].fCountField, "nJet");
+   EXPECT_EQ(collections[1].ElementBytes(), 4u);
+   EXPECT_EQ(schema.GetScalars().size(), 2u);
+   EXPECT_EQ(schema.GetFields().size(), 5u);
+
+   // The index record holds the scalars and the data base.
+   EXPECT_EQ(schema.ScalarExtent(), 8u);
+   EXPECT_EQ(schema.IndexRecordSize(), 16u);
+   EXPECT_EQ(schema.DataBaseOffset(), 8u);
+
+   // The chunks follow from the counts, and the fields inside a chunk follow
+   // each other field by field.
+   const std::uint64_t counts[2] = {3, 2};
+   EXPECT_EQ(schema.ChunkOffset(0, counts), 0u);
+   EXPECT_EQ(schema.ChunkOffset(1, counts), 24u);
+   EXPECT_EQ(schema.SliceBytes(counts), 32u);
+   EXPECT_EQ(schema.FieldOffset(collections[0], "Muon_pt", 3), 0u);
+   EXPECT_EQ(schema.FieldOffset(collections[0], "Muon_eta", 3), 12u);
+
+   std::string why;
+   EXPECT_TRUE(schema.Validate(schema.IndexRecordSize(), &why)) << why;
+}
+
+TEST(TTagmaSchema, CollectionsAreValidated)
+{
+   std::string why;
+
+   // An unknown count field is rejected.
+   ROOT::TTagmaSchema missing;
+   missing.AddLine("Muon_pt 0 float nMuon 20");
+   EXPECT_FALSE(missing.Validate(64, &why));
+   EXPECT_FALSE(why.empty());
+
+   // A count field that is not integral is rejected.
+   ROOT::TTagmaSchema nonIntegral;
+   nonIntegral.AddLine("nMuon 0 float");
+   nonIntegral.AddLine("Muon_pt 0 float nMuon 20");
+   EXPECT_FALSE(nonIntegral.Validate(64, &why));
+
+   // A collection with no maximum object count is rejected.
+   ROOT::TTagmaSchema noMax;
+   noMax.AddLine("nMuon 0 uint");
+   noMax.AddLine("Muon_pt 0 float nMuon");
+   EXPECT_FALSE(noMax.Validate(64, &why));
+
+   // Overlapping object fields are rejected.
+   ROOT::TTagmaSchema overlap;
+   overlap.AddLine("nMuon 0 uint");
+   overlap.AddLine("Muon_pt 0 float nMuon 20");
+   overlap.AddLine("Muon_eta 2 float nMuon 20");
+   EXPECT_FALSE(overlap.Validate(64, &why));
+
+   // Scalars that would run into the data base are rejected.
+   ROOT::TTagmaSchema tight;
+   tight.AddLine("nMuon 0 uint");
+   tight.AddLine("Muon_pt 0 float nMuon 20");
+   tight.AddLine("wide 8 double");
+   EXPECT_FALSE(tight.Validate(16, &why));
+}
+
 TEST(TTagmaSchema, SchemaTextFormIsParsed)
 {
    // The text form is the sidecar layout: one field per line. Comments
-   // and blank lines are skipped by Read, and AddLine rejects them along
-   // with unknown types and trailing tokens.
+   // and blank lines are skipped by Read, and AddLine rejects unknown types,
+   // too few or too many tokens, and a non-numeric offset.
    ROOT::TTagmaSchema schema;
    EXPECT_TRUE(schema.AddLine("x 0 double"));
    EXPECT_FALSE(schema.AddLine("# a comment line"));
    EXPECT_FALSE(schema.AddLine("y 8 notatype"));
-   EXPECT_FALSE(schema.AddLine("z 4 int trailing"));
+   // A fourth token names a count field, so this is an array field: the
+   // collection it belongs to has no maximum count, which Validate rejects.
+   EXPECT_TRUE(schema.AddLine("z 4 int trailing"));
+   EXPECT_FALSE(schema.AddLine("w 0 int trailing 4 extra"));
+   EXPECT_FALSE(schema.AddLine("v x int"));
    EXPECT_FALSE(schema.AddLine("w"));
-   EXPECT_EQ(schema.GetFields().size(), 1u);
+   EXPECT_EQ(schema.GetFields().size(), 2u);
+   EXPECT_EQ(schema.GetCollections().size(), 1u);
 
    ROOT::TTagmaSchema::EType type = ROOT::TTagmaSchema::EType::kBool;
    EXPECT_TRUE(ROOT::TTagmaSchema::ParseType("ULong64_t", &type));
