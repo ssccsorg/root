@@ -6,7 +6,7 @@
   "timestamp": "20260921-225104",
   "supersedes": {
     "commit": "474b9af1ad",
-    "reason": "The superseded artifact measured a build from before the collection buffers were added to TTree. Those members were not transient, so the streamer read them from the file and the dataset could not be opened at all until b5ce6b3c1d5 marked them transient. Its rows are therefore not reproducible on the current branch, and its mapped row was measured against a store written moments earlier and still fully resident."
+    "reason": "The superseded artifact measured a build from before the collection buffers were added to TTree. Those members were not transient, so the streamer read them from the file and the dataset could not be opened at all until b5ce6b3c1d5 marked them transient. Its rows are therefore not reproducible on the current branch, and its mapped row at 1.061 s sits below every later sample of the same row."
   },
   "environment": {
     "machine": "macOS (Apple Silicon), 10 cores, 32 GiB RAM, local out-of-source build root-build-tagma",
@@ -114,7 +114,7 @@
     "The baseline is stable across the three steady-state runs, 187.0 to 188.2 s wall and 183.6 to 185.9 s cpu. The first three runs after the page cache had been disturbed measured 248.979, 202.469 and 182.609 s, so a settling cache moves the baseline by up to a third.",
     "Warming the sources is what makes the coordinate rows reproducible: 2.706, 2.722 and 2.808 s warmed against 2.793, 3.56 and 4.047 s across the unwarmed runs of the superseded artifact and the later control set.",
     "Decompression removal is worth 2.20 to 2.31x of the baseline, not the 1.74x of the superseded artifact. That artifact divided by an uncompressed row of 117.86 s measured on a cold file; the warmed row is 81.1 to 85.7 s. The remaining wall time is the read path.",
-    "The mapped row is 116.6 to 120.5x, not the 181.7x of the superseded artifact. That artifact measured the mapped row against a store written moments earlier and fully resident, 1.061 s against 1.55 to 1.61 s warmed here.",
+    "The mapped row is 116.6 to 120.5x, not the 181.7x of the superseded artifact. That row measured 1.061 s there against 1.55 to 1.61 s in the three warmed runs here and 1.71 to 1.79 s in the unwarmed runs, so 1.061 s is the low outlier of nine samples and the condition that produced it was not recorded. The ratio it implies is not reproduced.",
     "The head of the store's advantage is column independence: the store reads the whole record for 2.745 s whatever the analysis selects, while RDataFrame spends 0.558 s on two columns and 10.849 s on the 44 scalar columns. Above about 11 columns, or about 6 with the store mapped, the store is ahead.",
     "The two-column row is the store's weakest case and is stated as such: RDataFrame is 4.92x faster there.",
     "The synthetic and 2,000-event rows are microbenchmark scale. Their coordinate walls are 0.03 to 0.08 s and 0.001 to 0.003 s, where per-syscall cost and timer resolution dominate, so their ratios are not stable claims. What is stable there is the request and system call count per event.",
