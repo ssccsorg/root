@@ -457,6 +457,7 @@ End_Macro
 
 #include <chrono>
 #include <cstddef>
+#include <cstring>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -5767,10 +5768,18 @@ Int_t TTree::GetEntry(Long64_t entry, Int_t getall)
    if (fTagmaStore) {
       const auto [run, lumi, event] =
          fTagmaStore->Decompose(static_cast<std::uint64_t>(entry));
-      if (fTagmaStore->Contains(run, lumi, event))
-         return LoadTagmaRecord(entry)
-                   ? static_cast<Int_t>(fTagmaRecord.size())
-                   : 0;
+      if (fTagmaStore->Contains(run, lumi, event)) {
+         if (!LoadTagmaRecord(entry))
+            return 0;
+         // The scalar branches read the record in place. The array branches
+         // copy their field out of the entry's slice here, so a consumer
+         // that reads a leaf after this call sees the entry, as it does on
+         // the ordinary path. A branch the caller disabled stays untouched,
+         // which is what TBranch::GetEntry decides.
+         for (TBranch *branch : fTagmaFieldBranches)
+            branch->GetEntry(entry, getall);
+         return static_cast<Int_t>(fTagmaRecord.size());
+      }
    }
 
    Int_t i;
@@ -6060,6 +6069,16 @@ Long64_t TTree::GetEntryNumberWithIndex(Long64_t major, Long64_t minor) const
 void TTree::SetTagmaStore(std::shared_ptr<ROOT::TTagmaStore> store)
 {
    fTagmaStore = std::move(store);
+
+   // The store addresses bytes that live in the tree's file: the index record
+   // and the packed data region are ranges of it. Attaching the store to the
+   // file as well is what lets the file serve those ranges, the data slice
+   // among them, and keeps the mapped byte source reachable from the file so
+   // a mapped store issues no read system call. A file that already carries a
+   // store keeps it, so trees over one file share one layout.
+   TFile *file = fDirectory ? fDirectory->GetFile() : nullptr;
+   if (file != nullptr && fTagmaStore && !file->GetTagmaStore())
+      file->SetTagmaStore(fTagmaStore);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -6103,7 +6122,7 @@ Bool_t TTree::SetTagmaSchema(const ROOT::TTagmaSchema &schema)
    }
 
    fTagmaRecord.assign(static_cast<std::size_t>(recordSize), 0);
-   for (const auto &field : schema.GetFields()) {
+   for (const auto &field : schema.GetScalars()) {
       const std::string leaflist =
          field.fName + "/" + ROOT::TTagmaSchema::LeafCode(field.fType);
       char *address = fTagmaRecord.data() + field.fOffset;
@@ -6116,8 +6135,43 @@ Bool_t TTree::SetTagmaSchema(const ROOT::TTagmaSchema &schema)
       }
       branch->SetTagmaFieldSize(static_cast<Int_t>(field.Size()));
    }
+
+   // One branch per collection field. The count field names the bounding
+   // leaf, so the leaf machinery reports the array length of the entry, and
+   // the branch address holds a buffer the schema sizes by the collection
+   // maximum. A read copies the entry's elements into that buffer.
+   fTagmaFields.clear();
+   fTagmaFieldBranches.clear();
+   const auto &collections = schema.GetCollections();
+   for (std::size_t c = 0; c < collections.size(); ++c) {
+      const auto &collection = collections[c];
+      for (std::size_t f = 0; f < collection.fFields.size(); ++f) {
+         const auto &field = collection.fFields[f];
+         fTagmaFields.emplace_back(
+             static_cast<std::size_t>(collection.fMaxCount * field.Size()), 0);
+         char *address = fTagmaFields.back().data();
+         const std::string leaflist = field.fName + "[" + collection.fCountField +
+                                      "]/" +
+                                      ROOT::TTagmaSchema::LeafCode(field.fType);
+         TBranch *branch = Branch(field.fName.c_str(), address, leaflist.c_str());
+         if (!branch) {
+            Error("SetTagmaSchema", "cannot create branch %s on %s",
+                  field.fName.c_str(), GetName());
+            fTagmaFields.clear();
+            fTagmaFieldBranches.clear();
+            fTagmaRecord.clear();
+            return kFALSE;
+         }
+         branch->SetTagmaFieldSize(static_cast<Int_t>(field.Size()));
+         branch->SetTagmaField(static_cast<Int_t>(c), static_cast<Int_t>(f));
+         fTagmaFieldBranches.push_back(branch);
+      }
+   }
+   fTagmaCounts.assign(collections.size(), 0);
+   fTagmaData.clear();
    fTagmaSchema = schema;
    fTagmaRecordEntry = -1;
+   fTagmaCountError = kFALSE;
    return kTRUE;
 }
 
@@ -6162,9 +6216,105 @@ Bool_t TTree::LoadTagmaRecord(Long64_t entry)
          fTagmaRecord.resize(0);
       return kFALSE;
    }
+
+   // The data region: the base the index record carries, then the packed
+   // collections of this event. The slice is read once per entry, like the
+   // index record, and the counts it yields are what the array branches
+   // copy from.
+   if (fTagmaSchema.HasCollections()) {
+      const auto &collections = fTagmaSchema.GetCollections();
+      if (fTagmaCounts.size() != collections.size()) {
+         Error("LoadTagmaRecord", "the schema of %s changed after it was attached",
+               GetName());
+         return kFALSE;
+      }
+      const char *index = fTagmaRecord.data();
+      for (std::size_t i = 0; i < collections.size(); ++i) {
+         const std::uint64_t count = fTagmaSchema.CountOf(i, index);
+         if (count > collections[i].fMaxCount) {
+            if (!fTagmaCountError) {
+               fTagmaCountError = kTRUE;
+               Error("LoadTagmaRecord",
+                     "collection %s reports %llu objects at entry %lld, the schema carries %llu",
+                     collections[i].fCountField.c_str(),
+                     static_cast<unsigned long long>(count),
+                     static_cast<long long>(entry),
+                     static_cast<unsigned long long>(collections[i].fMaxCount));
+            }
+            return kFALSE;
+         }
+         fTagmaCounts[i] = count;
+      }
+      const std::uint64_t sliceBytes =
+          fTagmaSchema.SliceBytes(fTagmaCounts.data());
+      if (sliceBytes > kMaxTagmaRecordSize) {
+         Error("LoadTagmaRecord",
+               "the data slice of entry %lld is %llu bytes, past the bound",
+               static_cast<long long>(entry),
+               static_cast<unsigned long long>(sliceBytes));
+         return kFALSE;
+      }
+      fTagmaData.clear();
+      if (sliceBytes > 0) {
+         std::uint64_t base = 0;
+         std::memcpy(&base, index + fTagmaSchema.DataBaseOffset(), sizeof(base));
+         fTagmaData.resize(static_cast<std::size_t>(sliceBytes));
+         TFile *file = fDirectory ? fDirectory->GetFile() : nullptr;
+         if (!file ||
+             file->ReadTagmaRange(fTagmaData.data(),
+                                  static_cast<Long64_t>(base),
+                                  static_cast<Int_t>(sliceBytes)) != 1) {
+            fTagmaData.clear();
+            return kFALSE;
+         }
+      }
+   }
    fTagmaRecordEntry = entry;
    fReadEntry = entry;
    return kTRUE;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Copy the elements of one collection field of the loaded entry into
+/// `dest`.
+///
+/// The data region packs a collection field by field, so the field's
+/// elements are contiguous and their offset inside the event's slice follows
+/// from the object count. The branch address holds the buffer the schema
+/// sized for the collection maximum, which the leaf machinery reads with the
+/// count as its length.
+///
+/// Returns the bytes copied, or -1 when the loaded entry differs from
+/// `entry`, the indices do not resolve, or the slice does not cover the
+/// field.
+
+Int_t TTree::CopyTagmaField(Long64_t entry, Int_t collectionIndex,
+                            Int_t fieldIndex, char *dest)
+{
+   if (!fTagmaStore || dest == nullptr || entry != fTagmaRecordEntry)
+      return -1;
+   const auto &collections = fTagmaSchema.GetCollections();
+   if (collectionIndex < 0 ||
+       static_cast<std::size_t>(collectionIndex) >= collections.size() ||
+       fTagmaCounts.size() != collections.size())
+      return -1;
+   const ROOT::TTagmaSchema::Collection &collection = collections[collectionIndex];
+   if (fieldIndex < 0 ||
+       static_cast<std::size_t>(fieldIndex) >= collection.fFields.size())
+      return -1;
+   const ROOT::TTagmaSchema::Field &field = collection.fFields[fieldIndex];
+
+   const std::uint64_t count = fTagmaCounts[collectionIndex];
+   const std::uint64_t chunk =
+       fTagmaSchema.ChunkOffset(collectionIndex, fTagmaCounts.data());
+   const std::uint64_t offset =
+       fTagmaSchema.FieldOffset(collection, field.fName, count);
+   const std::uint64_t bytes = count * field.Size();
+   if (chunk + offset + bytes > fTagmaData.size())
+      return -1;
+   std::memcpy(dest, fTagmaData.data() + chunk + offset,
+               static_cast<std::size_t>(bytes));
+   return static_cast<Int_t>(bytes);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

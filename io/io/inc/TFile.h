@@ -340,6 +340,12 @@ public:
    virtual Int_t       GetSysReadCalls() const { return fSysReadCalls; }
    virtual void        SetTagmaStore(std::shared_ptr<ROOT::TTagmaStore> store) { fTagmaStore = store; }
    virtual std::shared_ptr<ROOT::TTagmaStore> GetTagmaStore() const { return fTagmaStore; }
+   /// Serve a byte range that the attached store owns, for ranges other
+   /// than one fixed-width record: the packed data region is read through
+   /// this call, and it is served from the mapping when one is attached.
+   /// Returns 1 when the range was served, -1 when the store does not cover
+   /// it or the read failed, and 0 when no store is attached.
+   virtual Int_t       ReadTagmaRange(char *buf, Long64_t pos, Int_t len);
            Int_t       GetVersion() const { return fVersion; }
            Int_t       GetRecordHeader(char *buf, Long64_t first, Int_t maxbytes,
                                        Int_t &nbytes, Int_t &objlen, Int_t &keylen);

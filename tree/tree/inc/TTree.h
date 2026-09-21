@@ -137,6 +137,15 @@ protected:
    ROOT::TTagmaSchema fTagmaSchema;       ///<! Field table materialized over the record buffer
    Long64_t       fTagmaRecordEntry = -1; ///<! Entry held in fTagmaRecord, -1 when none
    std::vector<char> fTagmaRecord;       ///<! Last record served by the coordinate read path
+   std::vector<char> fTagmaData;         ///<! Data region slice of the entry in fTagmaRecord
+   /// Element buffers of the array branches, one per collection field, sized
+   /// by the collection maximum. The branches hold addresses inside them.
+   std::vector<std::vector<char>> fTagmaFields;
+   /// The array branches, in the order of fTagmaFields. The tree-level read
+   /// drives them so a leaf read after TTree::GetEntry sees the entry.
+   std::vector<TBranch *> fTagmaFieldBranches;
+   std::vector<std::uint64_t> fTagmaCounts; ///<! Object counts of the loaded entry
+   Bool_t         fTagmaCountError = kFALSE; ///<! Set once when a count passes the schema bound
    TObjArray      fBranches;              ///<  List of Branches
    TObjArray      fLeaves;                ///<  Direct pointers to individual branch leaves
    TList         *fAliases;               ///<  List of aliases for expressions based on the tree branches.
@@ -725,6 +734,12 @@ public:
    /// The materialized branches call this, so a consumer that drives the
    /// branch read path reaches the store through the same buffer.
    Bool_t                  LoadTagmaRecord(Long64_t entry);
+   /// Copy the elements of one collection field of the loaded entry into
+   /// `dest`, which holds the buffer the schema sized for the collection
+   /// maximum. Returns the bytes copied, or -1 when the loaded entry, the
+   /// field, or the slice does not resolve.
+   Int_t                   CopyTagmaField(Long64_t entry, Int_t collection,
+                                          Int_t field, char *dest);
    /// Pointer to the last record served by the coordinate read path, or
    /// nullptr before the first coordinate-served entry. The buffer stays
    /// valid until the next GetEntry or GetTagmaRecord call on this tree.

@@ -2083,6 +2083,76 @@ Int_t TFile::ReadBufferViaTagma(char *buf, Long64_t pos, Int_t len)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+/// Serve a byte range the attached coordinate-indexed store owns, for ranges
+/// other than one fixed-width record.
+///
+/// The store holds the index region and the packed data region in one file, so
+/// the tree layer reads an event's data slice through this call. A range the
+/// store covers is served from the mapping when one is attached, which keeps
+/// the mapped path at zero application-level read calls, and by a positioned
+/// read otherwise.
+///
+/// Returns 1 when the range was served, -1 when the store does not cover it or
+/// the read failed, and 0 when no store is attached.
+
+Int_t TFile::ReadTagmaRange(char *buf, Long64_t pos, Int_t len)
+{
+   if (!fTagmaStore)
+      return 0;
+   if (buf == nullptr || pos < 0 || len < 0)
+      return -1;
+   if (!fTagmaStore->Covers(static_cast<std::uint64_t>(pos),
+                            static_cast<std::uint64_t>(len)))
+      return -1;
+
+   Double_t start = 0;
+   if (gPerfStats)
+      start = TTimeStamp();
+
+   if (fTagmaStore->IsMapped()) {
+      std::memcpy(buf, fTagmaStore->GetMapped() + pos,
+                  static_cast<std::size_t>(len));
+      fBytesRead += len;
+      fgBytesRead += len;
+      fReadCalls++;
+      fgReadCalls++;
+      fTagmaReadCalls++;
+      if (gMonitoringWriter)
+         gMonitoringWriter->SendFileReadProgress(this);
+      if (gPerfStats)
+         gPerfStats->FileReadEvent(this, len, start);
+      return 1;
+   }
+
+   Seek(pos);
+   ssize_t siz;
+   while ((siz = SysRead(fD, buf, len)) < 0 && GetErrno() == EINTR)
+      ResetErrno();
+
+   if (siz < 0) {
+      SysError("ReadTagmaRange", "error reading from file %s", GetName());
+      return -1;
+   }
+   if (siz != len) {
+      Error("ReadTagmaRange",
+            "error reading all requested bytes from file %s, got %ld of %d",
+            GetName(), (Long_t)siz, len);
+      return -1;
+   }
+   fBytesRead += siz;
+   fgBytesRead += siz;
+   fReadCalls++;
+   fgReadCalls++;
+   fTagmaReadCalls++;
+
+   if (gMonitoringWriter)
+      gMonitoringWriter->SendFileReadProgress(this);
+   if (gPerfStats)
+      gPerfStats->FileReadEvent(this, len, start);
+   return 1;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 /// Read the FREE linked list.
 ///
 /// Every file has a linked list (fFree) of free segments.
