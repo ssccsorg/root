@@ -18,7 +18,6 @@ endif()
 
 ROOT_STANDARD_LIBRARY_PACKAGE(ROOTTMVASofie
   HEADERS
-   TMVA/OperatorList.hxx
    TMVA/RModel_Base.hxx
    TMVA/RModel.hxx
    TMVA/ROperator.hxx
@@ -82,14 +81,8 @@ ROOT_STANDARD_LIBRARY_PACKAGE(ROOTTMVASofie
     src/SOFIE_common_helpers.cxx
   DEPENDENCIES
     Core
-    TMVA
     ${EXTRA_SOFIE_DEPENDENCIES}
 )
-
-target_include_directories(ROOTTMVASofie PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
-set_target_properties(ROOTTMVASofie PROPERTIES
-  POSITION_INDEPENDENT_CODE TRUE)
 
 if(sofie_root_support)
   target_compile_definitions(ROOTTMVASofie PRIVATE SOFIE_SUPPORT_ROOT_BINARY)

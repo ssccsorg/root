@@ -342,7 +342,7 @@ if(NOT TARGET Gui)
 endif()
 
 if (NOT tmva)
-  list(APPEND tmva_veto machine_learning/*.C machine_learning/*.py machine_learning/envelope/*.C machine_learning/keras/*.C machine_learning/keras/*.py machine_learning/pytorch/*.py )
+  list(APPEND tmva_veto machine_learning/*.C machine_learning/*.py machine_learning/keras/*.C machine_learning/keras/*.py machine_learning/pytorch/*.py )
 else()
   #copy input data files
   configure_file(${CMAKE_CURRENT_SOURCE_DIR}/machine_learning/data/tmva_class_example.root ${CMAKE_CURRENT_BINARY_DIR}/machine_learning/data COPYONLY)
@@ -352,9 +352,6 @@ else()
 
   #---These do not need to run for TMVA
   list(APPEND tmva_veto machine_learning/createData.C)
-  if(MSVC AND NOT win_broken_tests)
-    list(APPEND tmva_veto machine_learning/envelope/classification.C)
-  endif()
   #these depends on external packages
   ROOT_FIND_PYTHON_MODULE(torch)
   ROOT_FIND_PYTHON_MODULE(keras)
@@ -633,7 +630,6 @@ set (machine_learning-tmva101_Training-depends tutorial-machine_learning-tmva100
 set (machine_learning-tmva102_Testing-depends tutorial-machine_learning-tmva101_Training-py)
 set (machine_learning-tmva103_Application-depends tutorial-machine_learning-tmva101_Training-py)
 set (machine_learning-tmva003_RReader-depends tutorial-machine_learning-TMVAClassification)
-set (machine_learning-tmva004_RStandardScaler-depends tutorial-machine_learning-tmva003_RReader)
 set (machine_learning-pytorch-ApplicationClassificationPyTorch-depends tutorial-machine_learning-pytorch-ClassificationPyTorch-py)
 set (machine_learning-pytorch-RegressionPyTorch-depends tutorial-machine_learning-pytorch-ApplicationClassificationPyTorch-py)
 set (machine_learning-pytorch-ApplicationRegressionPyTorch-depends tutorial-machine_learning-pytorch-RegressionPyTorch-py)
