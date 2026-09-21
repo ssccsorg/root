@@ -24,15 +24,16 @@
 // the request and system call counts are media-independent.
 //
 // UPDATE THIS BLOCK AFTER EACH MEASURED RUN. The source is the per-run
-// JSON under benchmarks/tagma/result/ (gitignored per-run artifact;
-// this block is the tracked single source). Keep it aligned with
-// docs/works/cern/root-ttree/index.qmd and with the reference artifact
-// bench-20260810-153200-474b9af1ad.json.
+// JSON under benchmarks/tagma/result/ (gitignored per-run artifact; the
+// reference artifact is tracked there as reference.json). Keep it aligned
+// with docs/works/cern/root-ttree/index.qmd.
 //
 // Workload: read every event of the CMS Run2016G DoubleMuon NanoAOD
 // first file (tree Events, 2,315,223 events, 2,155,974,646 bytes), the
 // M1 workload. The coordinate rows read the fixed-width store converted
-// from the same events (2,560-byte records, 320 scalar leaves).
+// from the same events (2,560-byte records); of its 320 fields, 44 are
+// scalar leaves and 276 are variable-length arrays the writer stored
+// through their leading element.
 //
 // Full dataset, same medium (local disk), cache-disabled baseline:
 //   path              wall_s   cpu_s   reads/ev  syscalls/ev  bytes/read    MB/s
