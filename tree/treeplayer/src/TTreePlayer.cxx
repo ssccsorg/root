@@ -26,13 +26,6 @@ extra libraries (Histogram, display, etc).
 
 #include "TTreePlayer.h"
 
-#include <cstring>
-#include <cstdio>
-#include <cstdlib>
-#include <iostream>
-#include <fstream>
-#include <vector>
-
 #include "TROOT.h"
 #include "TApplication.h"
 #include "TSystem.h"
@@ -89,13 +82,18 @@ extra libraries (Histogram, display, etc).
 #include "TVirtualMutex.h"
 #include "ThreadLocalStorage.h"
 #include "strlcpy.h"
-#include "snprintf.h"
 
 #include "HFitInterface.h"
 #include "Fit/BinData.h"
 #include "Fit/UnBinData.h"
 #include "Math/MinimizerOptions.h"
 
+#include <cstring>
+#include <cstdio>
+#include <cstdlib>
+#include <iostream>
+#include <fstream>
+#include <vector>
 
 R__EXTERN Foption_t Foption;
 
@@ -2480,6 +2478,7 @@ Long64_t TTreePlayer::Scan(const char *varexp, const char *selection,
    UInt_t ui;
    UInt_t lenmax = 0;
    UInt_t colDefaultSize = 9;
+   UInt_t colMaxResizeWidth = 20;
    UInt_t colPrecision = 9;
    std::vector<TString> colFormats;
    std::vector<Int_t> colSizes;
@@ -2505,6 +2504,7 @@ Long64_t TTreePlayer::Scan(const char *varexp, const char *selection,
       opt.Remove(start,length("size")+numlen);
 
       colDefaultSize = atoi(num.Data());
+      colMaxResizeWidth = colDefaultSize;
       colPrecision = colDefaultSize;
       if (colPrecision>18) colPrecision = 18;
    }
@@ -2659,9 +2659,10 @@ Long64_t TTreePlayer::Scan(const char *varexp, const char *selection,
    }
    var = new TTreeFormula* [ncols];
 
-   for(ui=colFormats.size();ui<ncols;++ui) {
+   for (ui = colFormats.size(); ui < ncols; ++ui) {
       colFormats.push_back(defFormat);
-      colSizes.push_back(colDefaultSize);
+      UInt_t nameWidth = cnames[ui].size();
+      colSizes.push_back(std::clamp(nameWidth, colDefaultSize, colMaxResizeWidth));
    }
 
 //*-*- Create the TreeFormula objects corresponding to each column
@@ -2718,7 +2719,13 @@ Long64_t TTreePlayer::Scan(const char *varexp, const char *selection,
    if (hasArray) onerow += "* Instance ";
    for (ui=0;ui<ncols;ui++) {
       TString numbFormat = Form("* %%%d.%ds ",colSizes[ui],std::abs(colSizes[ui]));
-      onerow += Form(numbFormat.Data(),var[ui]->PrintValue(-1));
+      TString varName = var[ui]->PrintValue(-1);
+      if (Int_t(varName.size()) > std::abs(colSizes[ui])) {
+         varName.Resize(std::max(1, colSizes[ui] - 3));
+         varName += "...";
+      }
+      // varName will be truncated further if necessary here (ie if colSizes[ui]<=3)
+      onerow += Form(numbFormat.Data(), varName.Data());
    }
    if (fScanRedirect)
       out<<onerow.Data()<<"*"<<std::endl;

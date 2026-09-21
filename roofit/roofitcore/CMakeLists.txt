@@ -9,7 +9,7 @@
 # @author Pere Mato, CERN
 ############################################################################
 
-if(roofit_multiprocess)
+if(NOT WIN32)
   set(RooFitMPTestStatisticsSources
     src/TestStatistics/LikelihoodGradientJob.cxx
     src/TestStatistics/LikelihoodJob.cxx
@@ -17,7 +17,6 @@ if(roofit_multiprocess)
   )
   set(RooFitMPTestStatisticsHeaders
     src/TestStatistics/LikelihoodGradientJob.h
-    src/TestStatistics/ConstantTermsOptimizer.h
     src/TestStatistics/LikelihoodSerial.h
     src/TestStatistics/MinuitFcnGrad.h
     src/TestStatistics/LikelihoodJob.h
@@ -454,7 +453,6 @@ ROOT_STANDARD_LIBRARY_PACKAGE(RooFitCore
     src/RooVectorDataStore.cxx
     src/RooWorkspace.cxx
     src/RooWrapperPdf.cxx
-    src/TestStatistics/ConstantTermsOptimizer.cxx
     src/TestStatistics/LikelihoodGradientWrapper.cxx
     src/TestStatistics/LikelihoodSerial.cxx
     src/TestStatistics/LikelihoodWrapper.cxx
@@ -488,13 +486,17 @@ ROOT_STANDARD_LIBRARY_PACKAGE(RooFitCore
   ${EXTRA_DICT_OPTS}
 )
 
+# Minuit2 is needed in the implementation of RooMinimizerFcn, to advertise
+# vanishing second derivatives to Minuit2Minimizer.
+target_link_libraries(RooFitCore PRIVATE Minuit2)
+
 # The following definitions are PUBLIC so they can also be used in ROOT-internal tests
 
 if(roofit_legacy_eval_backend)
   target_compile_definitions(RooFitCore PUBLIC ROOFIT_LEGACY_EVAL_BACKEND)
 endif()
 
-if(roofit_multiprocess)
+if(NOT WIN32)
   target_compile_definitions(RooFitCore PUBLIC ROOFIT_MULTIPROCESS)
 endif()
 
@@ -510,6 +512,9 @@ if(fftw3)
   target_compile_definitions(RooFitCore PUBLIC ROOFIT_MATH_FFTW3)
   target_link_libraries(RooFitCore PRIVATE FFTW::Double)
 endif()
+
+# Used to silence deprecation warnings when testing deprecated features
+target_compile_definitions(RooFitCore PUBLIC ROOFIT_BUILDS_ITSELF)
 
 target_include_directories(RooFitCore PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/res>)
 

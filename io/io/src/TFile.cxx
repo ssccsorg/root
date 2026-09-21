@@ -128,9 +128,7 @@ The structure of a directory is shown in TDirectoryFile::TDirectoryFile
 #include "Bytes.h"
 #include "Compression.h"
 #include "RConfigure.h"
-#include "Strlen.h"
 #include "strlcpy.h"
-#include "snprintf.h"
 #include "TArrayC.h"
 #include "TBuffer.h"
 #include "TClass.h"
@@ -163,18 +161,22 @@ The structure of a directory is shown in TDirectoryFile::TDirectoryFile
 #include "TMathBase.h"
 #include "TObjString.h"
 #include "TStopwatch.h"
+#define ROOT_compiledata_cxx
 #include "compiledata.h"
-#include <cmath>
-#include <iostream>
-#include <set>
 #include "TSchemaRule.h"
 #include "TSchemaRuleSet.h"
 #include "TThreadSlots.h"
 #include "TGlobal.h"
 #include "ROOT/RConcurrentHashColl.hxx"
 #include "ROOT/InternalIOUtils.hxx"
-#include <memory>
+
 #include <cinttypes>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <iostream>
+#include <memory>
+#include <set>
 
 #ifdef R__FBSD
 #include <sys/extattr.h>
@@ -1152,8 +1154,10 @@ void TFile::DrawMap(const char *keys, Option_t *option)
 {
    TPluginHandler *h;
    if ((h = gROOT->GetPluginManager()->FindHandler("TFileDrawMap"))) {
-      if (h->LoadPlugin() == -1)
+      if (h->LoadPlugin() == -1) {
+         ::Error("TFile::Open", "Failed to load plugin TFileDrawMap");
          return;
+      }
       h->ExecPlugin(3, this, keys, option);
    }
 }
@@ -4047,8 +4051,10 @@ TFile *TFile::Open(const char *url, Option_t *options, const char *ftitle,
 
             // Network files
             if ((h = gROOT->GetPluginManager()->FindHandler("TFile", name))) {
-               if (h->LoadPlugin() == -1)
+               if (h->LoadPlugin() == -1) {
+                  ::Error("TFile::Open", "Failed to load plugin %s", name.Data());
                   return nullptr;
+               }
                f = (TFile*) h->ExecPlugin(5, name.Data(), option, ftitle, compress, netopt);
             }
 
@@ -4056,8 +4062,10 @@ TFile *TFile::Open(const char *url, Option_t *options, const char *ftitle,
 
             // Web files
             if ((h = gROOT->GetPluginManager()->FindHandler("TFile", name))) {
-               if (h->LoadPlugin() == -1)
+               if (h->LoadPlugin() == -1) {
+                  ::Error("TFile::Open", "Failed to load plugin %s", name.Data());
                   return nullptr;
+               }
                f = (TFile*) h->ExecPlugin(2, name.Data(), option);
             }
 
@@ -4075,8 +4083,10 @@ TFile *TFile::Open(const char *url, Option_t *options, const char *ftitle,
 
             // no recognized specification: try the plugin manager
             if ((h = gROOT->GetPluginManager()->FindHandler("TFile", name.Data()))) {
-               if (h->LoadPlugin() == -1)
+               if (h->LoadPlugin() == -1) {
+                  ::Error("TFile::Open", "Failed to load plugin %s", name.Data());
                   return nullptr;
+               }
                f = (TFile *)h->ExecPlugin(4, name.Data(), option, ftitle, compress);
             } else {
                // Just try to open it locally but via TFile::Open, so that we pick-up the correct

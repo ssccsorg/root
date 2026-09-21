@@ -194,10 +194,9 @@ try {
          // Get the compression of this RNTuple and use it as the output compression.
          // We currently assume all column ranges have the same compression, so we just peek at the first one.
          source->Attach(RNTupleSerializer::EDescriptorDeserializeMode::kRaw);
-         auto descriptor = source->GetSharedDescriptorGuard();
-         auto clusterIter = descriptor->GetClusterIterable();
-         auto firstCluster = clusterIter.begin();
-         if (firstCluster == clusterIter.end()) {
+         auto descGuard = source->GetSharedDescriptorGuard();
+         auto clusterGroupIterable = descGuard->GetClusterGroupIterable();
+         if (clusterGroupIterable.empty()) {
             R__LOG_ERROR(NTupleMergeLog())
                << "Asked to use the first source's compression as the output compression, but the "
                   "first source (file '"
@@ -206,7 +205,10 @@ try {
                   "determined.";
             return -1;
          }
-         auto colRangeIter = (*firstCluster).GetColumnRangeIterable();
+         const auto firstClusterGroup = clusterGroupIterable.begin();
+         R__ASSERT(firstClusterGroup->HasClusterDetails());
+         const auto &firstCluster = descGuard->GetClusterDescriptor(firstClusterGroup->GetClusterIds()[0]);
+         auto colRangeIter = firstCluster.GetColumnRangeIterable();
          auto firstColRange = colRangeIter.begin();
          if (firstColRange == colRangeIter.end()) {
             R__LOG_ERROR(NTupleMergeLog())
@@ -604,7 +606,8 @@ CompareDescriptorStructure(const ROOT::RNTupleDescriptor &dst, const ROOT::RNTup
 
       // Require that fields types match
       // TODO(gparolini): allow non-identical but compatible types
-      const auto &srcTyName = field.fSrc->GetTypeName();
+      const auto &srcTyName = ROOT::Internal::GetRenormalizedTypeName(field.fSrc->GetTypeName());
+      // This is already renormalized by construction (see RNTupleDescriptorBuilder::SetSchemaFromExisting)
       const auto &dstTyName = field.fDst->GetTypeName();
       if (srcTyName != dstTyName) {
          std::stringstream ss;
@@ -1250,8 +1253,8 @@ static void AddColumnsFromField(std::vector<RColumnMergeInfo> &columns, const RO
       }
 
       // Since we disallow merging fields of different types, src and dstFieldDesc must have the same type name.
-      assert(srcFieldDesc.GetTypeName() == dstFieldDesc.GetTypeName());
-      info.fInMemoryType = ColumnInMemoryType(srcFieldDesc.GetTypeName(), columnType);
+      assert(srcDesc.GetTypeNameForComparison(srcFieldDesc) == dstFieldDesc.GetTypeName());
+      info.fInMemoryType = ColumnInMemoryType(dstFieldDesc.GetTypeName(), columnType);
       columns.emplace_back(info);
    }
 
@@ -1381,22 +1384,17 @@ ROOT::RResult<void> RNTupleMerger::Merge(std::span<RPageSource *> sources, const
       }
    }
 
-#define SKIP_OR_ABORT(errMsg)                                                         \
-   do {                                                                               \
-      if (mergeOpts.fErrBehavior == ENTupleMergeErrBehavior::kSkip) {                 \
-         R__LOG_WARNING(NTupleMergeLog()) << "Skipping RNTuple due to: " << (errMsg); \
-         continue;                                                                    \
-      } else {                                                                        \
-         return R__FAIL(errMsg);                                                      \
-      }                                                                               \
-   } while (0)
+   // NOTE: don't wrap this in a do {} while (0)! It uses continue!
+#define SKIP_OR_ABORT(errMsg)                                                      \
+   if (mergeOpts.fErrBehavior == ENTupleMergeErrBehavior::kSkip) {                 \
+      R__LOG_WARNING(NTupleMergeLog()) << "Skipping RNTuple due to: " << (errMsg); \
+      continue;                                                                    \
+   } else {                                                                        \
+      return R__FAIL(errMsg);                                                      \
+   }
 
    // Merge main loop
    for (RPageSource *source : sources) {
-      // We need to make sure the streamer info from the source files is loaded otherwise we may not be able
-      // to build the streamer info of user-defined types unless we have their dictionaries available.
-      source->LoadStreamerInfo();
-
       source->Attach(RNTupleSerializer::EDescriptorDeserializeMode::kForWriting);
       auto srcDescriptor = source->GetSharedDescriptorGuard();
       mergeData.fSrcDescriptor = &srcDescriptor.GetRef();
@@ -1425,7 +1423,7 @@ ROOT::RResult<void> RNTupleMerger::Merge(std::span<RPageSource *> sources, const
       auto descCmpRes = CompareDescriptorStructure(mergeData.fDstDescriptor, srcDescriptor.GetRef());
       if (!descCmpRes) {
          SKIP_OR_ABORT(std::string("Source RNTuple has an incompatible schema with the destination:\n") +
-                       descCmpRes.GetError()->GetReport());
+                       descCmpRes.GetError()->GetReport())
       }
       auto descCmp = descCmpRes.Unwrap();
 
@@ -1436,7 +1434,7 @@ ROOT::RResult<void> RNTupleMerger::Merge(std::span<RPageSource *> sources, const
          for (const auto *field : descCmp.fExtraDstFields) {
             msg += "\n  " + field->GetFieldName() + " : " + field->GetTypeName();
          }
-         SKIP_OR_ABORT(msg);
+         SKIP_OR_ABORT(msg)
       }
 
       // handle extra src fields
@@ -1452,7 +1450,7 @@ ROOT::RResult<void> RNTupleMerger::Merge(std::span<RPageSource *> sources, const
             for (const auto *field : descCmp.fExtraSrcFields) {
                msg += "\n  " + field->GetFieldName() + " : " + field->GetTypeName();
             }
-            SKIP_OR_ABORT(msg);
+            SKIP_OR_ABORT(msg)
          }
       }
 

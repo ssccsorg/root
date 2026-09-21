@@ -50,6 +50,12 @@ void ROOT::Experimental::RNTupleInspector::CollectColumnInfo()
    fCompressedSize = 0;
    fUncompressedSize = 0;
 
+   std::vector<DescriptorId_t> clusterIds;
+   for (const auto &cgDesc : fDescriptor.GetClusterGroupIterable()) {
+      R__ASSERT(cgDesc.HasClusterDetails());
+      clusterIds.insert(clusterIds.end(), cgDesc.GetClusterIds().begin(), cgDesc.GetClusterIds().end());
+   }
+
    for (const auto &colDesc : fDescriptor.GetColumnIterable()) {
       if (colDesc.IsAliasColumn())
          continue;
@@ -62,7 +68,8 @@ void ROOT::Experimental::RNTupleInspector::CollectColumnInfo()
       std::uint64_t nElems = 0;
       std::vector<std::uint64_t> compressedPageSizes{};
 
-      for (const auto &clusterDescriptor : fDescriptor.GetClusterIterable()) {
+      for (auto cid : clusterIds) {
+         const auto &clusterDescriptor = fDescriptor.GetClusterDescriptor(cid);
          if (!clusterDescriptor.ContainsColumn(colId)) {
             continue;
          }
@@ -632,8 +639,8 @@ static void PrintSpeedscopeFrames(const std::vector<SpeedscopeFrame> &frames, st
 }
 } // namespace
 
-void ROOT::Experimental::RNTupleInspector::PrintSchemaProfile([[maybe_unused]] ESchemaProfileFormat format,
-                                                              std::ostream &output) const
+void ROOT::Experimental::RNTupleInspector::PrintSchemaProfile(std::ostream &output,
+                                                              [[maybe_unused]] ESchemaProfileFormat format) const
 {
    // There is only one format at the moment
    assert(format == ESchemaProfileFormat::kSpeedscopeJSON);
@@ -693,8 +700,8 @@ void ROOT::Experimental::RNTupleInspector::PrintSchemaProfile([[maybe_unused]] E
    PrintSpeedscopeFrames(frames, output);
 }
 
-void ROOT::Experimental::RNTupleInspector::PrintDiskProfile([[maybe_unused]] ESchemaProfileFormat format,
-                                                            std::ostream &output) const
+void ROOT::Experimental::RNTupleInspector::PrintDiskProfile(std::ostream &output,
+                                                            [[maybe_unused]] ESchemaProfileFormat format) const
 {
    // There is only one format at the moment
    assert(format == ESchemaProfileFormat::kSpeedscopeJSON);
@@ -734,7 +741,8 @@ void ROOT::Experimental::RNTupleInspector::PrintDiskProfile([[maybe_unused]] ESc
 
                RDiskPageLeaf pageLeaf;
                pageLeaf.fPosition = locator.GetPosition<std::uint64_t>();
-               pageLeaf.fSize = locator.GetNBytesOnStorage();
+               pageLeaf.fSize = locator.GetNBytesOnStorage() +
+                                pageInfo.HasChecksum() * ROOT::Internal::RPageStorage::kNBytesPageChecksum;
                pageLeaf.fName = "[page @" + std::to_string(pageLeaf.fPosition) + "]";
                pageLeaf.fAncestors = {groupId, clusterId, columnId};
                pageLeaves.push_back(pageLeaf);

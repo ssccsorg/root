@@ -552,7 +552,20 @@ std::unique_ptr<ROOT::RFieldBase> ROOT::RClassField::BeforeConnectPageSource(ROO
       // A staging class (conversion streamer info) only exists if there is at least one rule that has an
       // on disk source member defined.
       if (hasSources) {
-         SetStagingClass(fieldDesc.GetTypeName(), fieldDesc.GetTypeVersion());
+         // For unversioned classes, the in-memory layout may by chance have the same transient version number
+         // than the recorded (transient, at the time of writing) on-disk version.  Therefore, we also need to compare
+         // the checksums to find out if we need a conversion streamer info.
+         std::uint32_t assignedVersionForOnDiskLayout = fieldDesc.GetTypeVersion();
+         R__ASSERT(fieldDesc.GetTypeChecksum());
+         if (fieldDesc.GetTypeVersion() != GetTypeVersion() || *fieldDesc.GetTypeChecksum() != fClass->GetCheckSum() ||
+             fieldDesc.GetTypeName() != GetTypeName()) {
+            auto oldCl = TClass::GetClass(fieldDesc.GetTypeName().c_str());
+            R__ASSERT(oldCl);
+            auto onDiskStreamerInfo = oldCl->FindStreamerInfo(*fieldDesc.GetTypeChecksum());
+            R__ASSERT(onDiskStreamerInfo);
+            assignedVersionForOnDiskLayout = onDiskStreamerInfo->GetClassVersion();
+         }
+         SetStagingClass(fieldDesc.GetTypeName(), assignedVersionForOnDiskLayout);
          PrepareStagingArea(rules, desc, fieldDesc);
          for (auto &[_, si] : fStagingItems) {
             Internal::CallConnectPageSourceOnField(*si.fField, pageSource);
@@ -688,7 +701,7 @@ ROOT::Experimental::RSoAField::RSoAField(std::string_view fieldName, std::string
 
 void ROOT::Experimental::RSoAField::GraftNestedMemberFields(
    const RSoAField &nestedSoA, std::size_t offsetInParent,
-   std::function<RFieldBase *(const std::string &)> fnRecordFieldFinder)
+   const std::function<RFieldBase *(const std::string &)> &fnRecordFieldFinder)
 {
    const std::size_t nNestedRecordMemberFields = nestedSoA.fRecordMemberFields.size();
 
@@ -1104,6 +1117,13 @@ void ROOT::Experimental::RSoAField::AcceptVisitor(ROOT::Detail::RFieldVisitor &v
 
 //------------------------------------------------------------------------------
 
+std::unique_ptr<ROOT::RFieldBase> ROOT::Internal::CreateEmulatedEnumField(std::string_view fieldName,
+                                                                          std::string_view emulatedFromType,
+                                                                          std::string_view underlyingIntType)
+{
+   return std::unique_ptr<RFieldBase>(new REnumField(fieldName, emulatedFromType, underlyingIntType));
+}
+
 ROOT::REnumField::REnumField(std::string_view fieldName, std::string_view enumName)
    : REnumField(fieldName, EnsureValidEnum(enumName))
 {
@@ -1142,6 +1162,15 @@ ROOT::REnumField::REnumField(std::string_view fieldName, std::string_view enumNa
 {
    Attach(std::move(intField));
    fTraits |= kTraitTriviallyConstructible | kTraitTriviallyDestructible;
+}
+
+ROOT::REnumField::REnumField(std::string_view fieldName, std::string_view emulatedFromType,
+                             std::string_view underlyingIntType)
+   : ROOT::RFieldBase(fieldName, emulatedFromType, ROOT::ENTupleStructure::kPlain, false /* isSimple */)
+{
+   auto intField = Create("_0", std::string(underlyingIntType)).Unwrap();
+   Attach(std::move(intField));
+   fTraits |= kTraitTriviallyConstructible | kTraitTriviallyDestructible | kTraitEmulatedField;
 }
 
 std::unique_ptr<ROOT::RFieldBase> ROOT::REnumField::CloneImpl(std::string_view newName) const

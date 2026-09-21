@@ -585,6 +585,86 @@ TEST(ONNX, ReduceMean_kFirst)
    expectNear(output, correct_output, DEFAULT_TOLERANCE);
 }
 
+TEST(ONNX, ReduceMax)
+{
+   // reduce over axis 1 of a [1,2,3] tensor, not keeping the dimension
+   std::vector<float> input({5, 2, 3, 5, 5, 4});
+   std::vector<float> correct_output({5, 5, 4});
+
+   ASSERT_INCLUDE_AND_RUN(std::vector<float>, "ReduceMax", input);
+
+   expectNear(output, correct_output, DEFAULT_TOLERANCE);
+}
+
+TEST(ONNX, ReduceMin)
+{
+   std::vector<float> input({5, 2, 3, 5, 5, 4});
+   std::vector<float> correct_output({5, 2, 3});
+
+   ASSERT_INCLUDE_AND_RUN(std::vector<float>, "ReduceMin", input);
+
+   expectNear(output, correct_output, DEFAULT_TOLERANCE);
+}
+
+// Elu on a tensor whose first dimension is only known at run time.
+TEST(ONNX, EluDynShape)
+{
+   std::vector<float> input({-2.0, -0.5, 0.0, 0.5, 1.0, 2.0, -1.0, 3.0});
+   std::vector<float> correct_output;
+   for (float x : input)
+      correct_output.push_back(x >= 0 ? x : std::exp(x) - 1);
+
+   // model is dynamic in N, use N = 2
+   ASSERT_INCLUDE_AND_RUN_SESSION_ARGS(std::vector<float>, "EluDynShape", "\"EluDynShape_FromONNX.dat\", 2", 2, input);
+
+   expectNear(output, correct_output, DEFAULT_TOLERANCE);
+}
+
+// K reaches TopK as a shape tensor: K = min(N, 4) with N the dynamic dimension.
+TEST(ONNX, TopKWithDynShapeK)
+{
+   std::vector<float> input({5, 1, 9, 2, 8, 3, 7, 4, 6, 0, 5, 5, 3, 3, 3});
+   std::vector<float> correct_values({7, 8, 9, 5, 5, 6, 3, 4, 5, 2, 3, 3});
+   std::vector<int64_t> correct_indices({2, 1, 0, 0, 3, 2, 4, 2, 3, 1, 4, 1});
+
+   // model is dynamic in N, use N = 5, so K = min(5, 4) = 4
+   ASSERT_INCLUDE_AND_RUN_SESSION_ARGS(TupleFloatInt64_t, "TopKWithDynShapeK", "\"TopKWithDynShapeK_FromONNX.dat\", 5",
+                                       5, input);
+
+   expectNear(std::get<0>(output), correct_values, DEFAULT_TOLERANCE);
+   expectEqual(std::get<1>(output), correct_indices);
+}
+
+// Reduction over an interior axis with a parametric outer dimension. The strides
+// are then expressions rather than single tokens, which used to be emitted
+// unparenthesised and gave wrong indices.
+TEST(ONNX, ReduceMean_kMiddle_DynShape)
+{
+   std::vector<float> input(24);
+   std::iota(input.begin(), input.end(), 0.0f);
+   std::vector<float> correct_output = {4, 5, 6, 7, 16, 17, 18, 19};
+
+   // model is dynamic in N, use N = 2
+   ASSERT_INCLUDE_AND_RUN_SESSION_ARGS(std::vector<float>, "ReduceMean_kMiddle_DynShape",
+                                       "\"ReduceMean_kMiddle_DynShape_FromONNX.dat\", 2", 2, input);
+
+   expectNear(output, correct_output, DEFAULT_TOLERANCE);
+}
+
+// largest=1 with sorted=0 used to return the K smallest elements. ONNX leaves the
+// order unspecified for sorted=0; SOFIE returns them ordered, as for sorted=1.
+TEST(ONNX, TopKLargestUnsorted)
+{
+   std::vector<float> input({1, 6, 3, 2, 5, 4, 10, 40, 20, 60, 30, 50});
+   std::vector<float> correct_values({6, 5, 4, 60, 50, 40});
+   std::vector<int64_t> correct_indices({1, 4, 5, 3, 5, 1});
+
+   ASSERT_INCLUDE_AND_RUN(TupleFloatInt64_t, "TopKLargestUnsorted", input);
+
+   expectNear(std::get<0>(output), correct_values, DEFAULT_TOLERANCE);
+   expectEqual(std::get<1>(output), correct_indices);
+}
+
    TEST(ONNX, ReduceProd)
 {
    SofieReference ref = readReference("ReduceProd");
@@ -635,6 +715,30 @@ TEST(ONNX, Max)
    ASSERT_INCLUDE_AND_RUN(std::vector<float>, "Max", ref.f32("input0"), ref.f32("input1"));
 
    expectNear(output, ref.f32("output0"), DEFAULT_TOLERANCE);
+}
+
+TEST(ONNX, MinInt64)
+{
+   std::vector<int64_t> a({1, -7, 3, 100, 0});
+   std::vector<int64_t> b({2, -2, -3, 50, 0});
+   std::vector<int64_t> c({0, 5, 9, 75, 1});
+   std::vector<int64_t> correct_output({0, -7, -3, 50, 0});
+
+   ASSERT_INCLUDE_AND_RUN(std::vector<int64_t>, "MinInt64", a, b, c);
+
+   expectEqual(output, correct_output);
+}
+
+TEST(ONNX, MaxInt64)
+{
+   std::vector<int64_t> a({1, -7, 3, 100, 0});
+   std::vector<int64_t> b({2, -2, -3, 50, 0});
+   std::vector<int64_t> c({0, 5, 9, 75, 1});
+   std::vector<int64_t> correct_output({2, 5, 9, 100, 1});
+
+   ASSERT_INCLUDE_AND_RUN(std::vector<int64_t>, "MaxInt64", a, b, c);
+
+   expectEqual(output, correct_output);
 }
 
 TEST(ONNX, MaxMultidirectionalBroadcast)
@@ -1394,6 +1498,50 @@ TEST(ONNX, Sin)
    for (float x : input)
       correct_output.push_back(std::sin(x));
 
+   expectNear(output, correct_output, DEFAULT_TOLERANCE);
+}
+
+TEST(ONNX, Asinh)
+{
+   std::vector<float> input({
+     -0.786738,-0.197796,-0.187787,0.142758,0.876096,-0.653239,0.145444,-1.107658,2.259171,-0.947054,-0.506689,1.801250
+   });
+
+   ASSERT_INCLUDE_AND_RUN(std::vector<float>, "Asinh", input);
+
+   std::vector<float> correct_output;
+   for (float x : input)
+      correct_output.push_back(std::asinh(x));
+   expectNear(output, correct_output, DEFAULT_TOLERANCE);
+}
+
+TEST(ONNX, Acosh)
+{
+   // acosh is only defined for x >= 1
+   std::vector<float> input({
+     1.0, 1.001, 1.5, 2.0, 3.789, 5.234, 10.0, 1.234, 7.891, 2.345, 1.999, 100.0
+   });
+
+   ASSERT_INCLUDE_AND_RUN(std::vector<float>, "Acosh", input);
+
+   std::vector<float> correct_output;
+   for (float x : input)
+      correct_output.push_back(std::acosh(x));
+   expectNear(output, correct_output, DEFAULT_TOLERANCE);
+}
+
+TEST(ONNX, Atanh)
+{
+   // atanh is only defined for |x| < 1
+   std::vector<float> input({
+     -0.99,-0.786738,-0.5,-0.197796,0.0,0.142758,0.5,0.876096,-0.653239,0.3,0.99,-0.142758
+   });
+
+   ASSERT_INCLUDE_AND_RUN(std::vector<float>, "Atanh", input);
+
+   std::vector<float> correct_output;
+   for (float x : input)
+      correct_output.push_back(std::atanh(x));
    expectNear(output, correct_output, DEFAULT_TOLERANCE);
 }
 

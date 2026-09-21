@@ -29,6 +29,7 @@ In extended mode, a
 #include <RooAbsData.h>
 #include <RooAbsPdf.h>
 #include <RooAbsDataStore.h>
+#include <RooBatchCompute.h>
 #include <RooChangeTracker.h>
 #include <RooNaNPacker.h>
 #include <RooFit/Evaluator.h>
@@ -62,8 +63,12 @@ RooUnbinnedL::RooUnbinnedL(RooAbsPdf *pdf, RooAbsData *data, RooAbsL::Extended e
    if (evalBackend.value() != RooFit::EvalBackend::Value::Legacy) {
       evaluator_ = std::make_unique<RooFit::Evaluator>(*pdf_, evalBackend.value() == RooFit::EvalBackend::Value::Cuda);
       std::stack<std::vector<double>>{}.swap(_vectorBuffers);
+      // Zero-weight events must not be skipped here: the probabilities from
+      // the evaluator are indexed by the original event indices, aligned with
+      // the weights obtained from RooAbsData::getWeightBatch(). Events with
+      // zero weight are skipped in the summation instead.
       auto dataSpans =
-         RooFit::BatchModeDataHelpers::getDataSpans(*data, "", nullptr, /*skipZeroWeights=*/true,
+         RooFit::BatchModeDataHelpers::getDataSpans(*data, "", nullptr, /*skipZeroWeights=*/false,
                                                     /*takeGlobalObservablesFromData=*/false, _vectorBuffers);
       for (auto const &item : dataSpans) {
          evaluator_->setInput(item.first->GetName(), item.second, false);
@@ -95,27 +100,6 @@ bool RooUnbinnedL::setApplyWeightSquared(bool flag)
    }
    //   setValueDirty();
    return false;
-}
-
-//////////////////////////////////////////////////////////////////////////////////
-
-/// With the vectorizing evaluation backends, the pdf is compiled for a fixed
-/// normalization set and evaluated outside of the RooFit data store, so the
-/// constant term optimization is not applicable. Attempting it anyway is not
-/// only useless: caching constant branches means snapshotting parts of the
-/// compiled computation graph into the data store, which classes like
-/// RooFit::Detail::RooNormalizedPdf don't support. Refuse the request instead.
-void RooUnbinnedL::constOptimizeTestStatistic(RooAbsArg::ConstOpCode opcode, bool doAlsoTrackingOpt)
-{
-   if (evaluator_) {
-      oocoutW((TObject *)nullptr, Optimization)
-         << "RooUnbinnedL::constOptimizeTestStatistic(" << GetName()
-         << ") the constant term optimization only applies to likelihoods evaluated with EvalBackend::Legacy(), "
-            "ignoring the request"
-         << std::endl;
-      return;
-   }
-   RooAbsL::constOptimizeTestStatistic(opcode, doAlsoTrackingOpt);
 }
 
 namespace {
@@ -165,42 +149,38 @@ ComputeResult computeScalarFunc(const RooAbsPdf *pdfClone, RooAbsData *dataClone
 // Similar to computeScalarFunc, but the probabilities were already evaluated
 // as a batch, and the weights are also retrieved as batches instead of looping
 // over RooAbsData::get(i), which loads every column of the dataset only to
-// then read a single weight.
+// then read a single weight. The reduction is done with the same vectorized
+// RooBatchCompute::reduceNLL() that RooNLLVarNew uses in the standard
+// evaluation backend, including its RooNaNPacker-based error propagation.
 ComputeResult computeBatchFunc(std::span<const double> probas, RooAbsData *dataClone, bool weightSq,
-                               std::size_t stepSize, std::size_t firstEvent, std::size_t lastEvent)
+                               std::size_t firstEvent, std::size_t lastEvent, std::vector<double> &unitWeights,
+                               RooBatchCompute::Config const &cfg)
 {
-   ROOT::Math::KahanSum<double> kahanWeight;
-   ROOT::Math::KahanSum<double> kahanProb;
-   RooNaNPacker packedNaN(0.f);
-
    const std::size_t nEvents = lastEvent - firstEvent;
    // Empty spans mean the dataset is unweighted, i.e. all weights are one.
-   std::span<const double> weights = dataClone->getWeightBatch(firstEvent, nEvents, /*sumW2=*/false);
-   std::span<const double> weightsSumW2 =
-      weightSq ? dataClone->getWeightBatch(firstEvent, nEvents, /*sumW2=*/true) : std::span<const double>{};
+   std::span<const double> dataWeights = dataClone->getWeightBatch(firstEvent, nEvents, /*sumW2=*/weightSq);
 
-   for (auto i = firstEvent; i < lastEvent; i += stepSize) {
-      double weight = weights.empty() ? 1.0 : weights[i - firstEvent];
-
-      if (0. == weight * weight)
-         continue;
-      if (weightSq)
-         weight = weightsSumW2.empty() ? 1.0 : weightsSumW2[i - firstEvent];
-
-      double logProba = std::log(probas[i]);
-      const double term = -weight * logProba;
-
-      kahanWeight.Add(weight);
-      kahanProb.Add(term);
-      packedNaN.accumulate(term);
+   double sumWeight;
+   const double *weightData = nullptr;
+   std::size_t nWeights = 0;
+   if (dataWeights.empty()) {
+      if (unitWeights.size() < nEvents) {
+         unitWeights.assign(nEvents, 1.0);
+      }
+      weightData = unitWeights.data();
+      nWeights = nEvents;
+      sumWeight = nEvents;
+   } else {
+      weightData = dataWeights.data();
+      nWeights = dataWeights.size();
+      sumWeight = RooBatchCompute::reduceSum(cfg, weightData, nWeights);
    }
+   std::span<const double> weights{weightData, nWeights};
 
-   if (packedNaN.getPayload() != 0.) {
-      // Some events with evaluation errors. Return "badness" of errors.
-      return {ROOT::Math::KahanSum<double>{packedNaN.getNaNWithPayload()}, kahanWeight.Sum()};
-   }
+   std::span<const double> probasInRange{probas.data() + firstEvent, nEvents};
 
-   return {kahanProb, kahanWeight.Sum()};
+   auto out = RooBatchCompute::reduceNLL(cfg, probasInRange, weights, {});
+   return {ROOT::Math::KahanSum<double>{out.nllSum, out.nllSumCarry}, sumWeight};
 }
 
 } // namespace
@@ -231,22 +211,9 @@ RooUnbinnedL::evaluatePartition(Section events, std::size_t /*components_begin*/
       // Here, we have a memory allocation that should be avoided when this
       // code needs to be optimized.
       std::span<const double> probas = evaluator_->run();
-      std::tie(result, sumWeight) =
-         computeBatchFunc(probas, data_.get(), apply_weight_squared, 1, events.begin(N_events_), events.end(N_events_));
+      std::tie(result, sumWeight) = computeBatchFunc(probas, data_.get(), apply_weight_squared, events.begin(N_events_),
+                                                     events.end(N_events_), _unitWeights, RooBatchCompute::Config{});
    } else {
-      // The cache-and-track optimization tracks staleness of the cached
-      // branches globally, but recalculateCache() only refreshes the requested
-      // event range. A cache that was refreshed for one event section hence
-      // reports itself as up-to-date for all other sections as well, even
-      // though their rows may still hold values from an older parameter point.
-      // This happens when event-range tasks migrate between workers in
-      // RooFit::MultiProcess likelihood splitting. Force a full update of the
-      // cached branches whenever the evaluated section changes.
-      if (!(events == lastCacheSection_)) {
-         data_->store()->forceCacheUpdate();
-         lastCacheSection_ = events;
-      }
-      data_->store()->recalculateCache(nullptr, events.begin(N_events_), events.end(N_events_), 1, true);
       std::tie(result, sumWeight) = computeScalarFunc(pdf_.get(), data_.get(), normSet_.get(), apply_weight_squared, 1,
                                                       events.begin(N_events_), events.end(N_events_));
    }

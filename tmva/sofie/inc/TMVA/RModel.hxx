@@ -2,12 +2,11 @@
 #define TMVA_SOFIE_RMODEL
 
 #include "TMVA/RModel_Base.hxx"
-#include "TMVA/SOFIE_common.hxx"
 #include "TMVA/ROperator.hxx"
 
-namespace TMVA {
-namespace Experimental {
-namespace SOFIE {
+#include "Rtypes.h" // for ClassDefNV
+
+namespace TMVA::Experimental::SOFIE {
 
 class RModel final : public RModel_Base {
 
@@ -17,7 +16,6 @@ private:
    bool fUseVDT = false;
    int fVerbose = 0;
    int fBatchSize = -1;
-   long fReadPos = 0;  // reading file position
    size_t fConstantTensorSize = 0; // size  (in Bytes) of the allocated constant tensors
    size_t fWeightsTensorSize = 0;  // size  (in Bytes) of the allocated weight tensors
    size_t fOtherTensorSize = 0;    // size  (in Bytes) of intermediate tensors which are not managed by the memory pool
@@ -54,9 +52,6 @@ public:
    */
    RModel() = default;
    RModel(std::string name, std::string parsedtime) : RModel_Base(name, parsedtime) {}
-
-   // For GNN Functions usage
-   RModel(std::string function_name) : RModel_Base(function_name) {}
 
    int Verbose() const { return fVerbose;}
 
@@ -147,10 +142,10 @@ public:
    void Initialize(int batchSize = -1, bool verbose = false);
    void Initialize(const std::map<std::string,size_t> & inputParams, bool verbose = false);
 
-   void Generate(std::underlying_type_t<Options> options, int batchSize = -1, long pos = 0, bool verbose = false);
-   void Generate(Options options = Options::kDefault, int batchSize = -1, int pos = 0, bool verbose = false)
+   void Generate(std::underlying_type_t<Options> options, int batchSize = -1, bool verbose = false);
+   void Generate(Options options = Options::kDefault, int batchSize = -1, bool verbose = false)
    {
-      Generate(static_cast<std::underlying_type_t<Options>>(options), batchSize, pos, verbose);
+      Generate(static_cast<std::underlying_type_t<Options>>(options), batchSize, verbose);
    }
    // generate the infer function signature. If isdecl= false generate the calling infer function
    // used to infer the sub-graphs
@@ -200,7 +195,7 @@ public:
    const std::vector<std::string> & GetOutputTensorNames() const { return fOutputTensorNames; }
    const std::vector<std::string> & GetDimShapeNames() const { return fDimShapeNames; }
 
-   void ReadInitializedTensorsFromFile(long);
+   void ReadInitializedTensorsFromFile();
    long WriteInitializedTensorsToFile(std::string filename = "");
 
    void PrintSummary() const;
@@ -208,19 +203,6 @@ public:
    void PrintOutputTensors() const;
    void OutputGenerated(std::string filename = "", bool append = false);
    void SetFilename(std::string filename) { fName = filename; }
-
-   /*
-      template <typename T>
-      void AddInitializedTensor(std::string tensor_name, RTensor<T> new_tensor){
-         //a view only
-         T obj;
-         if (fInitializedTensors.find(tensor_name) != fInitializedTensors.end()){
-            throw std::runtime_error("TMVA-SOFIE: initialized tensor with name " + tensor_name + " already exists \n");
-         }
-         InitializedTensor new_tensor_ {GetTemplatedType(obj), new_tensor.GetShape() ,
-      static_cast<void>(new_tensor.GetData())}; fInitializedTensors[tensor_name] = new_tensor_;
-      }
-   */
 
    void PrintRequiredInputTensors() const;
    void PrintInitializedTensors() const;
@@ -255,8 +237,6 @@ inline std::vector<Dim> RModel::GetTensorData<Dim>(const std::string & name) {
    return GetShapeTensorValues(name);
 }
 
-} // namespace SOFIE
-} // namespace Experimental
-} // namespace TMVA
+} // namespace TMVA::Experimental::SOFIE
 
 #endif // TMVA_SOFIE_RMODEL

@@ -559,8 +559,10 @@ TEST(RNTupleInspector, ColumnTypeInfoHist)
    EXPECT_STREQ("Number of elements by column type", nElemsHist->GetTitle());
    EXPECT_EQ(4U, nElemsHist->GetNbinsX());
    std::uint64_t nTotalElems = 0;
+   auto firstClusterId = inspector->GetDescriptor().FindClusterId(0, 0);
+   const auto &clusterDesc = inspector->GetDescriptor().GetClusterDescriptor(firstClusterId);
    for (const auto &col : inspector->GetDescriptor().GetColumnIterable()) {
-      nTotalElems += inspector->GetDescriptor().GetNElements(col.GetPhysicalId());
+      nTotalElems += clusterDesc.GetColumnRange(col.GetPhysicalId()).GetNElements();
    }
    EXPECT_EQ(nTotalElems, nElemsHist->Integral());
 
@@ -891,7 +893,7 @@ TEST(RNTupleInspector, SchemaProfile)
    }
    auto inspector = RNTupleInspector::Create("ntuple", fileGuard.GetPath());
    std::ostringstream schemaProfileStream;
-   inspector->PrintSchemaProfile(ROOT::Experimental::ESchemaProfileFormat::kSpeedscopeJSON, schemaProfileStream);
+   inspector->PrintSchemaProfile(schemaProfileStream);
    const std::string schemaProfile = schemaProfileStream.str();
    const std::string expected = R"foo({
    "$schema":"https://www.speedscope.app/file-format-schema.json",
@@ -945,7 +947,7 @@ void WriteShuffledNTuple(std::string_view ntupleName, std::string_view path)
                                        .FieldId(0)
                                        .FieldName("")
                                        .Structure(ROOT::ENTupleStructure::kRecord)
-                                       .MakeDescriptor()
+                                       .MoveDescriptor()
                                        .Unwrap());
 
    for (std::uint32_t i = 0; i < 6; ++i) {
@@ -956,7 +958,7 @@ void WriteShuffledNTuple(std::string_view ntupleName, std::string_view path)
                                           .FieldId(fieldId)
                                           .FieldName("tag" + std::to_string(i))
                                           .Structure(ROOT::ENTupleStructure::kPlain)
-                                          .MakeDescriptor()
+                                          .MoveDescriptor()
                                           .Unwrap());
 
       nTupleDescriptorBuilder.AddFieldLink(0, fieldId).ThrowOnError();
@@ -968,7 +970,7 @@ void WriteShuffledNTuple(std::string_view ntupleName, std::string_view path)
                                            .BitsOnStorage(32)
                                            .Type(ROOT::ENTupleColumnType::kIndex32)
                                            .Index(0)
-                                           .MakeDescriptor()
+                                           .MoveDescriptor()
                                            .Unwrap());
    }
 
@@ -1129,7 +1131,7 @@ TEST(RNTupleInspector, DiskProfile)
 
    auto inspector = RNTupleInspector::Create("shuffled_ntuple", fileGuard.GetPath());
    std::ostringstream diskProfileStream;
-   inspector->PrintDiskProfile(ROOT::Experimental::ESchemaProfileFormat::kSpeedscopeJSON, diskProfileStream);
+   inspector->PrintDiskProfile(diskProfileStream);
    const std::string diskProfile = diskProfileStream.str();
    const std::string expected = R"foo({
    "$schema":"https://www.speedscope.app/file-format-schema.json",
@@ -1178,14 +1180,14 @@ TEST(RNTupleInspector, DiskProfile)
             {"type":"O","frame":2,"at":882},
             {"type":"O","frame":3,"at":882},
             {"type":"O","frame":4,"at":882},
-            {"type":"C","frame":4,"at":1082},
+            {"type":"C","frame":4,"at":1090},
             {"type":"O","frame":5,"at":1132},
             {"type":"C","frame":5,"at":1232},
             {"type":"C","frame":3,"at":1232},
             {"type":"O","frame":6,"at":1274},
             {"type":"O","frame":7,"at":1274},
-            {"type":"C","frame":7,"at":1674},
-            {"type":"C","frame":6,"at":1674},
+            {"type":"C","frame":7,"at":1682},
+            {"type":"C","frame":6,"at":1682},
             {"type":"O","frame":8,"at":1724},
             {"type":"O","frame":9,"at":1724},
             {"type":"C","frame":9,"at":1824},
@@ -1194,9 +1196,9 @@ TEST(RNTupleInspector, DiskProfile)
             {"type":"O","frame":10,"at":1866},
             {"type":"O","frame":11,"at":1866},
             {"type":"O","frame":12,"at":1866},
-            {"type":"C","frame":12,"at":2266},
-            {"type":"C","frame":11,"at":2266},
-            {"type":"C","frame":10,"at":2266},
+            {"type":"C","frame":12,"at":2274},
+            {"type":"C","frame":11,"at":2274},
+            {"type":"C","frame":10,"at":2274},
             {"type":"O","frame":13,"at":2316},
             {"type":"O","frame":14,"at":2316},
             {"type":"O","frame":15,"at":2316},
@@ -1208,10 +1210,10 @@ TEST(RNTupleInspector, DiskProfile)
             {"type":"O","frame":17,"at":2758},
             {"type":"O","frame":18,"at":2758},
             {"type":"O","frame":19,"at":2758},
-            {"type":"C","frame":19,"at":3158},
-            {"type":"C","frame":18,"at":3158},
-            {"type":"C","frame":17,"at":3158},
-            {"type":"C","frame":16,"at":3158},
+            {"type":"C","frame":19,"at":3166},
+            {"type":"C","frame":18,"at":3166},
+            {"type":"C","frame":17,"at":3166},
+            {"type":"C","frame":16,"at":3166},
             {"type":"O","frame":20,"at":3208},
             {"type":"O","frame":21,"at":3208},
             {"type":"O","frame":22,"at":3208},

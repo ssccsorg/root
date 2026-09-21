@@ -853,7 +853,7 @@ public:
    void Attach(ROOT::Internal::RNTupleSerializer::EDescriptorDeserializeMode mode =
                   ROOT::Internal::RNTupleSerializer::EDescriptorDeserializeMode::kForReading);
    ROOT::NTupleSize_t GetNEntries();
-   ROOT::NTupleSize_t GetNElements(ColumnHandle_t columnHandle);
+   ROOT::NTupleSize_t GetNElements(ROOT::DescriptorId_t physicalColumnId);
 
    /// Promise to only read from the given entry range. If set, prevents the cluster pool from reading-ahead beyond
    /// the given range. The range needs to be within `[0, GetNEntries())`.
@@ -905,10 +905,6 @@ public:
    /// Builds the streamer info records from the descriptor's extra type info section. This is necessary when
    /// connecting streamer fields so that emulated classes can be read.
    void RegisterStreamerInfos();
-
-   /// Forces the loading of ROOT StreamerInfo from the underlying file. This currently only has an effect for
-   /// TFile-backed sources.
-   virtual void LoadStreamerInfo() = 0;
 
    /// Creates a new PageSource using the same underlying file as this but referring to a different RNTuple,
    /// described by `anchorLink`.

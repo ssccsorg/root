@@ -68,6 +68,10 @@ private:
    /// what happens in `RNTupleFileWriter::WriteBlob()`.
    std::uint64_t fMaxKeySize = 0;
 
+   /// Information about the streamer info record cache on file open from the TFile header. Used in LoadStreamerInfo.
+   std::uint64_t fSeekKeyInfo = 0;
+   std::uint64_t fNbytesKeyAndInfo = 0;
+
    /// Used when the file container turns out to be a bare file
    RResult<RNTuple> GetNTupleBare(std::string_view ntupleName);
    /// Used when the file turns out to be a TFile container. The ntuplePath variable is either the ntuple name
@@ -96,7 +100,7 @@ public:
    void ReadBuffer(void *buffer, size_t nbytes, std::uint64_t offset);
    /// Like ReadBuffer but returns a RResult instead of throwing.
    ROOT::RResult<void> TryReadBuffer(void *buffer, size_t nbytes, std::uint64_t offset);
-   /// Attempts to load the streamer info from the file.
+   /// Load the streamer info from the file into the global list of streamer infos
    void LoadStreamerInfo();
 
    std::uint64_t GetMaxKeySize() const { return fMaxKeySize; }
@@ -231,13 +235,19 @@ private:
    /// The RNTuple class description is always present.
    ROOT::Internal::RNTupleSerializer::StreamerInfoMap_t fStreamerInfoMap;
 
+   /// Private constructor used by all factory methods.
+   /// Note that, in case of "owned" files (those created via Recreate) there must be exactly one non-hidden
+   /// RNTupleFileWriter which is responsible for serializing the ROOT file metadata.
+   /// This is enforced by the public API, as the only way to create a hidden FileWriter is via CloneAsHidden (which
+   /// creates a secondary hidden writer over the same file) and Append (which never writes the file metadata because
+   /// they are already handled by the "real" TFile).
    explicit RNTupleFileWriter(std::string_view name, std::uint64_t maxKeySize, bool isHidden);
 
    /// For a TFile container written by a C file stream, write the header and TFile object
    void WriteTFileSkeleton(int defaultCompression);
    /// The only key that will be visible in file->ls()
-   /// Returns the size on disk of the anchor object
-   std::uint64_t WriteTFileNTupleKey(int compression);
+   /// Returns the link to the RNTuple anchor.
+   ROOT::Internal::RNTupleLink WriteTFileNTupleKey(int compression);
    /// Write the TList with the RNTuple key
    void WriteTFileKeysList(std::uint64_t anchorSize);
    /// Write the compressed streamer info record with the description of the RNTuple class

@@ -50,8 +50,6 @@ using ROOT::Internal::RColumn;
 using ROOT::Internal::RColumnDescriptorBuilder;
 using ROOT::Internal::RColumnElementBase;
 using ROOT::Internal::RExtraTypeInfoDescriptorBuilder;
-using ROOT::Internal::RFieldDescriptorBuilder;
-using ROOT::Internal::RNTupleSerializer;
 
 using ROOT::Experimental::Internal::RNTupleAttrSetDescriptorBuilder;
 
@@ -271,9 +269,25 @@ ROOT::NTupleSize_t ROOT::Internal::RPageSource::GetNEntries()
    return GetSharedDescriptorGuard()->GetNEntries();
 }
 
-ROOT::NTupleSize_t ROOT::Internal::RPageSource::GetNElements(ColumnHandle_t columnHandle)
+ROOT::NTupleSize_t ROOT::Internal::RPageSource::GetNElements(ROOT::DescriptorId_t physicalColumnId)
 {
-   return GetSharedDescriptorGuard()->GetNElements(columnHandle.fPhysicalId);
+   auto descGuard = GetSharedDescriptorGuard();
+   if (descGuard->GetNClusters() == 0)
+      return 0;
+
+   auto itr = descGuard->GetClusterGroupIterable().begin();
+   itr += descGuard->GetNClusterGroups() - 1;
+   R__ASSERT(itr->HasClusterDetails());
+
+   ROOT::NTupleSize_t result = 0;
+   for (const auto &clusterId : itr->GetClusterIds()) {
+      const auto &cd = descGuard->GetClusterDescriptor(clusterId);
+      if (!cd.ContainsColumn(physicalColumnId))
+         continue;
+      auto columnRange = cd.GetColumnRange(physicalColumnId);
+      result = std::max(result, columnRange.GetFirstElementIndex() + columnRange.GetNElements());
+   }
+   return result;
 }
 
 void ROOT::Internal::RPageSource::UnzipCluster(RCluster *cluster)
@@ -966,7 +980,7 @@ ROOT::Internal::RPagePersistentSink::AddColumn(ROOT::DescriptorId_t fieldId, RCo
    // deferred range. All other representations are suppressed.
    if (column.GetFirstElementIndex() > 0 && column.GetRepresentationIndex() > 0)
       columnBuilder.SetSuppressedDeferred();
-   fDescriptorBuilder.AddColumn(columnBuilder.MakeDescriptor().Unwrap());
+   fDescriptorBuilder.AddColumn(columnBuilder.MoveDescriptor().Unwrap());
    return ColumnHandle_t{columnId, &column};
 }
 
@@ -1003,7 +1017,7 @@ void ROOT::Internal::RPagePersistentSink::UpdateSchema(const ROOT::Internal::RNT
 
    auto addField = [&](ROOT::RFieldBase &f) {
       auto fieldId = descriptor.GetNFields();
-      fDescriptorBuilder.AddField(RFieldDescriptorBuilder::FromField(f).FieldId(fieldId).MakeDescriptor().Unwrap());
+      fDescriptorBuilder.AddField(f, fieldId);
       fDescriptorBuilder.AddFieldLink(f.GetParent()->GetOnDiskId(), fieldId);
       f.SetOnDiskId(fieldId);
       ROOT::Internal::CallConnectPageSinkOnField(f, *this, firstEntry); // issues in turn calls to `AddColumn()`
@@ -1012,7 +1026,7 @@ void ROOT::Internal::RPagePersistentSink::UpdateSchema(const ROOT::Internal::RNT
       auto fieldId = descriptor.GetNFields();
       auto sourceFieldId =
          ROOT::Internal::GetProjectedFieldsOfModel(changeset.fModel).GetSourceField(&f)->GetOnDiskId();
-      fDescriptorBuilder.AddField(RFieldDescriptorBuilder::FromField(f).FieldId(fieldId).MakeDescriptor().Unwrap());
+      fDescriptorBuilder.AddField(f, fieldId);
       fDescriptorBuilder.AddFieldLink(f.GetParent()->GetOnDiskId(), fieldId);
       fDescriptorBuilder.AddFieldProjection(sourceFieldId, fieldId);
       f.SetOnDiskId(fieldId);
@@ -1027,7 +1041,7 @@ void ROOT::Internal::RPagePersistentSink::UpdateSchema(const ROOT::Internal::RNT
             .Type(source.GetType())
             .Index(source.GetIndex())
             .RepresentationIndex(source.GetRepresentationIndex());
-         fDescriptorBuilder.AddColumn(columnBuilder.MakeDescriptor().Unwrap());
+         fDescriptorBuilder.AddColumn(columnBuilder.MoveDescriptor().Unwrap());
       }
    };
 
@@ -1083,7 +1097,7 @@ void ROOT::Internal::RPagePersistentSink::InitImpl(ROOT::RNTupleModel &model)
    const auto &descriptor = fDescriptorBuilder.GetDescriptor();
 
    auto &fieldZero = ROOT::Internal::GetFieldZeroOfModel(model);
-   fDescriptorBuilder.AddField(RFieldDescriptorBuilder::FromField(fieldZero).FieldId(0).MakeDescriptor().Unwrap());
+   fDescriptorBuilder.AddField(fieldZero, 0);
    fieldZero.SetOnDiskId(0);
    auto &projectedFields = ROOT::Internal::GetProjectedFieldsOfModel(model);
    projectedFields.GetFieldZero().SetOnDiskId(0);
@@ -1110,6 +1124,7 @@ ROOT::Internal::RPagePersistentSink::InitFromDescriptor(const ROOT::RNTupleDescr
 {
    // Create new descriptor
    fDescriptorBuilder.SetSchemaFromExisting(srcDescriptor);
+   // This is needed to be able to use GetTypeNameForComparison()
    fDescriptorBuilder.SetVersionForWriting();
    const auto &descriptor = fDescriptorBuilder.GetDescriptor();
 
@@ -1225,7 +1240,7 @@ ROOT::Internal::RPagePersistentSink::AddColumnRepresentation(const ROOT::RFieldD
          .ValueRange(columnRepr.fValueRange);
       if (newReprFirstElemIndex)
          columnBuilder.SetSuppressedDeferred();
-      fDescriptorBuilder.AddColumn(columnBuilder.MakeDescriptor().Unwrap());
+      fDescriptorBuilder.AddColumn(columnBuilder.MoveDescriptor().Unwrap());
 
       if (newReprFirstElemIndex != 0) {
          for (auto parentId = field.GetParentId(); parentId != ROOT::kInvalidDescriptorId;) {
@@ -1279,7 +1294,7 @@ void ROOT::Internal::RPagePersistentSink::AddAliasColumn(const ROOT::RNTupleDesc
       .ValueRange(pointedColumn.GetValueRange())
       .FirstElementIndex(pointedColumn.GetFirstElementIndex())
       .RepresentationIndex(pointedColumn.GetRepresentationIndex());
-   fDescriptorBuilder.AddColumn(columnBuilder.MakeDescriptor().Unwrap());
+   fDescriptorBuilder.AddColumn(columnBuilder.MoveDescriptor().Unwrap());
 
    fDescriptorBuilder.EnsureValidDescriptor().ThrowOnError();
 }

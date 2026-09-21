@@ -24,8 +24,8 @@
 #include <ROOT/RRawFileTFile.hxx>
 #include <ROOT/RNTupleTypes.hxx>
 #include <ROOT/RNTupleUtils.hxx>
+#include <ROOT/RVersion.hxx>
 
-#include <RVersion.h>
 #include <TDirectory.h>
 #include <TError.h>
 #include <TVirtualStreamerInfo.h>
@@ -46,10 +46,7 @@ using ROOT::Experimental::Detail::RNTupleAtomicTimer;
 using ROOT::Experimental::Detail::RNTupleCalcPerf;
 using ROOT::Experimental::Detail::RNTupleMetrics;
 using ROOT::Internal::RCluster;
-using ROOT::Internal::RNTupleCompressor;
-using ROOT::Internal::RNTupleDecompressor;
 using ROOT::Internal::RNTupleFileWriter;
-using ROOT::Internal::RNTupleSerializer;
 using ROOT::Internal::ROnDiskPage;
 using ROOT::Internal::ROnDiskPageMap;
 
@@ -425,6 +422,10 @@ void ROOT::Internal::RPageSourceFile::LoadStructureImpl()
    // Otherwise, the page source was created by OpenFromAnchor()
    if (!fAnchor) {
       fAnchor = fReader.GetNTuple(fNTupleName).Unwrap();
+      // We couple finding the RNTuple anchor to loading the streamer infos.
+      // If we already have the anchor, we must have opened the file before (either through TFile or by the source of
+      // OpenWithDifferentAnchor(), in which case we already loaded the streamer info) .
+      fReader.LoadStreamerInfo();
    }
    fReader.SetMaxKeySize(fAnchor->GetMaxKeySize());
 
@@ -710,9 +711,4 @@ ROOT::Internal::RPageSourceFile::LoadClusters(std::span<RCluster::RKey> clusterK
    }
 
    return clusters;
-}
-
-void ROOT::Internal::RPageSourceFile::LoadStreamerInfo()
-{
-   fReader.LoadStreamerInfo();
 }
