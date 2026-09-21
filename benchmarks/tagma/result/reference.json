@@ -1,7 +1,9 @@
 {
   "benchmark": "benchmarks/tagma/tagma_bench.C",
-  "timestamp": "20260810-153200",
+  "repository": "git@github.com:ssccsorg/root.git",
   "commit": "474b9af1ad",
+  "commit_note": "Measured with a build of this fork. 474b9af1ad is reachable in ssccsorg/root from both master and 121-tagma-reader-backend.",
+  "timestamp": "20260810-153200",
   "environment": {
     "machine": "macOS (Apple Silicon), local out-of-source build root-build-tagma",
     "build": "Release, treeplayer=ON, testing=ON, builtin gtest",
@@ -11,7 +13,7 @@
   },
   "method": {
     "workload": "read every event of the dataset through TTree::GetEntry, cache disabled in the baseline (M1 workload)",
-    "baseline": "ordinary ROOT read path, no store attached",
+    "baseline": "the fork's ordinary read path with no store attached: the coordinate hooks are dormant null checks, and the branch, basket, cache, and file layers are unchanged from upstream",
     "coordinate": "TTagmaStore attached, one aligned fixed-width record read per event",
     "coordinate_map": "TTagmaStore::MapFile, record copied from the mapped store file, zero read system calls",
     "record_size": 2560,
