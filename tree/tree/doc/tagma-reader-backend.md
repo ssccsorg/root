@@ -14,17 +14,19 @@ per-analysis migration.
 
 | Layer | File | State |
 | :--- | :--- | :--- |
-| Address arithmetic | `io/io/inc/ROOT/TTagmaStore.hxx` | Complete: composition, decomposition, offset, bounds, mmap |
-| Store format | none | The store is a bare record array; the axis layout is a caller-supplied struct and the field table is a sidecar text file |
-| Byte source hook | `io/io/src/TFile.cxx` | Serves record-aligned requests of exactly the record size, so no basket request can ever be served |
-| Entry hook | `tree/tree/src/TTree.cxx` | Fills a private record buffer and returns before the branch loop; branches are never filled |
-| Field table | `benchmarks/tagma/tagma_bench.C` | Parsed by the benchmark, not by the library |
+| Address arithmetic | `io/io/inc/ROOT/TTagmaStore.hxx` | Complete: composition, decomposition, offset, bounds, the data-region extent, and mmap |
+| Field table | `io/io/inc/ROOT/TTagmaSchema.hxx` | In the library: scalar and collection fields, counts resolved from the count scalar, the text form, and validation against the record size |
+| Store format | none | The index record and the packed data region are addressed by arithmetic. The axis layout and the field table still arrive as a caller-supplied struct and a sidecar, so the store is not self-describing |
+| Byte source | `io/io/src/TFile.cxx` | Serves record-aligned requests of exactly the record size, and any range the store covers, the data slice among them, from the mapping when one is attached |
+| Branch read path | `tree/tree/src/TBranch.cxx` | `GetEntry` loads the tree's record for the entry and copies an array field's elements out of the slice, so `TTreeReader` and `RDataFrame` read store-backed events |
+| Entry hook | `tree/tree/src/TTree.cxx` | Fills the record in place, then drives the array branches. The short circuit stays for direct callers |
 
-Consequences. The store is reachable only through `GetTagmaRecordBuffer()`,
-which is a new API, so the claim that existing analysis code runs unchanged
-is not yet true in code. `TTreeReader` reads through branches, so an
-entry-level short circuit is invisible to it and `RDataFrame` cannot reach
-the store.
+Consequences. Leaf access, `TTreeReader`, and `RDataFrame` reach the store
+through the ordinary branch machinery, so the store is a byte source under
+the existing interfaces and analysis code does not change. Two gaps remain.
+The axis layout and the field table are caller-supplied, so the store is not
+self-describing, and the writer emits a scalar projection of the event, so
+the collections the schema can express are not yet produced by it.
 
 ## Target architecture
 
@@ -130,10 +132,15 @@ and only that collection's slice, whose offset and length both follow from the
 counts. That is column pruning at collection granularity, which the fixed-width
 record cannot offer at all.
 
-Gate: a variable-length array read through the branch mechanism and compared
-against the file. The mechanism is the standard one, a count branch and an
-array branch whose leaflist names the count, so the work is in the store side,
-not in a new leaf type.
+Gate: `gtest-tree-tree-tagma-variable`, which writes a store carrying two
+collections, reads it through the ordinary branch machinery, and checks the
+array values, the object counts, the reuse of a repeated entry, and the
+rejection of a count past the schema bound. The record is the addressing
+unit, so the file side of the comparison stays in
+`gtest-tree-tree-tagma-dataframe`. The mechanism is the standard one, a count
+branch and an array branch whose leaflist names the count, so the work is in
+the store side, not in a new leaf type. The writer that produces a store of
+this shape is the open half of this phase.
 
 One constraint the leaf machinery imposes decides the chunk layout. A leaf
 created from a count-carrying leaflist reads element i at its address plus i
@@ -177,7 +184,7 @@ rewrite of the file hook.
 | :--- | :--- | :--- |
 | P1 | Done | `gtest-tree-tree-tagma-schema`: leaf access over the record bytes |
 | P4 | Done | `gtest-tree-tree-tagma-dataframe`: identical histogram from file and store, and `gtest-tree-tree-tagma-schema` reads through `TTreeReader` |
-| P5 | Designed | The addressing model is settled by measurement, see the phase above. This is the next work: it is the phase that decides whether the store can carry the collections rather than their leading value, which is 276 of its 320 fields |
+| P5 | Reader done, producer open | `gtest-tree-tree-tagma-variable`: collections read through the branches, the array values and counts checked against the store bytes, and a count past the bound rejected. The writer still emits the scalar projection, so the store the benchmark measures carries 276 of its 320 fields as array leading elements |
 | P2, P3, P6 | Open | |
 
 Both gates run against a build with `dataframe=ON`; the RDataFrame gate is
