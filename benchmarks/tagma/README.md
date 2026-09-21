@@ -131,6 +131,21 @@ reports the `baseline_uncomp` row over the same entries:
 ../root-build-tagma/bin/root -l -b -q 'tagma_bench.C("/path/to/local.root", "Events", -1, 2560, 3, 1, "tagma_store.bin", 0, 0, "tagma_uncompressed.root")'
 ```
 
+## Warm sources
+
+The harness reads each local source once through the page cache in an untimed
+pass before the timed pass. The eleventh argument, `warm_cache`, controls it
+and defaults to on. Every row then measures the read path against resident
+data, which is what makes the rows comparable: without the pass the row order
+decides the result, because a pass over the uncompressed rewrite evicts the
+store. The same comparison measured the coordinate row at 2.79 s, 3.56 s and
+4.05 s across unwarmed runs, and at 2.71 s to 2.81 s with the pass on, while
+the mapped row moved from 1.06 s to 1.55 s to 1.61 s. Pass 0 to measure the
+medium instead, and read the rows as a sequence in that case.
+
+A remote URL is never warmed. Its access cost is what the remote row is about,
+and a warm pass would move the whole file over the network.
+
 ## What to record
 
 | Quantity | Source |

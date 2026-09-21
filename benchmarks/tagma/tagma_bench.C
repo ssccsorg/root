@@ -35,35 +35,57 @@
 // scalar leaves and 276 are variable-length arrays the writer stored
 // through their leading element.
 //
+// Protocol: the harness reads each local source through the page cache in an
+// untimed pass before its timed pass (warm_cache, on by default). The rows
+// below are three steady-state runs, and every range spans them. Row order
+// within a run: baseline, baseline_uncomp, coordinate, coordinate+map.
+//
 // Full dataset, same medium (local disk), cache-disabled baseline:
-//   path              wall_s   cpu_s   reads/ev  syscalls/ev  bytes/read    MB/s
-//   baseline          192.8    182.9   0.20      0.20         4,573         11.2
-//   coordinate          2.79    2.62   1.00      1.00         2,560        2,122   (69.0x)
-//   coordinate+map      1.06    1.05   1.00      0.00         2,560        5,584   (181.7x)
-//   served_checksum: match (233262869086)
+//   path              wall_s        cpu_s         reads/ev  syscalls/ev  bytes/read    MB/s
+//   baseline          187.0-188.2   183.6-185.9   0.20      0.20         4,573         11.5
+//   baseline_uncomp    81.1-85.7     74.1-74.7   0.17      0.17        28,043        133.8
+//   coordinate          2.71-2.81     2.69-2.73   1.00      1.00         2,560      2,190.1  (66.9-69.1x)
+//   coordinate+map      1.55-1.61     1.54-1.58   1.00      0.00         2,560      3,819.1  (116.6-120.5x)
+//   served_checksum: match (233262869086) in every run
+//
+// Decompression removal, baseline over baseline_uncomp: 2.20-2.31x.
+// The payload-equal rows (uncompressed with the store's columns active,
+// 35.935 s, 3.4 percent more bytes than the store) put the store at 13.1x,
+// or 22.8x mapped. ROOT's best configuration for that payload (the same
+// columns on the compressed file with a 32 MB cache, 111.111 s) puts it at
+// 40.5x, or 70.5x mapped.
 //
 // One-time conversion of the dataset into the store: 226.3 s.
 //
 // Analysis workload (MET_pt above 100 GeV and at least one muon, MET_pt
-// histogram), full dataset:
-//   analysis_baseline    188.9 s, selected 20,861, histogram mean 132.696
-//   analysis_coordinate    3.10 s, selected 20,861, histogram mean 132.696  (60.9x)
+// histogram), full dataset, same session as the rows above:
+//   analysis_baseline    187.9 s, selected 20,861, histogram mean 132.696
+//   analysis_coordinate    2.72 s, selected 20,861, histogram mean 132.696  (69.2x)
 //   analysis_match: yes
+// The store spends 2.715 s on those two columns against 2.698 s on the whole
+// record, which is its column independence. RDataFrame on the same file, on
+// a warm cache: entries only 0.030 s, one column 0.488 s, those two columns
+// 0.558 s, the store's 44 scalar columns 10.849 s. ROOT's column-selective
+// reader leads below about 11 columns, or about 6 with the store mapped. That
+// is the store's weakest case and it is stated as such.
 //
 // Baseline with the TTreeCache enabled (10,000 events): 8 read calls,
 // 1,943 KB per read, efficiency 0.917, miss rate 0.083. This is the
 // ideal sequential case; the documented cache degradation under
 // out-of-order multithreaded reads is not reproduced.
 //
-// M1 signature slice (2,000 events, same medium): baseline 1.37 reads
-// per event at 2,635 bytes per read, wall 0.461 s, matching the
-// documented 372,000 x 4.6 KB singular-read scale. The remote EOS
-// baseline (2,000 events) runs 100.1 s with about 98.8 percent I/O wait.
-// Same-media slice ratios: 230.5x (coordinate), 1512.0x (coordinate+map).
+// M1 signature slice (2,000 events, same medium, three runs): baseline
+// 1.37 reads per event at 2,635 bytes per read, wall 0.466-0.483 s,
+// matching the documented 372,000 x 4.6 KB singular-read scale, and the
+// coordinate walls at 0.002-0.003 s. The remote EOS baseline (2,000
+// events) runs 100.1 s with about 98.8 percent I/O wait; that row was not
+// re-measured. Both slice ratios sit at sub-millisecond scale and are
+// indicative.
 //
-// Synthetic (20,000 events, 2,560-byte records): baseline 0.124 s
-// (3.00 reads and syscalls per event, 1x), coordinate 0.019 s (6.5x),
-// coordinate+map 0.004 s (31.0x, zero syscalls).
+// Synthetic (20,000 events, 2,560-byte records): baseline 0.128-0.138 s at
+// 3.00 reads and syscalls per event, coordinate 0.026-0.078 s at 1.00 and
+// 1.00, coordinate+map 0.011-0.027 s at 0.00 syscalls. The spread is
+// per-syscall cost at that scale, so the counts are the claim there.
 //
 // Boundaries: phase 1 covers fixed-width records; the store holds a
 // scalar projection of the events; the documented 14-hour production
@@ -97,6 +119,11 @@
 //                 same MET_pt histogram on both read paths, over the
 //                 events the store covers; requires a converted store
 //                 with its layout sidecar
+//   warm_cache   1 reads each local source through the page cache before
+//                 its timed pass, so every row measures the read path
+//                 against resident data (default). 0 measures the medium
+//                 instead, in which case the row order matters: a pass
+//                 over the uncompressed rewrite evicts the store.
 //
 // The mapped coordinate row requires a Unix-like platform (mmap), like
 // the canonical CoordSpaceM reference.
@@ -126,6 +153,31 @@ const char *kScatterFile = "tagma_bench_scatter.root";
 const char *kScatterUncompressedFile =
     "tagma_bench_scatter_uncompressed.root";
 const char *kStoreFile = "tagma_bench_store.bin";
+
+// Populate the page cache for a local source, so the timed pass measures the
+// read path against resident data instead of against the medium. A remote URL
+// is left alone: its access cost is the subject of the remote row, and a warm
+// pass would move the whole file over the network.
+void WarmFile(const char *path)
+{
+   if (path == nullptr || path[0] == '\0')
+      return;
+   if (std::strstr(path, "://") != nullptr)
+      return;
+   FILE *in = std::fopen(path, "rb");
+   if (in == nullptr)
+      return;
+   constexpr std::size_t kChunk = 4u << 20;
+   std::vector<unsigned char> buffer(kChunk);
+   std::uint64_t total = 0;
+   std::size_t got = 0;
+   while ((got = std::fread(buffer.data(), 1, kChunk, in)) == kChunk)
+      total += got;
+   total += got;
+   std::fclose(in);
+   std::fprintf(stderr, "tagma_bench: warmed %s (%llu bytes)\n", path,
+                static_cast<unsigned long long>(total));
+}
 
 struct BenchResult {
    const char *name = nullptr;
@@ -570,7 +622,8 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
                 Long64_t max_entries = -1, Long64_t record_size = 0,
                 Int_t nscatter = 3, Bool_t disable_cache = kTRUE,
                 const char *store_path = "", Long64_t perf_entries = 0,
-                Bool_t analyze = kFALSE, const char *uncompressed_path = "")
+                Bool_t analyze = kFALSE, const char *uncompressed_path = "",
+                Bool_t warm_cache = kTRUE)
 {
    if (record_size <= 0)
       record_size = kDefaultRecordSize;
@@ -596,6 +649,8 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
          return 1;
       baselineFile = TFile::Open(kScatterFile);
    } else {
+      if (warm_cache)
+         WarmFile(url);
       baselineFile = TFile::Open(url);
    }
    if (!baselineFile || baselineFile->IsZombie()) {
@@ -652,6 +707,8 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
    const char *uncompressedSource =
        synthetic ? kScatterUncompressedFile : uncompressed_path;
    if (uncompressedSource != nullptr && uncompressedSource[0] != '\0') {
+      if (warm_cache)
+         WarmFile(uncompressedSource);
       TFile *ufile = TFile::Open(uncompressedSource);
       TTree *utree = nullptr;
       if (ufile && !ufile->IsZombie())
@@ -711,6 +768,8 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
       return 1;
    }
 
+   if (warm_cache)
+      WarmFile(store);
    TString storeRaw(store);
    storeRaw += "?filetype=raw";
    const BenchResult coord =
