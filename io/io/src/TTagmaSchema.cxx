@@ -11,6 +11,7 @@
 #include "ROOT/TTagmaSchema.hxx"
 
 #include <algorithm>
+#include <cstring>
 #include <fstream>
 #include <limits>
 #include <sstream>
@@ -183,6 +184,18 @@ void TTagmaSchema::Rebuild()
       match->fFields.push_back(field);
       match->fMaxCount = std::max(match->fMaxCount, field.fMaxCount);
    }
+   // A count field can be declared after the array fields it bounds, so the
+   // resolution runs on every rebuild.
+   for (auto &collection : fCollections) {
+      auto count = std::find_if(
+          fScalars.begin(), fScalars.end(), [&collection](const Field &field) {
+             return field.fName == collection.fCountField;
+          });
+      if (count != fScalars.end()) {
+         collection.fCountOffset = count->fOffset;
+         collection.fCountType = count->fType;
+      }
+   }
 }
 
 std::uint64_t TTagmaSchema::ScalarExtent() const
@@ -237,6 +250,60 @@ std::uint64_t TTagmaSchema::SliceBytes(const std::uint64_t *counts) const
    for (std::size_t i = 0; i < fCollections.size(); ++i)
       bytes += counts[i] * fCollections[i].ElementBytes();
    return bytes;
+}
+
+std::uint64_t TTagmaSchema::CountOf(std::size_t collectionIndex,
+                                   const void *indexRecord) const
+{
+   if (collectionIndex >= fCollections.size() || indexRecord == nullptr)
+      return 0;
+   const Collection &collection = fCollections[collectionIndex];
+   const char *base =
+       static_cast<const char *>(indexRecord) + collection.fCountOffset;
+   switch (collection.fCountType) {
+   case EType::kUInt32: {
+      std::uint32_t value = 0;
+      std::memcpy(&value, base, sizeof(value));
+      return value;
+   }
+   case EType::kInt32: {
+      std::int32_t value = 0;
+      std::memcpy(&value, base, sizeof(value));
+      return value < 0 ? 0 : static_cast<std::uint64_t>(value);
+   }
+   case EType::kUInt64: {
+      std::uint64_t value = 0;
+      std::memcpy(&value, base, sizeof(value));
+      return value;
+   }
+   case EType::kInt64: {
+      std::int64_t value = 0;
+      std::memcpy(&value, base, sizeof(value));
+      return value < 0 ? 0 : static_cast<std::uint64_t>(value);
+   }
+   case EType::kUInt16: {
+      std::uint16_t value = 0;
+      std::memcpy(&value, base, sizeof(value));
+      return value;
+   }
+   case EType::kInt16: {
+      std::int16_t value = 0;
+      std::memcpy(&value, base, sizeof(value));
+      return value < 0 ? 0 : static_cast<std::uint64_t>(value);
+   }
+   case EType::kUInt8: {
+      std::uint8_t value = 0;
+      std::memcpy(&value, base, sizeof(value));
+      return value;
+   }
+   case EType::kInt8: {
+      std::int8_t value = 0;
+      std::memcpy(&value, base, sizeof(value));
+      return value < 0 ? 0 : static_cast<std::uint64_t>(value);
+   }
+   default:
+      return 0;
+   }
 }
 
 bool TTagmaSchema::AddLine(const std::string &line)

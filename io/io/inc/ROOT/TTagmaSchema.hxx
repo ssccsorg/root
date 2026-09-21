@@ -79,6 +79,8 @@ public:
    struct Collection {
       std::string fCountField;
       std::uint64_t fMaxCount = 0;
+      std::uint64_t fCountOffset = 0;  // resolved from the count scalar field
+      EType fCountType = EType::kUInt32;
       std::vector<Field> fFields;
       // Bytes of one object as the store packs it: the fields carry no
       // padding, so this is the sum of the field sizes.
@@ -123,6 +125,9 @@ public:
 
    // Total bytes of an event's data slice for the given counts.
    std::uint64_t SliceBytes(const std::uint64_t *counts) const;
+
+   // Reads a collection's object count out of an index record.
+   std::uint64_t CountOf(std::size_t collectionIndex, const void *indexRecord) const;
 
    // Parses one field line. Returns false on a malformed line, an unknown
    // type, or a trailing token.

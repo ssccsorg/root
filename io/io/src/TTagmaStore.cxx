@@ -86,6 +86,11 @@ TTagmaStore::TTagmaStore(const Layout &layout) : fLayout(layout)
                    fLayout.fRecordSize) {
       throw std::invalid_argument("TTagmaStore: store extent overflows");
    }
+   if (count * fLayout.fRecordSize >
+       std::numeric_limits<std::uint64_t>::max() - fLayout.fDataSize) {
+      throw std::invalid_argument(
+         "TTagmaStore: store extent overflows with the data region");
+   }
 }
 
 std::uint64_t TTagmaStore::Compose(std::uint64_t run, std::uint64_t lumi,
@@ -117,7 +122,13 @@ std::uint64_t TTagmaStore::RecordCount() const
 
 std::uint64_t TTagmaStore::SizeBytes() const
 {
-   return RecordCount() * fLayout.fRecordSize;
+   return IndexBytes() + fLayout.fDataSize;
+}
+
+bool TTagmaStore::Covers(std::uint64_t offset, std::uint64_t length) const
+{
+   const std::uint64_t size = SizeBytes();
+   return offset <= size && length <= size - offset;
 }
 
 bool TTagmaStore::Contains(std::uint64_t run, std::uint64_t lumi,
