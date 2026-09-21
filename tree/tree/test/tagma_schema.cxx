@@ -20,6 +20,8 @@
 #include "TFile.h"
 #include "TLeaf.h"
 #include "TTree.h"
+#include "TTreeReader.h"
+#include "TTreeReaderValue.h"
 
 #include "gtest/gtest.h"
 
@@ -217,6 +219,41 @@ TEST(TTagmaSchema, SetTagmaSchemaRejectsInvalidSchemas)
 
    // A valid schema still attaches after the rejections.
    EXPECT_TRUE(tree.SetTagmaSchema(schema));
+
+   delete file;
+}
+
+TEST(TTagmaSchema, ReaderValuesAdvanceFromTheStore)
+{
+   WriteStore();
+
+   TFile *file = TFile::Open((std::string(kStorePath) + "?filetype=raw").c_str());
+   ASSERT_NE(file, nullptr);
+   ASSERT_FALSE(file->IsZombie());
+
+   TTree tree("Events", "Events");
+   tree.SetDirectory(file);
+   tree.SetEntries(kEntries);
+   tree.SetTagmaStore(MakeStore());
+   ROOT::TTagmaSchema schema = MakeSchema();
+   ASSERT_TRUE(tree.SetTagmaSchema(schema));
+
+   // TTreeReaderValue reads through the branch proxy, which enters the
+   // branch read path and never reaches TTree::GetEntry. Before the
+   // branches served the record, the loop iterated the right number of
+   // entries with every value frozen at the last leaf state.
+   TTreeReader reader(&tree);
+   TTreeReaderValue<Double_t> x(reader, "x");
+   TTreeReaderValue<Int_t> n(reader, "n");
+
+   int entry = 0;
+   while (reader.Next()) {
+      ASSERT_LT(entry, kEntries);
+      EXPECT_DOUBLE_EQ(*x, FieldX(entry)) << "entry " << entry;
+      EXPECT_EQ(*n, FieldN(entry)) << "entry " << entry;
+      ++entry;
+   }
+   EXPECT_EQ(entry, kEntries);
 
    delete file;
 }

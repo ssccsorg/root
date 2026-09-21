@@ -5760,39 +5760,18 @@ Int_t TTree::GetEntry(Long64_t entry, Int_t getall)
    // Coordinate-indexed store path: for entries covered by the attached
    // layout, the fixed-width record is served with a single read through
    // the store's closed-form arithmetic, bypassing the branch, basket,
-   // and read-cache machinery. The record bytes are kept in
-   // fTagmaRecord; GetTagmaRecordBuffer and GetTagmaRecordSize expose
-   // them, and a schema materialized with SetTagmaSchema makes the
-   // branches read the same bytes. Everything else falls through to the
-   // ordinary path unchanged.
+   // and read-cache machinery. The record bytes are kept in fTagmaRecord;
+   // GetTagmaRecordBuffer and GetTagmaRecordSize expose them, and a schema
+   // materialized with SetTagmaSchema makes the branches read the same
+   // bytes when a consumer drives the branch read path instead. Everything
+   // else falls through to the ordinary path unchanged.
    if (fTagmaStore) {
       const auto [run, lumi, event] =
          fTagmaStore->Decompose(static_cast<std::uint64_t>(entry));
-      if (fTagmaStore->Contains(run, lumi, event)) {
-         const ROOT::TTagmaStore::Layout &layout = fTagmaStore->GetLayout();
-         if (layout.fRecordSize == 0 || layout.fRecordSize > kMaxTagmaRecordSize)
-            return 0;
-         // The buffer is allocated once by SetTagmaSchema and the
-         // materialized branches hold addresses inside it, so a schema
-         // pins the size; without one the buffer is sized here and reused.
-         if (!fTagmaSchema.IsEmpty() &&
-             layout.fRecordSize != fTagmaRecord.size())
-            return 0;
-         if (fTagmaRecord.size() != layout.fRecordSize)
-            fTagmaRecord.resize(layout.fRecordSize);
-         fReadEntry = entry;
-         const Int_t nbytes =
-            GetTagmaRecord(entry, fTagmaRecord.data(),
-                           static_cast<Int_t>(fTagmaRecord.size()));
-         if (nbytes < 0) {
-            // Releasing the buffer would dangle the branch addresses of a
-            // materialized schema, so only the schema-less path clears it.
-            if (fTagmaSchema.IsEmpty())
-               fTagmaRecord.resize(0);
-            return 0;
-         }
-         return nbytes;
-      }
+      if (fTagmaStore->Contains(run, lumi, event))
+         return LoadTagmaRecord(entry)
+                   ? static_cast<Int_t>(fTagmaRecord.size())
+                   : 0;
    }
 
    Int_t i;
@@ -6129,14 +6108,63 @@ Bool_t TTree::SetTagmaSchema(const ROOT::TTagmaSchema &schema)
       const std::string leaflist =
          field.fName + "/" + ROOT::TTagmaSchema::LeafCode(field.fType);
       char *address = fTagmaRecord.data() + field.fOffset;
-      if (!Branch(field.fName.c_str(), address, leaflist.c_str())) {
+      TBranch *branch = Branch(field.fName.c_str(), address, leaflist.c_str());
+      if (!branch) {
          Error("SetTagmaSchema", "cannot create branch %s on %s",
                field.fName.c_str(), GetName());
          fTagmaRecord.clear();
          return kFALSE;
       }
+      branch->SetTagmaFieldSize(static_cast<Int_t>(field.Size()));
    }
    fTagmaSchema = schema;
+   fTagmaRecordEntry = -1;
+   return kTRUE;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Fill the record buffer for `entry` from the attached store.
+///
+/// The record is read once per entry and reused for repeats, so a consumer
+/// that drives one branch per field reads the record once. This is the entry
+/// point the materialized branches use, and through them the reader proxy,
+/// which never reaches GetEntry.
+///
+/// Returns kFALSE when no store is attached, the entry is outside the layout,
+/// the record size is out of bounds, the buffer is pinned by a schema that
+/// disagrees on the size, or the read failed.
+
+Bool_t TTree::LoadTagmaRecord(Long64_t entry)
+{
+   if (!fTagmaStore || entry < 0)
+      return kFALSE;
+   if (fTagmaRecordEntry == entry && !fTagmaRecord.empty())
+      return kTRUE;
+   const std::uint64_t recordSize = fTagmaStore->GetLayout().fRecordSize;
+   if (recordSize == 0 || recordSize > kMaxTagmaRecordSize)
+      return kFALSE;
+   const auto [run, lumi, event] =
+      fTagmaStore->Decompose(static_cast<std::uint64_t>(entry));
+   if (!fTagmaStore->Contains(run, lumi, event))
+      return kFALSE;
+   if (fTagmaRecord.size() != recordSize) {
+      // SetTagmaSchema allocates the buffer once and the materialized
+      // branches hold addresses inside it, so a schema pins the size.
+      if (!fTagmaSchema.IsEmpty())
+         return kFALSE;
+      fTagmaRecord.resize(static_cast<std::size_t>(recordSize));
+   }
+   if (GetTagmaRecord(entry, fTagmaRecord.data(),
+                      static_cast<Int_t>(fTagmaRecord.size())) < 0) {
+      fTagmaRecordEntry = -1;
+      // Releasing the buffer would dangle the branch addresses of a
+      // materialized schema, so only the schema-less path clears it.
+      if (fTagmaSchema.IsEmpty())
+         fTagmaRecord.resize(0);
+      return kFALSE;
+   }
+   fTagmaRecordEntry = entry;
+   fReadEntry = entry;
    return kTRUE;
 }
 

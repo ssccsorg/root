@@ -135,6 +135,7 @@ protected:
    TDirectory    *fDirectory;             ///<! Pointer to directory holding this tree
    std::shared_ptr<ROOT::TTagmaStore> fTagmaStore; ///<! Coordinate-indexed store layout (if any)
    ROOT::TTagmaSchema fTagmaSchema;       ///<! Field table materialized over the record buffer
+   Long64_t       fTagmaRecordEntry = -1; ///<! Entry held in fTagmaRecord, -1 when none
    std::vector<char> fTagmaRecord;       ///<! Last record served by the coordinate read path
    TObjArray      fBranches;              ///<  List of Branches
    TObjArray      fLeaves;                ///<  Direct pointers to individual branch leaves
@@ -717,6 +718,13 @@ public:
    /// of bounds, or a branch of that name already exists.
    virtual Bool_t          SetTagmaSchema(const ROOT::TTagmaSchema &schema);
    const ROOT::TTagmaSchema &GetTagmaSchema() const { return fTagmaSchema; }
+   /// Fills the record buffer for `entry` from the attached store, reading
+   /// it once per entry and reusing the buffer for repeats. Returns kFALSE
+   /// when no store is attached, the entry is outside the layout, the
+   /// buffer is pinned by a schema that does not match, or the read failed.
+   /// The materialized branches call this, so a consumer that drives the
+   /// branch read path reaches the store through the same buffer.
+   Bool_t                  LoadTagmaRecord(Long64_t entry);
    /// Pointer to the last record served by the coordinate read path, or
    /// nullptr before the first coordinate-served entry. The buffer stays
    /// valid until the next GetEntry or GetTagmaRecord call on this tree.

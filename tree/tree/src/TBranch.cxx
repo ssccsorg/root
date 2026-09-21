@@ -1707,6 +1707,18 @@ Int_t TBranch::GetEntry(Long64_t entry, Int_t getall)
    // Remember which entry we are reading.
    fReadEntry = entry;
 
+   // Coordinate read path: the branch address points into the tree's record
+   // buffer, so loading the record for this entry is the whole read. The
+   // leaves then report the record field with no basket, no leaf unpacking,
+   // and no copy. This is the seam the reader proxy enters through, which
+   // TTree::GetEntry alone cannot serve.
+   if (R__unlikely(fTagmaFieldSize != 0)) {
+      TTree *tree = GetTree();
+      if (tree && tree->LoadTagmaRecord(entry))
+         return fTagmaFieldSize;
+      return -1;
+   }
+
    if (R__unlikely(TestBit(kDoNotProcess) && !getall)) { return 0; }
 
    TBasket *basket; // will be initialized in the if/then clauses.
