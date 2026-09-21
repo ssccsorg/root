@@ -122,6 +122,8 @@ namespace {
 constexpr Long64_t kDefaultEntries = 20000;
 constexpr Long64_t kDefaultRecordSize = 2560;
 const char *kScatterFile = "tagma_bench_scatter.root";
+const char *kScatterUncompressedFile =
+    "tagma_bench_scatter_uncompressed.root";
 const char *kStoreFile = "tagma_bench_store.bin";
 
 struct BenchResult {
@@ -142,13 +144,18 @@ struct BenchResult {
 // issues one small read per branch per event. The per-event payload is
 // exactly record_size bytes across the branches.
 bool MakeScatteredTree(const char *path, Long64_t entries, Int_t nscatter,
-                       Long64_t recordSize)
+                       Long64_t recordSize, Bool_t uncompressed = kFALSE)
 {
    TFile file(path, "RECREATE");
    if (file.IsZombie()) {
       std::fprintf(stderr, "tagma_bench: cannot create %s\n", path);
       return false;
    }
+   // The compression control writes the same tree with compression
+   // disabled, so the pair holds the read path and the payload constant
+   // and varies only the compression.
+   if (uncompressed)
+      file.SetCompressionLevel(0);
    TTree tree("Events", "Events");
    tree.SetAutoFlush(1);
 
@@ -562,7 +569,7 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
                 Long64_t max_entries = -1, Long64_t record_size = 0,
                 Int_t nscatter = 3, Bool_t disable_cache = kTRUE,
                 const char *store_path = "", Long64_t perf_entries = 0,
-                Bool_t analyze = kFALSE)
+                Bool_t analyze = kFALSE, const char *uncompressed_path = "")
 {
    if (record_size <= 0)
       record_size = kDefaultRecordSize;
@@ -582,6 +589,9 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
    if (synthetic) {
       if (!MakeScatteredTree(kScatterFile, kDefaultEntries, nscatter,
                              record_size))
+         return 1;
+      if (!MakeScatteredTree(kScatterUncompressedFile, kDefaultEntries,
+                             nscatter, record_size, kTRUE))
          return 1;
       baselineFile = TFile::Open(kScatterFile);
    } else {
@@ -617,17 +627,57 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
       std::vector<Long64_t> sizes;
       ScatteredSizes(nscatter, record_size, &sizes);
       addresses.resize(nscatter);
-      for (Int_t b = 0; b < nscatter; ++b) {
+      for (Int_t b = 0; b < nscatter; ++b)
          addresses[b].assign(sizes[b], 0);
-         baselineTree->SetBranchAddress(Form("b%02d", b),
-                                        addresses[b].data());
-      }
    }
+   auto BindPayload = [&](TTree *tree) {
+      for (Int_t b = 0; b < nscatter; ++b)
+         tree->SetBranchAddress(Form("b%02d", b), addresses[b].data());
+   };
+   if (synthetic)
+      BindPayload(baselineTree);
 
    const BenchResult base = MeasureBaseline(baselineFile, baselineTree, limit,
                                             disable_cache,
                                             synthetic ? &addresses : nullptr);
    delete baselineFile;
+
+   // The compression control: the same tree written with compression
+   // disabled and read through the ordinary path. The row holds the read
+   // path and the payload constant, so the gap to the baseline is the
+   // decompression component of the measured ratio.
+   BenchResult baseUncompressed;
+   Bool_t haveUncompressed = kFALSE;
+   const char *uncompressedSource =
+       synthetic ? kScatterUncompressedFile : uncompressed_path;
+   if (uncompressedSource != nullptr && uncompressedSource[0] != '\0') {
+      TFile *ufile = TFile::Open(uncompressedSource);
+      TTree *utree = nullptr;
+      if (ufile && !ufile->IsZombie())
+         ufile->GetObject(tree_name, utree);
+      if (!utree) {
+         std::fprintf(stderr,
+                      "tagma_bench: uncompressed control skipped, cannot read "
+                      "tree %s from %s\n",
+                      tree_name, uncompressedSource);
+      } else if (utree->GetEntries() < limit) {
+         std::fprintf(stderr,
+                      "tagma_bench: uncompressed control skipped, %s holds "
+                      "%lld of %lld entries\n",
+                      uncompressedSource,
+                      static_cast<long long>(utree->GetEntries()),
+                      static_cast<long long>(limit));
+      } else {
+         if (synthetic)
+            BindPayload(utree);
+         baseUncompressed =
+             MeasureBaseline(ufile, utree, limit, disable_cache,
+                             synthetic ? &addresses : nullptr);
+         baseUncompressed.name = "baseline_uncomp";
+         haveUncompressed = kTRUE;
+      }
+      delete ufile;
+   }
 
    std::uint64_t expectedChecksum = 0;
    Bool_t haveChecksum = kFALSE;
@@ -678,6 +728,8 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
        "path", "wall_s", "cpu_s", "reads", "tagma", "syscalls",
        "bytes_moved", "reads/ev", "bytes/read", "syscalls/ev", "MB/s");
    PrintResult(base);
+   if (haveUncompressed)
+      PrintResult(baseUncompressed);
    PrintResult(coord);
    PrintResult(coordMap);
 
@@ -695,8 +747,10 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
 
    if (!realStore)
       gSystem->Unlink(kStoreFile);
-   if (synthetic)
+   if (synthetic) {
       gSystem->Unlink(kScatterFile);
+      gSystem->Unlink(kScatterUncompressedFile);
+   }
 
    if (!coord.ok || !coordMap.ok)
       return 1;
