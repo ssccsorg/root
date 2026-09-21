@@ -30,6 +30,7 @@
 
 #include "Compression.h"
 #include "ROOT/TIOFeatures.hxx"
+#include "ROOT/TTagmaSchema.hxx"
 #include "ROOT/TTagmaStore.hxx"
 #include "TArrayD.h"
 #include "TArrayI.h"
@@ -133,6 +134,7 @@ protected:
    TObject       *fNotify;                ///<!
    TDirectory    *fDirectory;             ///<! Pointer to directory holding this tree
    std::shared_ptr<ROOT::TTagmaStore> fTagmaStore; ///<! Coordinate-indexed store layout (if any)
+   ROOT::TTagmaSchema fTagmaSchema;       ///<! Field table materialized over the record buffer
    std::vector<char> fTagmaRecord;       ///<! Last record served by the coordinate read path
    TObjArray      fBranches;              ///<  List of Branches
    TObjArray      fLeaves;                ///<  Direct pointers to individual branch leaves
@@ -707,6 +709,14 @@ public:
    virtual Int_t           SetCacheSize(Long64_t cachesize = -1);
    virtual void            SetTagmaStore(std::shared_ptr<ROOT::TTagmaStore> store);
    virtual std::shared_ptr<ROOT::TTagmaStore> GetTagmaStore() const { return fTagmaStore; }
+   /// Materialize one branch per schema field over the record buffer, so
+   /// that leaf access reads the store-backed record. The record buffer is
+   /// allocated once here and never resized afterwards, because the
+   /// materialized branches hold addresses inside it. Returns kFALSE when
+   /// no store is attached, the schema is invalid, the record size is out
+   /// of bounds, or a branch of that name already exists.
+   virtual Bool_t          SetTagmaSchema(const ROOT::TTagmaSchema &schema);
+   const ROOT::TTagmaSchema &GetTagmaSchema() const { return fTagmaSchema; }
    /// Pointer to the last record served by the coordinate read path, or
    /// nullptr before the first coordinate-served entry. The buffer stays
    /// valid until the next GetEntry or GetTagmaRecord call on this tree.

@@ -5762,9 +5762,9 @@ Int_t TTree::GetEntry(Long64_t entry, Int_t getall)
    // the store's closed-form arithmetic, bypassing the branch, basket,
    // and read-cache machinery. The record bytes are kept in
    // fTagmaRecord; GetTagmaRecordBuffer and GetTagmaRecordSize expose
-   // them. The getall argument is moot here because branches are not
-   // filled. Everything else falls through to the ordinary path
-   // unchanged.
+   // them, and a schema materialized with SetTagmaSchema makes the
+   // branches read the same bytes. Everything else falls through to the
+   // ordinary path unchanged.
    if (fTagmaStore) {
       const auto [run, lumi, event] =
          fTagmaStore->Decompose(static_cast<std::uint64_t>(entry));
@@ -5772,13 +5772,23 @@ Int_t TTree::GetEntry(Long64_t entry, Int_t getall)
          const ROOT::TTagmaStore::Layout &layout = fTagmaStore->GetLayout();
          if (layout.fRecordSize == 0 || layout.fRecordSize > kMaxTagmaRecordSize)
             return 0;
+         // The buffer is allocated once by SetTagmaSchema and the
+         // materialized branches hold addresses inside it, so a schema
+         // pins the size; without one the buffer is sized here and reused.
+         if (!fTagmaSchema.IsEmpty() &&
+             layout.fRecordSize != fTagmaRecord.size())
+            return 0;
+         if (fTagmaRecord.size() != layout.fRecordSize)
+            fTagmaRecord.resize(layout.fRecordSize);
          fReadEntry = entry;
-         fTagmaRecord.resize(layout.fRecordSize);
          const Int_t nbytes =
             GetTagmaRecord(entry, fTagmaRecord.data(),
                            static_cast<Int_t>(fTagmaRecord.size()));
          if (nbytes < 0) {
-            fTagmaRecord.resize(0);
+            // Releasing the buffer would dangle the branch addresses of a
+            // materialized schema, so only the schema-less path clears it.
+            if (fTagmaSchema.IsEmpty())
+               fTagmaRecord.resize(0);
             return 0;
          }
          return nbytes;
@@ -6072,6 +6082,62 @@ Long64_t TTree::GetEntryNumberWithIndex(Long64_t major, Long64_t minor) const
 void TTree::SetTagmaStore(std::shared_ptr<ROOT::TTagmaStore> store)
 {
    fTagmaStore = std::move(store);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Materialize one branch per schema field over the record buffer.
+///
+/// Each branch is created with the ordinary leaflist API, with its address
+/// at the field offset inside fTagmaRecord. GetEntry fills that buffer from
+/// the store, so the leaves of the materialized branches read the record
+/// bytes and ordinary leaf access, iterators, and the reader machinery work
+/// on store-backed events without the record buffer API.
+///
+/// The buffer is allocated once here and never resized afterwards: the
+/// branches hold addresses inside it. Returns kFALSE when no store is
+/// attached, the schema does not validate against the record size, the
+/// record size exceeds the sanity bound, or a branch of that name already
+/// exists on the tree.
+
+Bool_t TTree::SetTagmaSchema(const ROOT::TTagmaSchema &schema)
+{
+   if (!fTagmaStore) {
+      Error("SetTagmaSchema", "no coordinate store is attached to %s", GetName());
+      return kFALSE;
+   }
+   const std::uint64_t recordSize = fTagmaStore->GetLayout().fRecordSize;
+   if (recordSize == 0 || recordSize > kMaxTagmaRecordSize) {
+      Error("SetTagmaSchema", "record size %llu is out of bounds for %s",
+            static_cast<unsigned long long>(recordSize), GetName());
+      return kFALSE;
+   }
+   std::string why;
+   if (!schema.Validate(recordSize, &why)) {
+      Error("SetTagmaSchema", "%s", why.c_str());
+      return kFALSE;
+   }
+   for (const auto &field : schema.GetFields()) {
+      if (GetBranch(field.fName.c_str())) {
+         Error("SetTagmaSchema", "branch %s already exists on %s",
+               field.fName.c_str(), GetName());
+         return kFALSE;
+      }
+   }
+
+   fTagmaRecord.assign(static_cast<std::size_t>(recordSize), 0);
+   for (const auto &field : schema.GetFields()) {
+      const std::string leaflist =
+         field.fName + "/" + ROOT::TTagmaSchema::LeafCode(field.fType);
+      char *address = fTagmaRecord.data() + field.fOffset;
+      if (!Branch(field.fName.c_str(), address, leaflist.c_str())) {
+         Error("SetTagmaSchema", "cannot create branch %s on %s",
+               field.fName.c_str(), GetName());
+         fTagmaRecord.clear();
+         return kFALSE;
+      }
+   }
+   fTagmaSchema = schema;
+   return kTRUE;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
