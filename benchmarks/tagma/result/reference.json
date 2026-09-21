@@ -5,8 +5,8 @@
   "environment": {
     "machine": "macOS (Apple Silicon), local out-of-source build root-build-tagma",
     "build": "Release, treeplayer=ON, testing=ON, builtin gtest",
-    "dataset": "/Users/blackgene/Documents/nanoaod/05DD095C-F6C3-9A4F-9FB3-348A5A6403D5.root",
-    "dataset_note": "CMS Run2016G DoubleMuon NanoAOD, tree Events, 2,315,223 events, 2,155,974,646 bytes, downloaded from eospublic.cern.ch",
+    "dataset": "/Users/blackgene/Documents/nanoaod/cms_nanoaod_run2016g_file0.root",
+    "dataset_note": "CMS Run2016G DoubleMuon NanoAOD, tree Events, 2,315,223 events, 2,155,974,646 bytes, downloaded from eospublic.cern.ch as 05DD095C-F6C3-9A4F-9FB3-348A5A6403D5.root and held under the name above",
     "remote_url": "root://eospublic.cern.ch//eos/opendata/cms/Run2016G/DoubleMuon/NANOAOD/UL2016_MiniAODv2_NanoAODv9-v2/2430000/05DD095C-F6C3-9A4F-9FB3-348A5A6403D5.root"
   },
   "method": {
