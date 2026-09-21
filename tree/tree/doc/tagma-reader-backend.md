@@ -95,12 +95,45 @@ side, because the record unit is the whole event. Byte savings from column
 selection do not exist on the store path, and the record is the addressing
 unit.
 
-P5. Variable-length fields.
-Decide the addressing model first: a fixed slot per event with padding,
-which keeps arithmetic addressing and wastes space, or a packed variable
-region with a per-event offset, which is compact and costs one indirection.
-Gate: a variable-length array field reads through the ordinary leaf
-machinery.
+P5. Variable-length fields. This is the P2 phase of the report's roadmap.
+
+Measured on the CMS file before the design, with `benchmarks/tagma/tagma_arrays.C`:
+the store's 320 fields are 44 scalar leaves carrying 180 bytes per event, and
+276 array fields belonging to ten collections. Per collection, the mean and
+maximum object counts and the bytes per object are nJet 4.94 and 32 at 157
+bytes, nMuon 2.11 and 20 at 137, nElectron 0.29 and 8 at 184, nFatJet 0.14 and
+6 at 213, nIsoTrack 1.14 and 20 at 51, nCorrT1METJet 5.15 and 32 at 20, and
+five smaller collections.
+
+That settles the addressing model. A fixed slot per collection per event,
+sized by the collection maximum, would need 13,678 bytes per event and 31.67 GB
+for this file, 11.1x the 1,233 bytes per event and 2.85 GB of a packed layout,
+and 5.3x the 2,560 bytes of the current store. The padding is the whole cost,
+because the mean counts are a fifth of the maximum for jets and a tenth for
+muons.
+
+The model to implement is a fixed-width index record plus a packed data
+region. The index record is addressed arithmetically, at index times index
+record size, and holds the scalar fields, a count per collection, and one
+64-bit base for the event's slice of the data region. The data region packs the
+collections in a fixed order, so the offset of each collection inside the
+event's slice follows from the counts by arithmetic, and no further stored
+offset is needed. Per event the record is about 228 bytes of index plus about
+1,053 bytes of packed data, so about 1,281 bytes against the current 2,560,
+carrying all ten collections rather than their leading elements.
+
+The cost is one extra read per event: the index record, then the event's slice
+of the data region. Both are contiguous and both are covered by the mapping, so
+the mapped path stays at zero application read calls. A partial read becomes
+possible, since an analysis that needs one collection can read the index record
+and only that collection's slice, whose offset and length both follow from the
+counts. That is column pruning at collection granularity, which the fixed-width
+record cannot offer at all.
+
+Gate: a variable-length array read through the branch mechanism and compared
+against the file. The mechanism is the standard one, a count branch and an
+array branch whose leaflist names the count, so the work is in the store side,
+not in a new leaf type.
 
 P6. Dataset addressing and concurrency.
 A dataset object holding per-file axis ranges so a (run, luminosity block,
@@ -133,7 +166,8 @@ rewrite of the file hook.
 | :--- | :--- | :--- |
 | P1 | Done | `gtest-tree-tree-tagma-schema`: leaf access over the record bytes |
 | P4 | Done | `gtest-tree-tree-tagma-dataframe`: identical histogram from file and store, and `gtest-tree-tree-tagma-schema` reads through `TTreeReader` |
-| P2, P3, P5, P6 | Open | |
+| P5 | Designed | The addressing model is settled by measurement, see the phase above. This is the next work: it is the phase that decides whether the store can carry the collections rather than their leading value, which is 276 of its 320 fields |
+| P2, P3, P6 | Open | |
 
 Both gates run against a build with `dataframe=ON`; the RDataFrame gate is
 registered only when that module is enabled.
