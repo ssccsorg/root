@@ -2,7 +2,8 @@
   "benchmark": "benchmarks/tagma/tagma_bench.C",
   "repository": "git@github.com:ssccsorg/root.git",
   "branch": "121-tagma-reader-backend",
-  "commit": "b5ce6b3c1d5721c7f150bc8d5763af32c273fe56",
+  "commit": "e12aceb4bba",
+  "commit_note": "The rows were produced by the harness at e12aceb4bba, which is the tip of the branch when the measurement ran. The commits after it change the plan document and the text of this file, not the measurement path. The trees that produce these rows are in b5ce6b3c1d5, which marked the collection buffers transient so a dataset written by another ROOT build can be opened at all.",
   "timestamp": "20260921-225104",
   "supersedes": {
     "commit": "474b9af1ad",
