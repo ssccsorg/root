@@ -75,18 +75,25 @@ Gate: a store written by the writer opens and reads with no sidecar files.
 
 P4. Interoperability gate.
 `TTreeReader`, `RDataFrame`, and `SetBranchStatus` column selection.
-Measured after P1: a store-backed tree iterates the right number of entries
-under `TTreeReader`, and the values do not advance, because
+Measured after P1: a store-backed tree iterated the right number of entries
+under `TTreeReader`, and the values did not advance, because
 `TTreeReaderValue` reads through `TBranchProxy` (see
 `ProxyReadDefaultImpl` in `tree/treeplayer/src/TTreeReaderValue.cxx`), which
 drives the branch read path and never reaches `TTree::GetEntry`. The leaf
-addresses keep their last value.
-So the materialized branches are necessary and not sufficient. This phase
-satisfies the branch read path from the record, which fixes the form of the
-seam: either a `TBranch` whose `GetEntry` copies its field slice out of the
-record, or a proxy read function bound to the record.
-Gate: an `RDataFrame` analysis produces an identical histogram from the file
-and from the store, and a column-restricted read moves fewer bytes.
+addresses kept their last value.
+So the materialized branches are necessary and not sufficient, and the
+record-fed read belongs where the proxy enters: `TBranch::GetEntry`, which
+loads the tree's record for the entry. The entry-level short circuit in
+`TTree::GetEntry` stays for consumers that call it directly, and both paths
+share one buffer and one read per entry.
+Gate: `gtest-tree-tree-tagma-dataframe` runs the same expression over the
+original file and over the store and compares the histogram, the selected
+count, and every bin.
+One property of the fixed-width record to keep in view: a column-restricted
+read moves fewer bytes on the file side and the same bytes on the store
+side, because the record unit is the whole event. Byte savings from column
+selection do not exist on the store path, and the record is the addressing
+unit.
 
 P5. Variable-length fields.
 Decide the addressing model first: a fixed slot per event with padding,
@@ -119,6 +126,17 @@ compressed size per record is not generally available, so compression
 reintroduces a block table and a decompression step. The record source
 seam exists so that this stays an implementation choice rather than a
 rewrite of the file hook.
+
+## Progress
+
+| Phase | State | Evidence |
+| :--- | :--- | :--- |
+| P1 | Done | `gtest-tree-tree-tagma-schema`: leaf access over the record bytes |
+| P4 | Done | `gtest-tree-tree-tagma-dataframe`: identical histogram from file and store, and `gtest-tree-tree-tagma-schema` reads through `TTreeReader` |
+| P2, P3, P5, P6 | Open | |
+
+Both gates run against a build with `dataframe=ON`; the RDataFrame gate is
+registered only when that module is enabled.
 
 ## Out of scope
 
