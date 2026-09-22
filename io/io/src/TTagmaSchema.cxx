@@ -39,26 +39,22 @@ bool ParseUint(const std::string &text, std::uint64_t *value)
    return true;
 }
 
-}  // namespace
+} // namespace
 
 std::uint64_t TTagmaSchema::SizeOf(EType type)
 {
    switch (type) {
    case EType::kDouble:
    case EType::kInt64:
-   case EType::kUInt64:
-      return 8;
+   case EType::kUInt64: return 8;
    case EType::kFloat:
    case EType::kInt32:
-   case EType::kUInt32:
-      return 4;
+   case EType::kUInt32: return 4;
    case EType::kInt16:
-   case EType::kUInt16:
-      return 2;
+   case EType::kUInt16: return 2;
    case EType::kInt8:
    case EType::kUInt8:
-   case EType::kBool:
-      return 1;
+   case EType::kBool: return 1;
    }
    return 0;
 }
@@ -66,28 +62,17 @@ std::uint64_t TTagmaSchema::SizeOf(EType type)
 const char *TTagmaSchema::LeafCode(EType type)
 {
    switch (type) {
-   case EType::kDouble:
-      return "D";
-   case EType::kFloat:
-      return "F";
-   case EType::kInt32:
-      return "I";
-   case EType::kUInt32:
-      return "i";
-   case EType::kInt64:
-      return "L";
-   case EType::kUInt64:
-      return "l";
-   case EType::kInt16:
-      return "S";
-   case EType::kUInt16:
-      return "s";
-   case EType::kInt8:
-      return "B";
-   case EType::kUInt8:
-      return "b";
-   case EType::kBool:
-      return "O";
+   case EType::kDouble: return "D";
+   case EType::kFloat: return "F";
+   case EType::kInt32: return "I";
+   case EType::kUInt32: return "i";
+   case EType::kInt64: return "L";
+   case EType::kUInt64: return "l";
+   case EType::kInt16: return "S";
+   case EType::kUInt16: return "s";
+   case EType::kInt8: return "B";
+   case EType::kUInt8: return "b";
+   case EType::kBool: return "O";
    }
    return "";
 }
@@ -98,29 +83,21 @@ bool TTagmaSchema::ParseType(const std::string &name, EType *type)
       *type = EType::kDouble;
    else if (name == "float" || name == "Float_t")
       *type = EType::kFloat;
-   else if (name == "int" || name == "Int_t" || name == "int32" ||
-            name == "int32_t")
+   else if (name == "int" || name == "Int_t" || name == "int32" || name == "int32_t")
       *type = EType::kInt32;
-   else if (name == "uint" || name == "UInt_t" || name == "uint32" ||
-            name == "uint32_t" || name == "unsigned")
+   else if (name == "uint" || name == "UInt_t" || name == "uint32" || name == "uint32_t" || name == "unsigned")
       *type = EType::kUInt32;
-   else if (name == "long" || name == "Long64_t" || name == "longlong" ||
-            name == "int64" || name == "int64_t")
+   else if (name == "long" || name == "Long64_t" || name == "longlong" || name == "int64" || name == "int64_t")
       *type = EType::kInt64;
-   else if (name == "ulong" || name == "ULong64_t" || name == "ulonglong" ||
-            name == "uint64" || name == "uint64_t")
+   else if (name == "ulong" || name == "ULong64_t" || name == "ulonglong" || name == "uint64" || name == "uint64_t")
       *type = EType::kUInt64;
-   else if (name == "short" || name == "Short_t" || name == "int16" ||
-            name == "int16_t")
+   else if (name == "short" || name == "Short_t" || name == "int16" || name == "int16_t")
       *type = EType::kInt16;
-   else if (name == "ushort" || name == "UShort_t" || name == "uint16" ||
-            name == "uint16_t")
+   else if (name == "ushort" || name == "UShort_t" || name == "uint16" || name == "uint16_t")
       *type = EType::kUInt16;
-   else if (name == "char" || name == "Char_t" || name == "int8" ||
-            name == "int8_t")
+   else if (name == "char" || name == "Char_t" || name == "int8" || name == "int8_t")
       *type = EType::kInt8;
-   else if (name == "uchar" || name == "UChar_t" || name == "uint8" ||
-            name == "uint8_t")
+   else if (name == "uchar" || name == "UChar_t" || name == "uint8" || name == "uint8_t")
       *type = EType::kUInt8;
    else if (name == "bool" || name == "Bool_t")
       *type = EType::kBool;
@@ -139,12 +116,10 @@ bool TTagmaSchema::IsIntegral(EType type)
    case EType::kInt16:
    case EType::kUInt16:
    case EType::kInt8:
-   case EType::kUInt8:
-      return true;
+   case EType::kUInt8: return true;
    case EType::kDouble:
    case EType::kFloat:
-   case EType::kBool:
-      return false;
+   case EType::kBool: return false;
    }
    return false;
 }
@@ -172,9 +147,8 @@ void TTagmaSchema::Rebuild()
          fScalars.push_back(field);
          continue;
       }
-      auto match = std::find_if(
-          fCollections.begin(), fCollections.end(),
-          [&field](const Collection &c) { return c.fCountField == field.fCountField; });
+      auto match = std::find_if(fCollections.begin(), fCollections.end(),
+                                [&field](const Collection &c) { return c.fCountField == field.fCountField; });
       if (match == fCollections.end()) {
          Collection collection;
          collection.fCountField = field.fCountField;
@@ -187,10 +161,8 @@ void TTagmaSchema::Rebuild()
    // A count field can be declared after the array fields it bounds, so the
    // resolution runs on every rebuild.
    for (auto &collection : fCollections) {
-      auto count = std::find_if(
-          fScalars.begin(), fScalars.end(), [&collection](const Field &field) {
-             return field.fName == collection.fCountField;
-          });
+      auto count = std::find_if(fScalars.begin(), fScalars.end(),
+                                [&collection](const Field &field) { return field.fName == collection.fCountField; });
       if (count != fScalars.end()) {
          collection.fCountOffset = count->fOffset;
          collection.fCountType = count->fType;
@@ -211,19 +183,16 @@ std::uint64_t TTagmaSchema::IndexRecordSize() const
    // The data base field is present only when the schema carries a
    // collection, so a scalar-only schema keeps the flat record of the
    // fixed-width store.
-   const std::uint64_t payload =
-       ScalarExtent() + (HasCollections() ? sizeof(std::uint64_t) : 0);
+   const std::uint64_t payload = ScalarExtent() + (HasCollections() ? sizeof(std::uint64_t) : 0);
    return (payload + 7) & ~static_cast<std::uint64_t>(7);
 }
 
 std::uint64_t TTagmaSchema::DataBaseOffset() const
 {
-   return HasCollections() ? IndexRecordSize() - sizeof(std::uint64_t)
-                           : IndexRecordSize();
+   return HasCollections() ? IndexRecordSize() - sizeof(std::uint64_t) : IndexRecordSize();
 }
 
-std::uint64_t TTagmaSchema::ChunkOffset(std::size_t collectionIndex,
-                                        const std::uint64_t *counts) const
+std::uint64_t TTagmaSchema::ChunkOffset(std::size_t collectionIndex, const std::uint64_t *counts) const
 {
    std::uint64_t offset = 0;
    for (std::size_t i = 0; i < collectionIndex && i < fCollections.size(); ++i)
@@ -231,9 +200,8 @@ std::uint64_t TTagmaSchema::ChunkOffset(std::size_t collectionIndex,
    return offset;
 }
 
-std::uint64_t TTagmaSchema::FieldOffset(const Collection &collection,
-                                        const std::string &fieldName,
-                                        std::uint64_t count) const
+std::uint64_t
+TTagmaSchema::FieldOffset(const Collection &collection, const std::string &fieldName, std::uint64_t count) const
 {
    std::uint64_t base = 0;
    for (const auto &field : collection.fFields) {
@@ -252,14 +220,12 @@ std::uint64_t TTagmaSchema::SliceBytes(const std::uint64_t *counts) const
    return bytes;
 }
 
-std::uint64_t TTagmaSchema::CountOf(std::size_t collectionIndex,
-                                   const void *indexRecord) const
+std::uint64_t TTagmaSchema::CountOf(std::size_t collectionIndex, const void *indexRecord) const
 {
    if (collectionIndex >= fCollections.size() || indexRecord == nullptr)
       return 0;
    const Collection &collection = fCollections[collectionIndex];
-   const char *base =
-       static_cast<const char *>(indexRecord) + collection.fCountOffset;
+   const char *base = static_cast<const char *>(indexRecord) + collection.fCountOffset;
    switch (collection.fCountType) {
    case EType::kUInt32: {
       std::uint32_t value = 0;
@@ -301,8 +267,7 @@ std::uint64_t TTagmaSchema::CountOf(std::size_t collectionIndex,
       std::memcpy(&value, base, sizeof(value));
       return value < 0 ? 0 : static_cast<std::uint64_t>(value);
    }
-   default:
-      return 0;
+   default: return 0;
    }
 }
 
@@ -370,14 +335,12 @@ bool TTagmaSchema::Validate(std::uint64_t indexRecordSize, std::string *why) con
    if (fFields.empty())
       return reject("the schema holds no field");
    if (IndexRecordSize() > indexRecordSize)
-      return reject("the index record needs " +
-                    std::to_string(IndexRecordSize()) + " bytes, the store holds " +
+      return reject("the index record needs " + std::to_string(IndexRecordSize()) + " bytes, the store holds " +
                     std::to_string(indexRecordSize));
 
    // The scalars live in the index record, which reserves the data base.
    std::vector<Field> ordered(fScalars);
-   std::sort(ordered.begin(), ordered.end(),
-             [](const Field &a, const Field &b) { return a.fOffset < b.fOffset; });
+   std::sort(ordered.begin(), ordered.end(), [](const Field &a, const Field &b) { return a.fOffset < b.fOffset; });
    std::uint64_t previousEnd = 0;
    for (const auto &field : ordered) {
       if (field.fName.empty())
@@ -394,26 +357,19 @@ bool TTagmaSchema::Validate(std::uint64_t indexRecordSize, std::string *why) con
    // object fields do not overlap.
    for (const auto &collection : fCollections) {
       auto count = std::find_if(fScalars.begin(), fScalars.end(),
-                                [&collection](const Field &field) {
-                                   return field.fName == collection.fCountField;
-                                });
+                                [&collection](const Field &field) { return field.fName == collection.fCountField; });
       if (count == fScalars.end())
-         return reject("collection count field " + collection.fCountField +
-                       " is not a scalar field of the schema");
+         return reject("collection count field " + collection.fCountField + " is not a scalar field of the schema");
       if (!IsIntegral(count->fType))
-         return reject("collection count field " + collection.fCountField +
-                       " is not integral");
+         return reject("collection count field " + collection.fCountField + " is not integral");
       if (collection.fMaxCount == 0)
-         return reject("collection " + collection.fCountField +
-                       " carries no maximum object count");
+         return reject("collection " + collection.fCountField + " carries no maximum object count");
       std::vector<Field> fields(collection.fFields);
-      std::sort(fields.begin(), fields.end(),
-                [](const Field &a, const Field &b) { return a.fOffset < b.fOffset; });
+      std::sort(fields.begin(), fields.end(), [](const Field &a, const Field &b) { return a.fOffset < b.fOffset; });
       std::uint64_t objectEnd = 0;
       for (const auto &field : fields) {
          if (field.fOffset < objectEnd)
-            return reject("array field " + field.fName +
-                          " overlaps the preceding field of its object");
+            return reject("array field " + field.fName + " overlaps the preceding field of its object");
          objectEnd = field.fOffset + field.Size();
       }
    }
@@ -426,4 +382,4 @@ bool TTagmaSchema::Validate(std::uint64_t indexRecordSize, std::string *why) con
    return true;
 }
 
-}  // namespace ROOT
+} // namespace ROOT

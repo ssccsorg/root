@@ -38,9 +38,18 @@ const char *kLayoutPath = "tagma_schema_store.bin.layout";
 constexpr int kEntries = 64;
 constexpr std::uint64_t kRecordSize = 16;
 
-double FieldX(int entry) { return 1000.0 + 0.5 * entry; }
-int FieldN(int entry) { return 3 * entry; }
-bool FieldFlag(int entry) { return (entry % 2) != 0; }
+double FieldX(int entry)
+{
+   return 1000.0 + 0.5 * entry;
+}
+int FieldN(int entry)
+{
+   return 3 * entry;
+}
+bool FieldFlag(int entry)
+{
+   return (entry % 2) != 0;
+}
 
 // Writes the record array: x at offset 0, n at 8, flag at 12, 16 bytes per
 // record.
@@ -102,7 +111,7 @@ std::shared_ptr<ROOT::TTagmaStore> MakeStore()
    return std::make_shared<ROOT::TTagmaStore>(layout);
 }
 
-}  // namespace
+} // namespace
 
 TEST(TTagmaSchema, LeavesReadTheStoreRecord)
 {
@@ -169,8 +178,7 @@ TEST(TTagmaSchema, SetTagmaSchemaRejectsInvalidSchemas)
 
    // Without a store the schema is rejected.
    ROOT::TTagmaSchema schema = MakeSchema();
-   ROOT_EXPECT_ERROR_PARTIAL(EXPECT_FALSE(tree.SetTagmaSchema(schema)),
-                             "TTree::SetTagmaSchema",
+   ROOT_EXPECT_ERROR_PARTIAL(EXPECT_FALSE(tree.SetTagmaSchema(schema)), "TTree::SetTagmaSchema",
                              "no coordinate store is attached to Events");
 
    tree.SetTagmaStore(MakeStore());
@@ -185,8 +193,7 @@ TEST(TTagmaSchema, SetTagmaSchemaRejectsInvalidSchemas)
    std::string why;
    EXPECT_FALSE(oversized.Validate(kRecordSize, &why));
    EXPECT_FALSE(why.empty());
-   ROOT_EXPECT_ERROR_PARTIAL(EXPECT_FALSE(tree.SetTagmaSchema(oversized)),
-                             "TTree::SetTagmaSchema",
+   ROOT_EXPECT_ERROR_PARTIAL(EXPECT_FALSE(tree.SetTagmaSchema(oversized)), "TTree::SetTagmaSchema",
                              "the index record needs 24 bytes, the store holds 16");
 
    // Overlapping fields are rejected.
@@ -201,8 +208,7 @@ TEST(TTagmaSchema, SetTagmaSchemaRejectsInvalidSchemas)
    second.fOffset = 4;
    second.fType = ROOT::TTagmaSchema::EType::kDouble;
    overlapping.AddField(second);
-   ROOT_EXPECT_ERROR_PARTIAL(EXPECT_FALSE(tree.SetTagmaSchema(overlapping)),
-                             "TTree::SetTagmaSchema",
+   ROOT_EXPECT_ERROR_PARTIAL(EXPECT_FALSE(tree.SetTagmaSchema(overlapping)), "TTree::SetTagmaSchema",
                              "field second overlaps the preceding field");
 
    // Repeated names are rejected.
@@ -213,8 +219,7 @@ TEST(TTagmaSchema, SetTagmaSchemaRejectsInvalidSchemas)
    same.fOffset = 8;
    same.fType = ROOT::TTagmaSchema::EType::kInt32;
    repeated.AddField(same);
-   ROOT_EXPECT_ERROR_PARTIAL(EXPECT_FALSE(tree.SetTagmaSchema(repeated)),
-                             "TTree::SetTagmaSchema",
+   ROOT_EXPECT_ERROR_PARTIAL(EXPECT_FALSE(tree.SetTagmaSchema(repeated)), "TTree::SetTagmaSchema",
                              "field name first repeats");
 
    // A valid schema still attaches after the rejections.

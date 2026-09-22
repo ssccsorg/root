@@ -2101,8 +2101,7 @@ Int_t TFile::ReadTagmaRange(char *buf, Long64_t pos, Int_t len)
       return 0;
    if (buf == nullptr || pos < 0 || len < 0)
       return -1;
-   if (!fTagmaStore->Covers(static_cast<std::uint64_t>(pos),
-                            static_cast<std::uint64_t>(len)))
+   if (!fTagmaStore->Covers(static_cast<std::uint64_t>(pos), static_cast<std::uint64_t>(len)))
       return -1;
 
    Double_t start = 0;
@@ -2110,8 +2109,7 @@ Int_t TFile::ReadTagmaRange(char *buf, Long64_t pos, Int_t len)
       start = TTimeStamp();
 
    if (fTagmaStore->IsMapped()) {
-      std::memcpy(buf, fTagmaStore->GetMapped() + pos,
-                  static_cast<std::size_t>(len));
+      std::memcpy(buf, fTagmaStore->GetMapped() + pos, static_cast<std::size_t>(len));
       fBytesRead += len;
       fgBytesRead += len;
       fReadCalls++;
@@ -2134,9 +2132,8 @@ Int_t TFile::ReadTagmaRange(char *buf, Long64_t pos, Int_t len)
       return -1;
    }
    if (siz != len) {
-      Error("ReadTagmaRange",
-            "error reading all requested bytes from file %s, got %ld of %d",
-            GetName(), (Long_t)siz, len);
+      Error("ReadTagmaRange", "error reading all requested bytes from file %s, got %ld of %d", GetName(), (Long_t)siz,
+            len);
       return -1;
    }
    fBytesRead += siz;

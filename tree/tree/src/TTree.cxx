@@ -6104,8 +6104,8 @@ Bool_t TTree::SetTagmaSchema(const ROOT::TTagmaSchema &schema)
    }
    const std::uint64_t recordSize = fTagmaStore->GetLayout().fRecordSize;
    if (recordSize == 0 || recordSize > kMaxTagmaRecordSize) {
-      Error("SetTagmaSchema", "record size %llu is out of bounds for %s",
-            static_cast<unsigned long long>(recordSize), GetName());
+      Error("SetTagmaSchema", "record size %llu is out of bounds for %s", static_cast<unsigned long long>(recordSize),
+            GetName());
       return kFALSE;
    }
    std::string why;
@@ -6115,21 +6115,18 @@ Bool_t TTree::SetTagmaSchema(const ROOT::TTagmaSchema &schema)
    }
    for (const auto &field : schema.GetFields()) {
       if (GetBranch(field.fName.c_str())) {
-         Error("SetTagmaSchema", "branch %s already exists on %s",
-               field.fName.c_str(), GetName());
+         Error("SetTagmaSchema", "branch %s already exists on %s", field.fName.c_str(), GetName());
          return kFALSE;
       }
    }
 
    fTagmaRecord.assign(static_cast<std::size_t>(recordSize), 0);
    for (const auto &field : schema.GetScalars()) {
-      const std::string leaflist =
-         field.fName + "/" + ROOT::TTagmaSchema::LeafCode(field.fType);
+      const std::string leaflist = field.fName + "/" + ROOT::TTagmaSchema::LeafCode(field.fType);
       char *address = fTagmaRecord.data() + field.fOffset;
       TBranch *branch = Branch(field.fName.c_str(), address, leaflist.c_str());
       if (!branch) {
-         Error("SetTagmaSchema", "cannot create branch %s on %s",
-               field.fName.c_str(), GetName());
+         Error("SetTagmaSchema", "cannot create branch %s on %s", field.fName.c_str(), GetName());
          fTagmaRecord.clear();
          return kFALSE;
       }
@@ -6147,16 +6144,13 @@ Bool_t TTree::SetTagmaSchema(const ROOT::TTagmaSchema &schema)
       const auto &collection = collections[c];
       for (std::size_t f = 0; f < collection.fFields.size(); ++f) {
          const auto &field = collection.fFields[f];
-         fTagmaFields.emplace_back(
-             static_cast<std::size_t>(collection.fMaxCount * field.Size()), 0);
+         fTagmaFields.emplace_back(static_cast<std::size_t>(collection.fMaxCount * field.Size()), 0);
          char *address = fTagmaFields.back().data();
-         const std::string leaflist = field.fName + "[" + collection.fCountField +
-                                      "]/" +
-                                      ROOT::TTagmaSchema::LeafCode(field.fType);
+         const std::string leaflist =
+            field.fName + "[" + collection.fCountField + "]/" + ROOT::TTagmaSchema::LeafCode(field.fType);
          TBranch *branch = Branch(field.fName.c_str(), address, leaflist.c_str());
          if (!branch) {
-            Error("SetTagmaSchema", "cannot create branch %s on %s",
-                  field.fName.c_str(), GetName());
+            Error("SetTagmaSchema", "cannot create branch %s on %s", field.fName.c_str(), GetName());
             fTagmaFields.clear();
             fTagmaFieldBranches.clear();
             fTagmaRecord.clear();
@@ -6196,8 +6190,7 @@ Bool_t TTree::LoadTagmaRecord(Long64_t entry)
    const std::uint64_t recordSize = fTagmaStore->GetLayout().fRecordSize;
    if (recordSize == 0 || recordSize > kMaxTagmaRecordSize)
       return kFALSE;
-   const auto [run, lumi, event] =
-      fTagmaStore->Decompose(static_cast<std::uint64_t>(entry));
+   const auto [run, lumi, event] = fTagmaStore->Decompose(static_cast<std::uint64_t>(entry));
    if (!fTagmaStore->Contains(run, lumi, event))
       return kFALSE;
    if (fTagmaRecord.size() != recordSize) {
@@ -6207,8 +6200,7 @@ Bool_t TTree::LoadTagmaRecord(Long64_t entry)
          return kFALSE;
       fTagmaRecord.resize(static_cast<std::size_t>(recordSize));
    }
-   if (GetTagmaRecord(entry, fTagmaRecord.data(),
-                      static_cast<Int_t>(fTagmaRecord.size())) < 0) {
+   if (GetTagmaRecord(entry, fTagmaRecord.data(), static_cast<Int_t>(fTagmaRecord.size())) < 0) {
       fTagmaRecordEntry = -1;
       // Releasing the buffer would dangle the branch addresses of a
       // materialized schema, so only the schema-less path clears it.
@@ -6224,8 +6216,7 @@ Bool_t TTree::LoadTagmaRecord(Long64_t entry)
    if (fTagmaSchema.HasCollections()) {
       const auto &collections = fTagmaSchema.GetCollections();
       if (fTagmaCounts.size() != collections.size()) {
-         Error("LoadTagmaRecord", "the schema of %s changed after it was attached",
-               GetName());
+         Error("LoadTagmaRecord", "the schema of %s changed after it was attached", GetName());
          return kFALSE;
       }
       const char *index = fTagmaRecord.data();
@@ -6234,24 +6225,18 @@ Bool_t TTree::LoadTagmaRecord(Long64_t entry)
          if (count > collections[i].fMaxCount) {
             if (!fTagmaCountError) {
                fTagmaCountError = kTRUE;
-               Error("LoadTagmaRecord",
-                     "collection %s reports %llu objects at entry %lld, the schema carries %llu",
-                     collections[i].fCountField.c_str(),
-                     static_cast<unsigned long long>(count),
-                     static_cast<long long>(entry),
-                     static_cast<unsigned long long>(collections[i].fMaxCount));
+               Error("LoadTagmaRecord", "collection %s reports %llu objects at entry %lld, the schema carries %llu",
+                     collections[i].fCountField.c_str(), static_cast<unsigned long long>(count),
+                     static_cast<long long>(entry), static_cast<unsigned long long>(collections[i].fMaxCount));
             }
             return kFALSE;
          }
          fTagmaCounts[i] = count;
       }
-      const std::uint64_t sliceBytes =
-          fTagmaSchema.SliceBytes(fTagmaCounts.data());
+      const std::uint64_t sliceBytes = fTagmaSchema.SliceBytes(fTagmaCounts.data());
       if (sliceBytes > kMaxTagmaRecordSize) {
-         Error("LoadTagmaRecord",
-               "the data slice of entry %lld is %llu bytes, past the bound",
-               static_cast<long long>(entry),
-               static_cast<unsigned long long>(sliceBytes));
+         Error("LoadTagmaRecord", "the data slice of entry %lld is %llu bytes, past the bound",
+               static_cast<long long>(entry), static_cast<unsigned long long>(sliceBytes));
          return kFALSE;
       }
       fTagmaData.clear();
@@ -6260,10 +6245,8 @@ Bool_t TTree::LoadTagmaRecord(Long64_t entry)
          std::memcpy(&base, index + fTagmaSchema.DataBaseOffset(), sizeof(base));
          fTagmaData.resize(static_cast<std::size_t>(sliceBytes));
          TFile *file = fDirectory ? fDirectory->GetFile() : nullptr;
-         if (!file ||
-             file->ReadTagmaRange(fTagmaData.data(),
-                                  static_cast<Long64_t>(base),
-                                  static_cast<Int_t>(sliceBytes)) != 1) {
+         if (!file || file->ReadTagmaRange(fTagmaData.data(), static_cast<Long64_t>(base),
+                                           static_cast<Int_t>(sliceBytes)) != 1) {
             fTagmaData.clear();
             return kFALSE;
          }
@@ -6288,32 +6271,26 @@ Bool_t TTree::LoadTagmaRecord(Long64_t entry)
 /// `entry`, the indices do not resolve, or the slice does not cover the
 /// field.
 
-Int_t TTree::CopyTagmaField(Long64_t entry, Int_t collectionIndex,
-                            Int_t fieldIndex, char *dest)
+Int_t TTree::CopyTagmaField(Long64_t entry, Int_t collectionIndex, Int_t fieldIndex, char *dest)
 {
    if (!fTagmaStore || dest == nullptr || entry != fTagmaRecordEntry)
       return -1;
    const auto &collections = fTagmaSchema.GetCollections();
-   if (collectionIndex < 0 ||
-       static_cast<std::size_t>(collectionIndex) >= collections.size() ||
+   if (collectionIndex < 0 || static_cast<std::size_t>(collectionIndex) >= collections.size() ||
        fTagmaCounts.size() != collections.size())
       return -1;
    const ROOT::TTagmaSchema::Collection &collection = collections[collectionIndex];
-   if (fieldIndex < 0 ||
-       static_cast<std::size_t>(fieldIndex) >= collection.fFields.size())
+   if (fieldIndex < 0 || static_cast<std::size_t>(fieldIndex) >= collection.fFields.size())
       return -1;
    const ROOT::TTagmaSchema::Field &field = collection.fFields[fieldIndex];
 
    const std::uint64_t count = fTagmaCounts[collectionIndex];
-   const std::uint64_t chunk =
-       fTagmaSchema.ChunkOffset(collectionIndex, fTagmaCounts.data());
-   const std::uint64_t offset =
-       fTagmaSchema.FieldOffset(collection, field.fName, count);
+   const std::uint64_t chunk = fTagmaSchema.ChunkOffset(collectionIndex, fTagmaCounts.data());
+   const std::uint64_t offset = fTagmaSchema.FieldOffset(collection, field.fName, count);
    const std::uint64_t bytes = count * field.Size();
    if (chunk + offset + bytes > fTagmaData.size())
       return -1;
-   std::memcpy(dest, fTagmaData.data() + chunk + offset,
-               static_cast<std::size_t>(bytes));
+   std::memcpy(dest, fTagmaData.data() + chunk + offset, static_cast<std::size_t>(bytes));
    return static_cast<Int_t>(bytes);
 }
 

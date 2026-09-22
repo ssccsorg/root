@@ -12,7 +12,8 @@
 // columns on the uncompressed rewrite where neither side decompresses.
 //
 // Usage:
-//   root -l -b -q 'tagma_columns.C("/path/to/source.root", "Events", "/path/to/store.bin.layout", -1, "/path/to/uncompressed.root")'
+//   root -l -b -q 'tagma_columns.C("/path/to/source.root", "Events", "/path/to/store.bin.layout", -1,
+//   "/path/to/uncompressed.root")'
 //
 // Arguments:
 //   url          compressed dataset source
@@ -72,32 +73,23 @@ bool ReadLayoutNames(const char *path, std::vector<std::string> *names)
 
 void PrintRow(const ColumnRow &row)
 {
-   const Double_t readsPerEvent =
-       row.entries > 0 ? static_cast<Double_t>(row.readCalls) / row.entries : 0;
-   const Double_t bytesPerRead =
-       row.readCalls > 0 ? static_cast<Double_t>(row.bytesRead) / row.readCalls : 0;
-   const Double_t syscallsPerEvent =
-       row.entries > 0 ? static_cast<Double_t>(row.sysReadCalls) / row.entries : 0;
-   const Double_t mbPerSecond =
-       row.wall > 0 ? 1e-6 * row.bytesRead / row.wall : 0;
-   std::printf(
-       "tagma_columns: %-22s %9.3f %8.3f %9lld %8lld %12lld %8.2f %11.1f "
-       "%9.2f %8lld/%lld\n",
-       row.name, row.wall, row.cpu, static_cast<long long>(row.readCalls),
-       static_cast<long long>(row.sysReadCalls),
-       static_cast<long long>(row.bytesRead), readsPerEvent, bytesPerRead,
-       syscallsPerEvent, static_cast<long long>(row.found),
-       static_cast<long long>(row.branches));
+   const Double_t readsPerEvent = row.entries > 0 ? static_cast<Double_t>(row.readCalls) / row.entries : 0;
+   const Double_t bytesPerRead = row.readCalls > 0 ? static_cast<Double_t>(row.bytesRead) / row.readCalls : 0;
+   const Double_t syscallsPerEvent = row.entries > 0 ? static_cast<Double_t>(row.sysReadCalls) / row.entries : 0;
+   const Double_t mbPerSecond = row.wall > 0 ? 1e-6 * row.bytesRead / row.wall : 0;
+   std::printf("tagma_columns: %-22s %9.3f %8.3f %9lld %8lld %12lld %8.2f %11.1f "
+               "%9.2f %8lld/%lld\n",
+               row.name, row.wall, row.cpu, static_cast<long long>(row.readCalls),
+               static_cast<long long>(row.sysReadCalls), static_cast<long long>(row.bytesRead), readsPerEvent,
+               bytesPerRead, syscallsPerEvent, static_cast<long long>(row.found), static_cast<long long>(row.branches));
 }
 
 // One row: a fresh file open, the branch set restricted to `columns` when it
 // is not empty, the cache at `cacheMb`, and a full pass over the entries.
 // The two analysis columns are read when present, so the leaf payload is
 // transferred rather than deferred.
-ColumnRow MeasureColumnRow(const char *name, const char *url,
-                           const char *tree_name,
-                           const std::vector<std::string> &columns,
-                           Long64_t limit, Long64_t cacheMb)
+ColumnRow MeasureColumnRow(const char *name, const char *url, const char *tree_name,
+                           const std::vector<std::string> &columns, Long64_t limit, Long64_t cacheMb)
 {
    ColumnRow row;
    row.name = name;
@@ -112,15 +104,13 @@ ColumnRow MeasureColumnRow(const char *name, const char *url,
    TTree *tree = nullptr;
    file->GetObject(tree_name, tree);
    if (!tree) {
-      std::fprintf(stderr, "tagma_columns: tree %s not found in %s\n", tree_name,
-                   url);
+      std::fprintf(stderr, "tagma_columns: tree %s not found in %s\n", tree_name, url);
       delete file;
       return row;
    }
    row.branches = tree->GetListOfBranches()->GetEntries();
    const Long64_t total = tree->GetEntries();
-   const Long64_t entries =
-       (limit > 0 && limit < total) ? limit : total;
+   const Long64_t entries = (limit > 0 && limit < total) ? limit : total;
    row.entries = entries;
 
    tree->SetCacheSize(cacheMb > 0 ? cacheMb * 1024 * 1024 : 0);
@@ -165,53 +155,41 @@ ColumnRow MeasureColumnRow(const char *name, const char *url,
    return row;
 }
 
-}  // namespace
+} // namespace
 
-int tagma_columns(const char *url, const char *tree_name = "Events",
-                  const char *layout_path = "", Long64_t max_entries = -1,
-                  const char *uncomp_url = "")
+int tagma_columns(const char *url, const char *tree_name = "Events", const char *layout_path = "",
+                  Long64_t max_entries = -1, const char *uncomp_url = "")
 {
    std::vector<std::string> storeColumns;
    if (!ReadLayoutNames(layout_path, &storeColumns)) {
-      std::fprintf(stderr, "tagma_columns: cannot read the layout %s\n",
-                   layout_path);
+      std::fprintf(stderr, "tagma_columns: cannot read the layout %s\n", layout_path);
       return 1;
    }
    const std::vector<std::string> analysisColumns{"MET_pt", "nMuon"};
 
-   std::printf(
-       "tagma_columns: %-22s %9s %8s %9s %8s %12s %8s %11s %9s %9s\n", "row",
-       "wall_s", "cpu_s", "reads", "syscalls", "bytes_moved", "reads/ev",
-       "bytes/read", "syscalls/ev", "found");
+   std::printf("tagma_columns: %-22s %9s %8s %9s %8s %12s %8s %11s %9s %9s\n", "row", "wall_s", "cpu_s", "reads",
+               "syscalls", "bytes_moved", "reads/ev", "bytes/read", "syscalls/ev", "found");
 
-   const ColumnRow all =
-       MeasureColumnRow("compressed all", url, tree_name, {}, max_entries, 0);
+   const ColumnRow all = MeasureColumnRow("compressed all", url, tree_name, {}, max_entries, 0);
    PrintRow(all);
 
-   const ColumnRow storeOff = MeasureColumnRow("compressed store-cols", url,
-                                               tree_name, storeColumns,
-                                               max_entries, 0);
+   const ColumnRow storeOff = MeasureColumnRow("compressed store-cols", url, tree_name, storeColumns, max_entries, 0);
    PrintRow(storeOff);
 
-   const ColumnRow storeOn = MeasureColumnRow("compressed store-cols cache",
-                                              url, tree_name, storeColumns,
-                                              max_entries, kCacheMb);
+   const ColumnRow storeOn =
+      MeasureColumnRow("compressed store-cols cache", url, tree_name, storeColumns, max_entries, kCacheMb);
    PrintRow(storeOn);
 
-   const ColumnRow narrowOff = MeasureColumnRow("compressed 2-cols", url,
-                                                tree_name, analysisColumns,
-                                                max_entries, 0);
+   const ColumnRow narrowOff = MeasureColumnRow("compressed 2-cols", url, tree_name, analysisColumns, max_entries, 0);
    PrintRow(narrowOff);
 
-   const ColumnRow narrowOn = MeasureColumnRow("compressed 2-cols cache", url,
-                                               tree_name, analysisColumns,
-                                               max_entries, kCacheMb);
+   const ColumnRow narrowOn =
+      MeasureColumnRow("compressed 2-cols cache", url, tree_name, analysisColumns, max_entries, kCacheMb);
    PrintRow(narrowOn);
 
    if (uncomp_url != nullptr && uncomp_url[0] != '\0') {
-      const ColumnRow uncompStore = MeasureColumnRow(
-          "uncompressed store-cols", uncomp_url, tree_name, storeColumns,
-          max_entries, 0);
+      const ColumnRow uncompStore =
+         MeasureColumnRow("uncompressed store-cols", uncomp_url, tree_name, storeColumns, max_entries, 0);
       PrintRow(uncompStore);
    }
 

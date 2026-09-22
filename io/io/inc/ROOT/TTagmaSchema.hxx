@@ -61,12 +61,12 @@ public:
    };
 
    struct Field {
-      std::string fName;          // field name, unique within the schema
-      std::string fCountField;    // empty for a scalar field; the count field for an array field
-      std::uint64_t fOffset = 0;  // scalar: offset in the index record
-                                  // array: offset in one object of the collection, which
-                                  // fixes the field order and the overlap check; the store
-                                  // packs the fields of a collection tightly in that order
+      std::string fName;           // field name, unique within the schema
+      std::string fCountField;     // empty for a scalar field; the count field for an array field
+      std::uint64_t fOffset = 0;   // scalar: offset in the index record
+                                   // array: offset in one object of the collection, which
+                                   // fixes the field order and the overlap check; the store
+                                   // packs the fields of a collection tightly in that order
       std::uint64_t fMaxCount = 0; // array: the greatest object count the store carries
       EType fType = EType::kDouble;
       bool IsArray() const { return !fCountField.empty(); }
@@ -79,7 +79,7 @@ public:
    struct Collection {
       std::string fCountField;
       std::uint64_t fMaxCount = 0;
-      std::uint64_t fCountOffset = 0;  // resolved from the count scalar field
+      std::uint64_t fCountOffset = 0; // resolved from the count scalar field
       EType fCountType = EType::kUInt32;
       std::vector<Field> fFields;
       // Bytes of one object as the store packs it: the fields carry no
@@ -115,13 +115,11 @@ public:
    // the object counts in GetCollections() order. The layout is field by
    // field, so the fields of a collection follow each other and each one is
    // contiguous.
-   std::uint64_t ChunkOffset(std::size_t collectionIndex,
-                             const std::uint64_t *counts) const;
+   std::uint64_t ChunkOffset(std::size_t collectionIndex, const std::uint64_t *counts) const;
 
    // Byte offset of a field's elements inside its collection's chunk, from
    // the object count of that collection.
-   std::uint64_t FieldOffset(const Collection &collection,
-                             const std::string &fieldName, std::uint64_t count) const;
+   std::uint64_t FieldOffset(const Collection &collection, const std::string &fieldName, std::uint64_t count) const;
 
    // Total bytes of an event's data slice for the given counts.
    std::uint64_t SliceBytes(const std::uint64_t *counts) const;
@@ -153,6 +151,6 @@ private:
    std::vector<Collection> fCollections;
 };
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_TTagmaSchema
+#endif // ROOT_TTagmaSchema

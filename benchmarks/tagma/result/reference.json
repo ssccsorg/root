@@ -1,125 +1,404 @@
 {
-  "benchmark": "benchmarks/tagma/tagma_bench.C",
-  "repository": "git@github.com:ssccsorg/root.git",
-  "branch": "121-tagma-reader-backend",
-  "commit": "e12aceb4bba",
-  "commit_note": "The rows were produced by the harness at e12aceb4bba, which is the tip of the branch when the measurement ran. The commits after it change the plan document and the text of this file, not the measurement path. The trees that produce these rows are in b5ce6b3c1d5, which marked the collection buffers transient so a dataset written by another ROOT build can be opened at all.",
-  "timestamp": "20260921-225104",
-  "supersedes": {
-    "commit": "474b9af1ad",
-    "reason": "The superseded artifact measured a build from before the collection buffers were added to TTree. Those members were not transient, so the streamer read them from the file and the dataset could not be opened at all until b5ce6b3c1d5 marked them transient. Its rows are therefore not reproducible on the current branch, and its mapped row at 1.061 s sits below every later sample of the same row."
-  },
-  "environment": {
-    "machine": "macOS (Apple Silicon), 10 cores, 32 GiB RAM, local out-of-source build root-build-tagma",
-    "build": "Release, treeplayer=ON, dataframe=ON, testing=ON, ROOT 6.41.01, builtin gtest",
-    "dataset": "/Users/blackgene/Documents/nanoaod/cms_nanoaod_run2016g_file0.root",
-    "dataset_note": "CMS Run2016G DoubleMuon NanoAOD, tree Events, 2,315,223 events, 2,155,974,646 bytes, downloaded from eospublic.cern.ch as 05DD095C-F6C3-9A4F-9FB3-348A5A6403D5.root and held under the name above",
-    "uncompressed": "/Users/blackgene/Documents/nanoaod/cms_nanoaod_uncompressed.root, the same tree written with compression 0, 10,862,697,517 bytes",
-    "store": "/Users/blackgene/Documents/nanoaod/tagma_store.bin, 5,926,970,880 bytes, checksum 233,262,869,086, written by tagma_make_store.C, 2,560-byte records holding the first 320 scalar leaves as doubles",
-    "remote_url": "root://eospublic.cern.ch//eos/opendata/cms/Run2016G/DoubleMuon/NANOAOD/UL2016_MiniAODv2_NanoAODv9-v2/2430000/05DD095C-F6C3-9A4F-9FB3-348A5A6403D5.root"
-  },
-  "protocol": {
-    "warm": "tagma_bench reads each local source through the page cache in an untimed pass before the timed pass (warm_cache=1, the default), so every row measures the read path against resident data. Without this pass the row order decides the result: a pass over the 10.86 GB uncompressed rewrite evicts the 5.93 GB store. tagma_columns and tagma_rdf_columns have no such pass and were run after a shell-level read of the source.",
-    "order": "within a run the rows are measured in a fixed order: baseline, baseline_uncomp, coordinate, coordinate+map",
-    "samples": "the full-file rows are three consecutive steady-state runs. Three earlier runs on a settling page cache measured baseline 248.979, 202.469, 182.609 and coordinate 2.874, 2.689, 2.685; they are recorded in the notes and excluded from the ranges.",
-    "single_run_rows": "the control rows and the RDataFrame rows are one warmed run each",
-    "baseline": "the fork's ordinary read path with no store attached: the coordinate hooks are dormant null checks when no store is present, and the branch, basket, cache, and file layers are unchanged from upstream",
-    "metrics": "wall and cpu seconds from TStopwatch, read calls from TFile::GetReadCalls, store-served calls from TFile::GetTagmaReadCalls, read syscalls from TFile::GetSysReadCalls, bytes moved from TFile::GetBytesRead",
-    "checksum": "the served bytes of both coordinate rows match the conversion checksum 233,262,869,086 in every sampled run"
-  },
-  "runs": {
-    "synthetic_20k": {
-      "note": "synthetic scattered tree with the same per-event payload, 20,000 events, 3 branches per event, cache disabled. The coordinate rows run 20,000 aligned reads of 51 MB, so the 0.03 to 0.08 s scale is dominated by per-syscall cost and the ratios below are indicative only.",
-      "rows": {
-        "baseline":       {"wall_s": [0.128, 0.138], "cpu_s": [0.120, 0.140], "reads": 60000, "tagma": 0, "syscalls": 60000, "bytes_moved": 21720000, "reads_per_event": 3.00, "bytes_per_read": 362.0, "syscalls_per_event": 3.00},
-        "coordinate":     {"wall_s": [0.026, 0.078], "cpu_s": [0.030, 0.030], "reads": 20000, "tagma": 20000, "syscalls": 20000, "bytes_moved": 51200000, "reads_per_event": 1.00, "bytes_per_read": 2560.0, "syscalls_per_event": 1.00},
-        "coordinate_map": {"wall_s": [0.011, 0.027], "cpu_s": [0.010, 0.010], "reads": 20000, "tagma": 20000, "syscalls": 0, "bytes_moved": 51200000, "reads_per_event": 1.00, "bytes_per_read": 2560.0, "syscalls_per_event": 0.00}
+   "benchmark": "benchmarks/tagma/tagma_bench.C",
+   "repository": "git@github.com:ssccsorg/root.git",
+   "branch": "121-tagma-reader-backend",
+   "commit": "e12aceb4bba",
+   "commit_note":
+      "The rows were produced by the harness at e12aceb4bba, which is the tip of the branch when the measurement ran. The commits after it change the plan document and the text of this file, not the measurement path. The trees that produce these rows are in b5ce6b3c1d5, which marked the collection buffers transient so a dataset written by another ROOT build can be opened at all.",
+   "timestamp": "20260921-225104",
+   "supersedes": {
+      "commit": "474b9af1ad",
+      "reason":
+         "The superseded artifact measured a build from before the collection buffers were added to TTree. Those members were not transient, so the streamer read them from the file and the dataset could not be opened at all until b5ce6b3c1d5 marked them transient. Its rows are therefore not reproducible on the current branch, and its mapped row at 1.061 s sits below every later sample of the same row."
+   },
+   "environment": {
+      "machine": "macOS (Apple Silicon), 10 cores, 32 GiB RAM, local out-of-source build root-build-tagma",
+      "build": "Release, treeplayer=ON, dataframe=ON, testing=ON, ROOT 6.41.01, builtin gtest",
+      "dataset": "/Users/blackgene/Documents/nanoaod/cms_nanoaod_run2016g_file0.root",
+      "dataset_note":
+         "CMS Run2016G DoubleMuon NanoAOD, tree Events, 2,315,223 events, 2,155,974,646 bytes, downloaded from eospublic.cern.ch as 05DD095C-F6C3-9A4F-9FB3-348A5A6403D5.root and held under the name above",
+      "uncompressed":
+         "/Users/blackgene/Documents/nanoaod/cms_nanoaod_uncompressed.root, the same tree written with compression 0, 10,862,697,517 bytes",
+      "store":
+         "/Users/blackgene/Documents/nanoaod/tagma_store.bin, 5,926,970,880 bytes, checksum 233,262,869,086, written by tagma_make_store.C, 2,560-byte records holding the first 320 scalar leaves as doubles",
+      "remote_url":
+         "root://eospublic.cern.ch//eos/opendata/cms/Run2016G/DoubleMuon/NANOAOD/UL2016_MiniAODv2_NanoAODv9-v2/2430000/05DD095C-F6C3-9A4F-9FB3-348A5A6403D5.root"
+   },
+   "protocol": {
+      "warm":
+         "tagma_bench reads each local source through the page cache in an untimed pass before the timed pass (warm_cache=1, the default), so every row measures the read path against resident data. Without this pass the row order decides the result: a pass over the 10.86 GB uncompressed rewrite evicts the 5.93 GB store. tagma_columns and tagma_rdf_columns have no such pass and were run after a shell-level read of the source.",
+      "order":
+         "within a run the rows are measured in a fixed order: baseline, baseline_uncomp, coordinate, coordinate+map",
+      "samples":
+         "the full-file rows are three consecutive steady-state runs. Three earlier runs on a settling page cache measured baseline 248.979, 202.469, 182.609 and coordinate 2.874, 2.689, 2.685; they are recorded in the notes and excluded from the ranges.",
+      "single_run_rows": "the control rows and the RDataFrame rows are one warmed run each",
+      "baseline":
+         "the fork's ordinary read path with no store attached: the coordinate hooks are dormant null checks when no store is present, and the branch, basket, cache, and file layers are unchanged from upstream",
+      "metrics":
+         "wall and cpu seconds from TStopwatch, read calls from TFile::GetReadCalls, store-served calls from TFile::GetTagmaReadCalls, read syscalls from TFile::GetSysReadCalls, bytes moved from TFile::GetBytesRead",
+      "checksum":
+         "the served bytes of both coordinate rows match the conversion checksum 233,262,869,086 in every sampled run"
+   },
+   "runs": {
+      "synthetic_20k": {
+         "note":
+            "synthetic scattered tree with the same per-event payload, 20,000 events, 3 branches per event, cache disabled. The coordinate rows run 20,000 aligned reads of 51 MB, so the 0.03 to 0.08 s scale is dominated by per-syscall cost and the ratios below are indicative only.",
+         "rows": {
+            "baseline": {
+               "wall_s": [
+                  0.128,
+                  0.138
+               ],
+               "cpu_s": [
+                  0.120,
+                  0.140
+               ],
+               "reads": 60000,
+               "tagma": 0,
+               "syscalls": 60000,
+               "bytes_moved": 21720000,
+               "reads_per_event": 3.00,
+               "bytes_per_read": 362.0,
+               "syscalls_per_event": 3.00
+            },
+            "coordinate": {
+               "wall_s": [
+                  0.026,
+                  0.078
+               ],
+               "cpu_s": [
+                  0.030,
+                  0.030
+               ],
+               "reads": 20000,
+               "tagma": 20000,
+               "syscalls": 20000,
+               "bytes_moved": 51200000,
+               "reads_per_event": 1.00,
+               "bytes_per_read": 2560.0,
+               "syscalls_per_event": 1.00
+            },
+            "coordinate_map": {
+               "wall_s": [
+                  0.011,
+                  0.027
+               ],
+               "cpu_s": [
+                  0.010,
+                  0.010
+               ],
+               "reads": 20000,
+               "tagma": 20000,
+               "syscalls": 0,
+               "bytes_moved": 51200000,
+               "reads_per_event": 1.00,
+               "bytes_per_read": 2560.0,
+               "syscalls_per_event": 0.00
+            }
+         },
+         "structural":
+            "3.00 reads and 3.00 syscalls per event on the baseline against 1.00 and 1.00 on the coordinate row, and 0.00 syscalls on the mapped row"
       },
-      "structural": "3.00 reads and 3.00 syscalls per event on the baseline against 1.00 and 1.00 on the coordinate row, and 0.00 syscalls on the mapped row"
-    },
-    "real_same_media_2k": {
-      "note": "local NanoAOD file, 2,000 events, cache disabled, the M1 signature slice. Three runs. The coordinate walls are sub-millisecond, so the ratios are indicative.",
-      "rows": {
-        "baseline":       {"wall_s": [0.466, 0.483], "cpu_s": [0.470, 0.490], "reads": 2737, "tagma": 0, "syscalls": 2737, "bytes_moved": 7212601, "reads_per_event": 1.37, "bytes_per_read": 2635.2, "syscalls_per_event": 1.37},
-        "coordinate":     {"wall_s": [0.002, 0.003], "cpu_s": [0.000, 0.000], "reads": 2000, "tagma": 2000, "syscalls": 2000, "bytes_moved": 5120000, "reads_per_event": 1.00, "bytes_per_read": 2560.0, "syscalls_per_event": 1.00},
-        "coordinate_map": {"wall_s": [0.001, 0.001], "cpu_s": [0.000, 0.000], "reads": 2000, "tagma": 2000, "syscalls": 0, "bytes_moved": 5120000, "reads_per_event": 1.00, "bytes_per_read": 2560.0, "syscalls_per_event": 0.00}
+      "real_same_media_2k": {
+         "note":
+            "local NanoAOD file, 2,000 events, cache disabled, the M1 signature slice. Three runs. The coordinate walls are sub-millisecond, so the ratios are indicative.",
+         "rows": {
+            "baseline": {
+               "wall_s": [
+                  0.466,
+                  0.483
+               ],
+               "cpu_s": [
+                  0.470,
+                  0.490
+               ],
+               "reads": 2737,
+               "tagma": 0,
+               "syscalls": 2737,
+               "bytes_moved": 7212601,
+               "reads_per_event": 1.37,
+               "bytes_per_read": 2635.2,
+               "syscalls_per_event": 1.37
+            },
+            "coordinate": {
+               "wall_s": [
+                  0.002,
+                  0.003
+               ],
+               "cpu_s": [
+                  0.000,
+                  0.000
+               ],
+               "reads": 2000,
+               "tagma": 2000,
+               "syscalls": 2000,
+               "bytes_moved": 5120000,
+               "reads_per_event": 1.00,
+               "bytes_per_read": 2560.0,
+               "syscalls_per_event": 1.00
+            },
+            "coordinate_map": {
+               "wall_s": [
+                  0.001,
+                  0.001
+               ],
+               "cpu_s": [
+                  0.000,
+                  0.000
+               ],
+               "reads": 2000,
+               "tagma": 2000,
+               "syscalls": 0,
+               "bytes_moved": 5120000,
+               "reads_per_event": 1.00,
+               "bytes_per_read": 2560.0,
+               "syscalls_per_event": 0.00
+            }
+         },
+         "structural":
+            "baseline 1.37 reads and 1.37 syscalls per event at 2,635 bytes per read against 1.00 and 1.00 at 2,560 bytes, and 0.00 syscalls on the mapped row"
       },
-      "structural": "baseline 1.37 reads and 1.37 syscalls per event at 2,635 bytes per read against 1.00 and 1.00 at 2,560 bytes, and 0.00 syscalls on the mapped row"
-    },
-    "real_same_media_full": {
-      "note": "local NanoAOD file, all 2,315,223 events, cache disabled, sources warmed before each timed pass. Three steady-state runs; each row is a range over the runs.",
-      "samples": [
-        {"baseline": 187.004, "baseline_uncomp": 81.126, "coordinate": 2.706, "coordinate_map": 1.552},
-        {"baseline": 188.028, "baseline_uncomp": 84.244, "coordinate": 2.808, "coordinate_map": 1.613},
-        {"baseline": 188.169, "baseline_uncomp": 85.715, "coordinate": 2.722, "coordinate_map": 1.567}
-      ],
-      "rows": {
-        "baseline":       {"wall_s": [187.004, 188.169], "cpu_s": [183.560, 185.850], "reads": 470131, "tagma": 0, "syscalls": 470131, "bytes_moved": 2149961076, "reads_per_event": 0.20, "bytes_per_read": 4573.1, "syscalls_per_event": 0.20},
-        "baseline_uncomp": {"wall_s": [81.126, 85.715], "cpu_s": [74.140, 74.680], "reads": 387007, "tagma": 0, "syscalls": 387007, "bytes_moved": 10852850385, "reads_per_event": 0.17, "bytes_per_read": 28043.0, "syscalls_per_event": 0.17},
-        "coordinate":     {"wall_s": [2.706, 2.808], "cpu_s": [2.690, 2.730], "reads": 2315223, "tagma": 2315223, "syscalls": 2315223, "bytes_moved": 5926970880, "reads_per_event": 1.00, "bytes_per_read": 2560.0, "syscalls_per_event": 1.00},
-        "coordinate_map": {"wall_s": [1.552, 1.613], "cpu_s": [1.540, 1.580], "reads": 2315223, "tagma": 2315223, "syscalls": 0, "bytes_moved": 5926970880, "reads_per_event": 1.00, "bytes_per_read": 2560.0, "syscalls_per_event": 0.00}
+      "real_same_media_full": {
+         "note":
+            "local NanoAOD file, all 2,315,223 events, cache disabled, sources warmed before each timed pass. Three steady-state runs; each row is a range over the runs.",
+         "samples": [
+            {
+               "baseline": 187.004,
+               "baseline_uncomp": 81.126,
+               "coordinate": 2.706,
+               "coordinate_map": 1.552
+            },
+            {
+               "baseline": 188.028,
+               "baseline_uncomp": 84.244,
+               "coordinate": 2.808,
+               "coordinate_map": 1.613
+            },
+            {
+               "baseline": 188.169,
+               "baseline_uncomp": 85.715,
+               "coordinate": 2.722,
+               "coordinate_map": 1.567
+            }
+         ],
+         "rows": {
+            "baseline": {
+               "wall_s": [
+                  187.004,
+                  188.169
+               ],
+               "cpu_s": [
+                  183.560,
+                  185.850
+               ],
+               "reads": 470131,
+               "tagma": 0,
+               "syscalls": 470131,
+               "bytes_moved": 2149961076,
+               "reads_per_event": 0.20,
+               "bytes_per_read": 4573.1,
+               "syscalls_per_event": 0.20
+            },
+            "baseline_uncomp": {
+               "wall_s": [
+                  81.126,
+                  85.715
+               ],
+               "cpu_s": [
+                  74.140,
+                  74.680
+               ],
+               "reads": 387007,
+               "tagma": 0,
+               "syscalls": 387007,
+               "bytes_moved": 10852850385,
+               "reads_per_event": 0.17,
+               "bytes_per_read": 28043.0,
+               "syscalls_per_event": 0.17
+            },
+            "coordinate": {
+               "wall_s": [
+                  2.706,
+                  2.808
+               ],
+               "cpu_s": [
+                  2.690,
+                  2.730
+               ],
+               "reads": 2315223,
+               "tagma": 2315223,
+               "syscalls": 2315223,
+               "bytes_moved": 5926970880,
+               "reads_per_event": 1.00,
+               "bytes_per_read": 2560.0,
+               "syscalls_per_event": 1.00
+            },
+            "coordinate_map": {
+               "wall_s": [
+                  1.552,
+                  1.613
+               ],
+               "cpu_s": [
+                  1.540,
+                  1.580
+               ],
+               "reads": 2315223,
+               "tagma": 2315223,
+               "syscalls": 0,
+               "bytes_moved": 5926970880,
+               "reads_per_event": 1.00,
+               "bytes_per_read": 2560.0,
+               "syscalls_per_event": 0.00
+            }
+         }
+      },
+      "real_remote_2k": {
+         "note":
+            "not re-measured in this artifact. The row read the remote EOS file through the network plugin, and the media is the subject there rather than the read path. The superseded artifact recorded baseline 100.105 s wall at 1.160 s cpu, coordinate 0.002 s, coordinate_map 0.000 s over 2,000 events.",
+         "remeasured": false
       }
-    },
-    "real_remote_2k": {
-      "note": "not re-measured in this artifact. The row read the remote EOS file through the network plugin, and the media is the subject there rather than the read path. The superseded artifact recorded baseline 100.105 s wall at 1.160 s cpu, coordinate 0.002 s, coordinate_map 0.000 s over 2,000 events.",
-      "remeasured": false
-    }
-  },
-  "controls": {
-    "note": "tagma_columns.C on the same file and machine, one warmed run, cache disabled except where stated. The store's columns are the 320 field names of the layout sidecar.",
-    "rows": {
-      "compressed all":            {"wall_s": 194.813, "cpu_s": 186.500, "reads": 470131, "syscalls": 470131, "bytes_moved": 2149961076, "found": "1380/1380"},
-      "compressed store-cols":     {"wall_s": 110.231, "cpu_s": 105.240, "reads": 158177, "syscalls": 158177, "bytes_moved": 1404068431, "found": "320/1380"},
-      "compressed store-cols cache": {"wall_s": 111.111, "cpu_s": 107.200, "reads": 1985, "syscalls": 1985, "bytes_moved": 1404068431, "found": "320/1380", "cache_mb": 32},
-      "compressed 2-cols":         {"wall_s": 10.583, "cpu_s": 10.170, "reads": 528, "syscalls": 528, "bytes_moved": 8949452, "found": "2/1380"},
-      "compressed 2-cols cache":   {"wall_s": 10.037, "cpu_s": 9.860, "reads": 264, "syscalls": 264, "bytes_moved": 8949452, "found": "2/1380", "cache_mb": 32},
-      "uncompressed store-cols":   {"wall_s": 35.935, "cpu_s": 29.150, "reads": 118680, "syscalls": 118680, "bytes_moved": 6127346663, "found": "320/1380"}
-    }
-  },
-  "rdf": {
-    "note": "tagma_rdf_columns.C, ROOT 6.41.01, one warmed run, the second run of each query reported so JIT compilation is outside the timing. The layout sidecar reports 320 store columns, of which 276 are variable-length arrays and 44 are scalar leaves.",
-    "rows": {
-      "entries only":   {"wall_s": 0.030, "cpu_s": 0.030},
-      "one column":     {"wall_s": 0.488, "cpu_s": 0.490},
-      "two columns":    {"wall_s": 0.558, "cpu_s": 0.550, "selected": 20861},
-      "store columns":  {"wall_s": 10.849, "cpu_s": 10.830, "reads": 1315, "syscalls": 1315, "bytes_moved": 154862520, "columns": 44}
-    }
-  },
-  "analysis": {
-    "note": "tagma_bench analysis mode, warmed, one run: the same selection (MET_pt above 100 GeV and at least one muon) and the same MET_pt histogram on both read paths over the events the store covers. The layout sidecar maps the two selected columns onto the record.",
-    "rows": {
-      "analysis_baseline":   {"wall_s": 187.923, "selected": 20861, "hist_mean": 132.696},
-      "analysis_coordinate": {"wall_s": 2.715, "selected": 20861, "hist_mean": 132.696}
-    },
-    "analysis_match": "yes",
-    "reads_store": "the store's cost on the two selected columns is 2.715 s against 2.698 s for the whole record in the same session, which is the column independence the store claims: the record is the addressing unit"
-  },
-  "derived_ratios": {
-    "baseline_vs_coordinate": [66.96, 69.13],
-    "baseline_vs_coordinate_map": [116.57, 120.49],
-    "baseline_vs_baseline_uncomp": [2.20, 2.31],
-    "analysis_baseline_vs_analysis_coordinate": 69.2,
-    "payload_equal_vs_coordinate": 13.09,
-    "payload_equal_vs_coordinate_map": 22.79,
-    "payload_equal_basis": "the uncompressed row with the store's columns active, 35.935 s, which moves 6,127,346,663 bytes against the store's 5,926,970,880, so it moves 3.4 percent more bytes than the store; the coordinate rows are the mean of the three steady-state runs, 2.745 and 1.577",
-    "best_config_vs_coordinate": 40.48,
-    "best_config_vs_coordinate_map": 70.45,
-    "best_config_basis": "the same columns on the compressed file with the 32 MB cache, 111.111 s, ROOT's best configuration for the store's payload",
-    "rdf_two_columns_vs_store": 4.87,
-    "rdf_two_columns_basis": "RDataFrame reads the two columns of the analysis workload in 0.558 s; the store reads the same two columns in 2.715 s, and that is also what it spends on the whole record, so its cost does not depend on the columns selected",
-    "crossover_columns": 11.2,
-    "crossover_columns_mapped": 6.4,
-    "crossover_basis": "the store's full-record cost divided by RDataFrame's marginal cost per column, (10.849 - 0.558) / 42 = 0.245 s, against 2.745 s and 1.577 s. First order from the measured points, not a fitted model."
-  },
-  "notes": [
-    "The baseline is stable across the three steady-state runs, 187.0 to 188.2 s wall and 183.6 to 185.9 s cpu. The first three runs after the page cache had been disturbed measured 248.979, 202.469 and 182.609 s, so a settling cache moves the baseline by up to a third.",
-    "Warming the sources is what makes the coordinate rows reproducible: 2.706, 2.722 and 2.808 s warmed against 2.793, 3.56 and 4.047 s across the unwarmed runs of the superseded artifact and the later control set.",
-    "Decompression removal is worth 2.20 to 2.31x of the baseline, not the 1.74x of the superseded artifact. That artifact divided by an uncompressed row of 117.86 s measured on a cold file; the warmed row is 81.1 to 85.7 s. The remaining wall time is the read path.",
-    "The mapped row is 116.6 to 120.5x, not the 181.7x of the superseded artifact. That row measured 1.061 s there against 1.55 to 1.61 s in the three warmed runs here and 1.71 to 1.79 s in the unwarmed runs, so 1.061 s is the low outlier of nine samples and the condition that produced it was not recorded. The ratio it implies is not reproduced.",
-    "The head of the store's advantage is column independence: the store reads the whole record for 2.745 s whatever the analysis selects, while RDataFrame spends 0.558 s on two columns and 10.849 s on the 44 scalar columns. Above about 11 columns, or about 6 with the store mapped, the store is ahead.",
-    "The two-column row is the store's weakest case and is stated as such: RDataFrame is 4.92x faster there.",
-    "The synthetic and 2,000-event rows are microbenchmark scale. Their coordinate walls are 0.03 to 0.08 s and 0.001 to 0.003 s, where per-syscall cost and timer resolution dominate, so their ratios are not stable claims. What is stable there is the request and system call count per event.",
-    "No end-to-end reproduction of the documented 14-hour production workload; these are full-dataset local measurements on one machine, single core, and the remote row was not re-measured.",
-    "The store's columns are the first 320 scalar leaves as doubles. Of the tree's 1,380 leaves, 276 of those 320 columns are variable-length arrays stored through their leading element, so the store's payload is a scalar projection rather than the full event. Carrying the collections is the work the reader backend now supports; this artifact predates a store written that way."
-  ]
+   },
+   "controls": {
+      "note":
+         "tagma_columns.C on the same file and machine, one warmed run, cache disabled except where stated. The store's columns are the 320 field names of the layout sidecar.",
+      "rows": {
+         "compressed all": {
+            "wall_s": 194.813,
+            "cpu_s": 186.500,
+            "reads": 470131,
+            "syscalls": 470131,
+            "bytes_moved": 2149961076,
+            "found": "1380/1380"
+         },
+         "compressed store-cols": {
+            "wall_s": 110.231,
+            "cpu_s": 105.240,
+            "reads": 158177,
+            "syscalls": 158177,
+            "bytes_moved": 1404068431,
+            "found": "320/1380"
+         },
+         "compressed store-cols cache": {
+            "wall_s": 111.111,
+            "cpu_s": 107.200,
+            "reads": 1985,
+            "syscalls": 1985,
+            "bytes_moved": 1404068431,
+            "found": "320/1380",
+            "cache_mb": 32
+         },
+         "compressed 2-cols": {
+            "wall_s": 10.583,
+            "cpu_s": 10.170,
+            "reads": 528,
+            "syscalls": 528,
+            "bytes_moved": 8949452,
+            "found": "2/1380"
+         },
+         "compressed 2-cols cache": {
+            "wall_s": 10.037,
+            "cpu_s": 9.860,
+            "reads": 264,
+            "syscalls": 264,
+            "bytes_moved": 8949452,
+            "found": "2/1380",
+            "cache_mb": 32
+         },
+         "uncompressed store-cols": {
+            "wall_s": 35.935,
+            "cpu_s": 29.150,
+            "reads": 118680,
+            "syscalls": 118680,
+            "bytes_moved": 6127346663,
+            "found": "320/1380"
+         }
+      }
+   },
+   "rdf": {
+      "note":
+         "tagma_rdf_columns.C, ROOT 6.41.01, one warmed run, the second run of each query reported so JIT compilation is outside the timing. The layout sidecar reports 320 store columns, of which 276 are variable-length arrays and 44 are scalar leaves.",
+      "rows": {
+         "entries only": {
+            "wall_s": 0.030,
+            "cpu_s": 0.030
+         },
+         "one column": {
+            "wall_s": 0.488,
+            "cpu_s": 0.490
+         },
+         "two columns": {
+            "wall_s": 0.558,
+            "cpu_s": 0.550,
+            "selected": 20861
+         },
+         "store columns": {
+            "wall_s": 10.849,
+            "cpu_s": 10.830,
+            "reads": 1315,
+            "syscalls": 1315,
+            "bytes_moved": 154862520,
+            "columns": 44
+         }
+      }
+   },
+   "analysis": {
+      "note":
+         "tagma_bench analysis mode, warmed, one run: the same selection (MET_pt above 100 GeV and at least one muon) and the same MET_pt histogram on both read paths over the events the store covers. The layout sidecar maps the two selected columns onto the record.",
+      "rows": {
+         "analysis_baseline": {
+            "wall_s": 187.923,
+            "selected": 20861,
+            "hist_mean": 132.696
+         },
+         "analysis_coordinate": {
+            "wall_s": 2.715,
+            "selected": 20861,
+            "hist_mean": 132.696
+         }
+      },
+      "analysis_match": "yes",
+      "reads_store":
+         "the store's cost on the two selected columns is 2.715 s against 2.698 s for the whole record in the same session, which is the column independence the store claims: the record is the addressing unit"
+   },
+   "derived_ratios": {
+      "baseline_vs_coordinate": [
+         66.96,
+         69.13
+      ],
+      "baseline_vs_coordinate_map": [
+         116.57,
+         120.49
+      ],
+      "baseline_vs_baseline_uncomp": [
+         2.20,
+         2.31
+      ],
+      "analysis_baseline_vs_analysis_coordinate": 69.2,
+      "payload_equal_vs_coordinate": 13.09,
+      "payload_equal_vs_coordinate_map": 22.79,
+      "payload_equal_basis":
+         "the uncompressed row with the store's columns active, 35.935 s, which moves 6,127,346,663 bytes against the store's 5,926,970,880, so it moves 3.4 percent more bytes than the store; the coordinate rows are the mean of the three steady-state runs, 2.745 and 1.577",
+      "best_config_vs_coordinate": 40.48,
+      "best_config_vs_coordinate_map": 70.45,
+      "best_config_basis":
+         "the same columns on the compressed file with the 32 MB cache, 111.111 s, ROOT's best configuration for the store's payload",
+      "rdf_two_columns_vs_store": 4.87,
+      "rdf_two_columns_basis":
+         "RDataFrame reads the two columns of the analysis workload in 0.558 s; the store reads the same two columns in 2.715 s, and that is also what it spends on the whole record, so its cost does not depend on the columns selected",
+      "crossover_columns": 11.2,
+      "crossover_columns_mapped": 6.4,
+      "crossover_basis":
+         "the store's full-record cost divided by RDataFrame's marginal cost per column, (10.849 - 0.558) / 42 = 0.245 s, against 2.745 s and 1.577 s. First order from the measured points, not a fitted model."
+   },
+   "notes": [
+      "The baseline is stable across the three steady-state runs, 187.0 to 188.2 s wall and 183.6 to 185.9 s cpu. The first three runs after the page cache had been disturbed measured 248.979, 202.469 and 182.609 s, so a settling cache moves the baseline by up to a third.",
+      "Warming the sources is what makes the coordinate rows reproducible: 2.706, 2.722 and 2.808 s warmed against 2.793, 3.56 and 4.047 s across the unwarmed runs of the superseded artifact and the later control set.",
+      "Decompression removal is worth 2.20 to 2.31x of the baseline, not the 1.74x of the superseded artifact. That artifact divided by an uncompressed row of 117.86 s measured on a cold file; the warmed row is 81.1 to 85.7 s. The remaining wall time is the read path.",
+      "The mapped row is 116.6 to 120.5x, not the 181.7x of the superseded artifact. That row measured 1.061 s there against 1.55 to 1.61 s in the three warmed runs here and 1.71 to 1.79 s in the unwarmed runs, so 1.061 s is the low outlier of nine samples and the condition that produced it was not recorded. The ratio it implies is not reproduced.",
+      "The head of the store's advantage is column independence: the store reads the whole record for 2.745 s whatever the analysis selects, while RDataFrame spends 0.558 s on two columns and 10.849 s on the 44 scalar columns. Above about 11 columns, or about 6 with the store mapped, the store is ahead.",
+      "The two-column row is the store's weakest case and is stated as such: RDataFrame is 4.92x faster there.",
+      "The synthetic and 2,000-event rows are microbenchmark scale. Their coordinate walls are 0.03 to 0.08 s and 0.001 to 0.003 s, where per-syscall cost and timer resolution dominate, so their ratios are not stable claims. What is stable there is the request and system call count per event.",
+      "No end-to-end reproduction of the documented 14-hour production workload; these are full-dataset local measurements on one machine, single core, and the remote row was not re-measured.",
+      "The store's columns are the first 320 scalar leaves as doubles. Of the tree's 1,380 leaves, 276 of those 320 columns are variable-length arrays stored through their leading element, so the store's payload is a scalar projection rather than the full event. Carrying the collections is the work the reader backend now supports; this artifact predates a store written that way."
+   ]
 }

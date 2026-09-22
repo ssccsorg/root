@@ -50,9 +50,18 @@ constexpr std::uint32_t kMaxJet = 3;
 const std::uint32_t kMuonCount[kEntries] = {2, 0, 4, 1};
 const std::uint32_t kJetCount[kEntries] = {1, 3, 0, 2};
 
-float MuonPt(int entry, std::uint32_t i) { return 10 * entry + i + 0.5f; }
-float MuonEta(int entry, std::uint32_t i) { return 100 * entry + i + 0.25f; }
-float JetPt(int entry, std::uint32_t i) { return 1000 * entry + i + 0.125f; }
+float MuonPt(int entry, std::uint32_t i)
+{
+   return 10 * entry + i + 0.5f;
+}
+float MuonEta(int entry, std::uint32_t i)
+{
+   return 100 * entry + i + 0.25f;
+}
+float JetPt(int entry, std::uint32_t i)
+{
+   return 1000 * entry + i + 0.125f;
+}
 
 // Bytes of one event's slice: the two muon fields then the jet field, each
 // field contiguous.
@@ -159,7 +168,7 @@ void Attach(TTree &tree, ROOT::TTagmaSchema &schema)
    ASSERT_TRUE(tree.SetTagmaSchema(schema));
 }
 
-}  // namespace
+} // namespace
 
 TEST(TTagmaVariable, CollectionsReadThroughTheLeaves)
 {
@@ -250,8 +259,7 @@ TEST(TTagmaVariable, SchemaAndStoreBoundsAreEnforced)
       ASSERT_EQ(std::fwrite(&tooMany, 1, sizeof(tooMany), out), sizeof(tooMany));
       std::fclose(out);
    }
-   ROOT_EXPECT_ERROR_PARTIAL(EXPECT_LE(tree.GetEntry(0), 0),
-                             "TTree::LoadTagmaRecord",
+   ROOT_EXPECT_ERROR_PARTIAL(EXPECT_LE(tree.GetEntry(0), 0), "TTree::LoadTagmaRecord",
                              "collection nMuon reports 5 objects at entry 0, the schema carries 4");
 
    // The failing count is reported once, not on every read of the entry.

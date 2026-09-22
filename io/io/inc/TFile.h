@@ -345,10 +345,9 @@ public:
    /// this call, and it is served from the mapping when one is attached.
    /// Returns 1 when the range was served, -1 when the store does not cover
    /// it or the read failed, and 0 when no store is attached.
-   virtual Int_t       ReadTagmaRange(char *buf, Long64_t pos, Int_t len);
-           Int_t       GetVersion() const { return fVersion; }
-           Int_t       GetRecordHeader(char *buf, Long64_t first, Int_t maxbytes,
-                                       Int_t &nbytes, Int_t &objlen, Int_t &keylen);
+   virtual Int_t ReadTagmaRange(char *buf, Long64_t pos, Int_t len);
+   Int_t GetVersion() const { return fVersion; }
+   Int_t GetRecordHeader(char *buf, Long64_t first, Int_t maxbytes, Int_t &nbytes, Int_t &objlen, Int_t &keylen);
    virtual Int_t       GetNbytesInfo() const {return fNbytesInfo;}
    virtual Int_t       GetNbytesFree() const {return fNbytesFree;}
    virtual TString     GetNewUrl() { return ""; }

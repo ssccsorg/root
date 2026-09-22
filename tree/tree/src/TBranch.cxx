@@ -1726,8 +1726,7 @@ Int_t TBranch::GetEntry(Long64_t entry, Int_t getall)
       // An array field: its elements are packed in the event's slice, and
       // the branch address holds the buffer the schema sized for the
       // collection maximum.
-      return tree->CopyTagmaField(entry, fTagmaCollection, fTagmaField,
-                                 fAddress);
+      return tree->CopyTagmaField(entry, fTagmaCollection, fTagmaField, fAddress);
    }
 
    TBasket *basket; // will be initialized in the if/then clauses.

@@ -181,16 +181,15 @@ TEST(TTagmaRecord, CoordinateMembersAreNotStreamed)
 {
    TClass *cls = TClass::GetClass("TTree");
    ASSERT_NE(cls, nullptr);
-   const TStreamerInfo *info =
-       dynamic_cast<const TStreamerInfo *>(cls->GetStreamerInfo());
+   const TStreamerInfo *info = dynamic_cast<const TStreamerInfo *>(cls->GetStreamerInfo());
    ASSERT_NE(info, nullptr);
    TIter next(info->GetElements());
    while (TObject *o = next()) {
       const auto *element = dynamic_cast<const TStreamerElement *>(o);
       ASSERT_NE(element, nullptr);
       const std::string name = element->GetName();
-      EXPECT_NE(name.rfind("fTagma", 0), 0u)
-          << name << " is streamed; mark it transient with ///<! so a file "
-                      "written by another build still reads";
+      EXPECT_NE(name.rfind("fTagma", 0), 0u) << name
+                                             << " is streamed; mark it transient with ///<! so a file "
+                                                "written by another build still reads";
    }
 }

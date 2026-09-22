@@ -40,8 +40,14 @@ constexpr std::uint64_t kRecordSize = 16;
 // The selection of the comparison: n >= 6 keeps the entries from e = 2 on.
 constexpr unsigned long long kSelected = 62;
 
-double FieldX(int entry) { return 1000.0 + 0.5 * entry; }
-int FieldN(int entry) { return 3 * entry; }
+double FieldX(int entry)
+{
+   return 1000.0 + 0.5 * entry;
+}
+int FieldN(int entry)
+{
+   return 3 * entry;
+}
 
 // The baseline: the same events in an ordinary ROOT file.
 void WriteFileTree()
@@ -78,7 +84,7 @@ void WriteStore()
    std::fclose(out);
 }
 
-}  // namespace
+} // namespace
 
 TEST(TTagmaDataFrame, StoreTreeAndFileTreeAgreeUnderRDataFrame)
 {
@@ -97,8 +103,7 @@ TEST(TTagmaDataFrame, StoreTreeAndFileTreeAgreeUnderRDataFrame)
 
    // The same expression over the store, which reaches the record through
    // the branches the schema materialized.
-   TFile *storeFile =
-       TFile::Open((std::string(kStorePath) + "?filetype=raw").c_str());
+   TFile *storeFile = TFile::Open((std::string(kStorePath) + "?filetype=raw").c_str());
    ASSERT_NE(storeFile, nullptr);
    ASSERT_FALSE(storeFile->IsZombie());
 
@@ -135,9 +140,7 @@ TEST(TTagmaDataFrame, StoreTreeAndFileTreeAgreeUnderRDataFrame)
    EXPECT_DOUBLE_EQ(storeHist->GetMean(), baselineHist->GetMean());
    ASSERT_EQ(storeHist->GetNbinsX(), baselineHist->GetNbinsX());
    for (int bin = 1; bin <= baselineHist->GetNbinsX(); ++bin)
-      EXPECT_DOUBLE_EQ(storeHist->GetBinContent(bin),
-                       baselineHist->GetBinContent(bin))
-          << "bin " << bin;
+      EXPECT_DOUBLE_EQ(storeHist->GetBinContent(bin), baselineHist->GetBinContent(bin)) << "bin " << bin;
 
    delete storeFile;
 }

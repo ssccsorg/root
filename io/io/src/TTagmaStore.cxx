@@ -86,10 +86,8 @@ TTagmaStore::TTagmaStore(const Layout &layout) : fLayout(layout)
                    fLayout.fRecordSize) {
       throw std::invalid_argument("TTagmaStore: store extent overflows");
    }
-   if (count * fLayout.fRecordSize >
-       std::numeric_limits<std::uint64_t>::max() - fLayout.fDataSize) {
-      throw std::invalid_argument(
-         "TTagmaStore: store extent overflows with the data region");
+   if (count * fLayout.fRecordSize > std::numeric_limits<std::uint64_t>::max() - fLayout.fDataSize) {
+      throw std::invalid_argument("TTagmaStore: store extent overflows with the data region");
    }
 }
 

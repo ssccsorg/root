@@ -28,8 +28,7 @@
 #include "TTree.h"
 
 int tagma_make_uncompressed(const char *url, const char *tree_name = "Events",
-                            const char *out_path = "tagma_uncompressed.root",
-                            Long64_t max_entries = -1)
+                            const char *out_path = "tagma_uncompressed.root", Long64_t max_entries = -1)
 {
    TFile *in = TFile::Open(url);
    if (!in || in->IsZombie()) {
@@ -39,25 +38,21 @@ int tagma_make_uncompressed(const char *url, const char *tree_name = "Events",
    TTree *tree = nullptr;
    in->GetObject(tree_name, tree);
    if (!tree) {
-      std::fprintf(stderr, "tagma_make_uncompressed: tree %s not found in %s\n",
-                   tree_name, url);
+      std::fprintf(stderr, "tagma_make_uncompressed: tree %s not found in %s\n", tree_name, url);
       delete in;
       return 1;
    }
    const Long64_t total = tree->GetEntries();
-   const Long64_t limit =
-       (max_entries > 0 && max_entries < total) ? max_entries : total;
+   const Long64_t limit = (max_entries > 0 && max_entries < total) ? max_entries : total;
    if (limit <= 0) {
-      std::fprintf(stderr, "tagma_make_uncompressed: nothing to rewrite in %s\n",
-                   url);
+      std::fprintf(stderr, "tagma_make_uncompressed: nothing to rewrite in %s\n", url);
       delete in;
       return 1;
    }
 
    TFile *out = TFile::Open(out_path, "RECREATE");
    if (!out || out->IsZombie()) {
-      std::fprintf(stderr, "tagma_make_uncompressed: cannot create %s\n",
-                   out_path);
+      std::fprintf(stderr, "tagma_make_uncompressed: cannot create %s\n", out_path);
       delete in;
       delete out;
       return 1;
@@ -71,8 +66,7 @@ int tagma_make_uncompressed(const char *url, const char *tree_name = "Events",
    // stored bytes verbatim and keep the source compression.
    TTree *clone = tree->CloneTree(limit);
    if (!clone) {
-      std::fprintf(stderr, "tagma_make_uncompressed: clone failed for %s\n",
-                   url);
+      std::fprintf(stderr, "tagma_make_uncompressed: clone failed for %s\n", url);
       delete in;
       delete out;
       return 1;
@@ -87,14 +81,11 @@ int tagma_make_uncompressed(const char *url, const char *tree_name = "Events",
    std::printf("tagma_make_uncompressed: out=%s entries=%lld branches=%lld "
                "file_size=%lld compression=%d\n",
                out_path, static_cast<long long>(written),
-               static_cast<long long>(clone->GetListOfBranches()->GetEntries()),
-               static_cast<long long>(outSize), out->GetCompressionLevel());
-   std::printf("tagma_make_uncompressed: wall_s=%.3f cpu_s=%.3f\n",
-               watch.RealTime(), watch.CpuTime());
+               static_cast<long long>(clone->GetListOfBranches()->GetEntries()), static_cast<long long>(outSize),
+               out->GetCompressionLevel());
+   std::printf("tagma_make_uncompressed: wall_s=%.3f cpu_s=%.3f\n", watch.RealTime(), watch.CpuTime());
    if (written != limit) {
-      std::fprintf(stderr,
-                   "tagma_make_uncompressed: wrote %lld of %lld entries\n",
-                   static_cast<long long>(written),
+      std::fprintf(stderr, "tagma_make_uncompressed: wrote %lld of %lld entries\n", static_cast<long long>(written),
                    static_cast<long long>(limit));
       delete out;
       delete in;

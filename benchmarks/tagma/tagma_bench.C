@@ -93,8 +93,9 @@
 //
 // Usage:
 //   root -l -b -q 'tagma_bench.C()'
-//   root -l -b -q 'tagma_bench.C("root://eospublic.cern.ch//eos/opendata/cms/Run2016G/DoubleMuon/NANOAOD/UL2016_MiniAODv2_NanoAODv9-v2/2430000/05DD095C-F6C3-9A4F-9FB3-348A5A6403D5.root", "Events", -1, 2560)'
-//   root -l -b -q 'tagma_bench.C("/path/to/local.root", "Events", 2000, 2560, 3, 1)'
+//   root -l -b -q
+//   'tagma_bench.C("root://eospublic.cern.ch//eos/opendata/cms/Run2016G/DoubleMuon/NANOAOD/UL2016_MiniAODv2_NanoAODv9-v2/2430000/05DD095C-F6C3-9A4F-9FB3-348A5A6403D5.root",
+//   "Events", -1, 2560)' root -l -b -q 'tagma_bench.C("/path/to/local.root", "Events", 2000, 2560, 3, 1)'
 //
 // Arguments:
 //   url           baseline data source; empty generates a synthetic
@@ -150,8 +151,7 @@ namespace {
 constexpr Long64_t kDefaultEntries = 20000;
 constexpr Long64_t kDefaultRecordSize = 2560;
 const char *kScatterFile = "tagma_bench_scatter.root";
-const char *kScatterUncompressedFile =
-    "tagma_bench_scatter_uncompressed.root";
+const char *kScatterUncompressedFile = "tagma_bench_scatter_uncompressed.root";
 const char *kStoreFile = "tagma_bench_store.bin";
 
 // Populate the page cache for a local source, so the timed pass measures the
@@ -175,8 +175,7 @@ void WarmFile(const char *path)
       total += got;
    total += got;
    std::fclose(in);
-   std::fprintf(stderr, "tagma_bench: warmed %s (%llu bytes)\n", path,
-                static_cast<unsigned long long>(total));
+   std::fprintf(stderr, "tagma_bench: warmed %s (%llu bytes)\n", path, static_cast<unsigned long long>(total));
 }
 
 struct BenchResult {
@@ -196,8 +195,8 @@ struct BenchResult {
 // event, one entry per basket, so that a cache-disabled sequential read
 // issues one small read per branch per event. The per-event payload is
 // exactly record_size bytes across the branches.
-bool MakeScatteredTree(const char *path, Long64_t entries, Int_t nscatter,
-                       Long64_t recordSize, Bool_t uncompressed = kFALSE)
+bool MakeScatteredTree(const char *path, Long64_t entries, Int_t nscatter, Long64_t recordSize,
+                       Bool_t uncompressed = kFALSE)
 {
    TFile file(path, "RECREATE");
    if (file.IsZombie()) {
@@ -618,11 +617,9 @@ void PrintAnalysis(const AnalysisResult &r)
 
 }  // namespace
 
-int tagma_bench(const char *url = "", const char *tree_name = "Events",
-                Long64_t max_entries = -1, Long64_t record_size = 0,
-                Int_t nscatter = 3, Bool_t disable_cache = kTRUE,
-                const char *store_path = "", Long64_t perf_entries = 0,
-                Bool_t analyze = kFALSE, const char *uncompressed_path = "",
+int tagma_bench(const char *url = "", const char *tree_name = "Events", Long64_t max_entries = -1,
+                Long64_t record_size = 0, Int_t nscatter = 3, Bool_t disable_cache = kTRUE, const char *store_path = "",
+                Long64_t perf_entries = 0, Bool_t analyze = kFALSE, const char *uncompressed_path = "",
                 Bool_t warm_cache = kTRUE)
 {
    if (record_size <= 0)
@@ -644,8 +641,7 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
       if (!MakeScatteredTree(kScatterFile, kDefaultEntries, nscatter,
                              record_size))
          return 1;
-      if (!MakeScatteredTree(kScatterUncompressedFile, kDefaultEntries,
-                             nscatter, record_size, kTRUE))
+      if (!MakeScatteredTree(kScatterUncompressedFile, kDefaultEntries, nscatter, record_size, kTRUE))
          return 1;
       baselineFile = TFile::Open(kScatterFile);
    } else {
@@ -704,8 +700,7 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
    // decompression component of the measured ratio.
    BenchResult baseUncompressed;
    Bool_t haveUncompressed = kFALSE;
-   const char *uncompressedSource =
-       synthetic ? kScatterUncompressedFile : uncompressed_path;
+   const char *uncompressedSource = synthetic ? kScatterUncompressedFile : uncompressed_path;
    if (uncompressedSource != nullptr && uncompressedSource[0] != '\0') {
       if (warm_cache)
          WarmFile(uncompressedSource);
@@ -722,15 +717,11 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
          std::fprintf(stderr,
                       "tagma_bench: uncompressed control skipped, %s holds "
                       "%lld of %lld entries\n",
-                      uncompressedSource,
-                      static_cast<long long>(utree->GetEntries()),
-                      static_cast<long long>(limit));
+                      uncompressedSource, static_cast<long long>(utree->GetEntries()), static_cast<long long>(limit));
       } else {
          if (synthetic)
             BindPayload(utree);
-         baseUncompressed =
-             MeasureBaseline(ufile, utree, limit, disable_cache,
-                             synthetic ? &addresses : nullptr);
+         baseUncompressed = MeasureBaseline(ufile, utree, limit, disable_cache, synthetic ? &addresses : nullptr);
          baseUncompressed.name = "baseline_uncomp";
          haveUncompressed = kTRUE;
       }

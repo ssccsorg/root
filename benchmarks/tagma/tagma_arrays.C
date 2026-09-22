@@ -64,15 +64,14 @@ std::uint64_t ElementBytes(const TLeaf *leaf)
 }
 
 struct Collection {
-   std::string fCountBranch;          // the leaf count branch name
-   std::vector<std::string> fFields;  // array fields indexed by that count
-   std::uint64_t fBytesPerElement = 0;  // sum of the field element sizes
+   std::string fCountBranch;           // the leaf count branch name
+   std::vector<std::string> fFields;   // array fields indexed by that count
+   std::uint64_t fBytesPerElement = 0; // sum of the field element sizes
 };
 
-}  // namespace
+} // namespace
 
-int tagma_arrays(const char *url, const char *tree_name = "Events",
-                 const char *layout_path = "")
+int tagma_arrays(const char *url, const char *tree_name = "Events", const char *layout_path = "")
 {
    const std::vector<std::string> names = ReadLayoutNames(layout_path);
    if (names.empty()) {
@@ -105,8 +104,7 @@ int tagma_arrays(const char *url, const char *tree_name = "Events",
          scalars.push_back(name);
          continue;
       }
-      const std::string countName =
-          (count->GetBranch() ? count->GetBranch()->GetName() : count->GetName());
+      const std::string countName = (count->GetBranch() ? count->GetBranch()->GetName() : count->GetName());
       Collection &collection = collections[countName];
       collection.fCountBranch = countName;
       collection.fFields.push_back(name);
@@ -122,11 +120,10 @@ int tagma_arrays(const char *url, const char *tree_name = "Events",
    ROOT::RDataFrame df(*tree);
    std::printf("tagma_arrays: layout_fields=%d scalar=%d array=%d "
                "collections=%d scalar_bytes_per_event=%llu\n",
-               (int)names.size(), (int)scalars.size(),
-               (int)(names.size() - scalars.size()), (int)collections.size(),
+               (int)names.size(), (int)scalars.size(), (int)(names.size() - scalars.size()), (int)collections.size(),
                (unsigned long long)scalarBytes);
-   std::printf("tagma_arrays: %-16s %7s %10s %8s %8s %14s\n", "count_branch",
-               "fields", "bytes/elem", "mean", "max", "slot_bytes");
+   std::printf("tagma_arrays: %-16s %7s %10s %8s %8s %14s\n", "count_branch", "fields", "bytes/elem", "mean", "max",
+               "slot_bytes");
 
    std::uint64_t fixedSlotTotal = 0;
    std::uint64_t packedMeanTotal = 0;
@@ -136,28 +133,21 @@ int tagma_arrays(const char *url, const char *tree_name = "Events",
       auto meanResult = df.Mean(collection.fCountBranch);
       const Double_t maxCount = maxResult.GetValue();
       const Double_t meanCount = meanResult.GetValue();
-      const std::uint64_t slotBytes =
-          static_cast<std::uint64_t>(maxCount) * collection.fBytesPerElement;
+      const std::uint64_t slotBytes = static_cast<std::uint64_t>(maxCount) * collection.fBytesPerElement;
       fixedSlotTotal += slotBytes;
-      packedMeanTotal +=
-          static_cast<std::uint64_t>(meanCount) * collection.fBytesPerElement;
-      std::printf("tagma_arrays: %-16s %7d %10llu %8.2f %8.0f %14llu\n",
-                  collection.fCountBranch.c_str(),
-                  (int)collection.fFields.size(),
-                  (unsigned long long)collection.fBytesPerElement, meanCount,
-                  maxCount, (unsigned long long)slotBytes);
+      packedMeanTotal += static_cast<std::uint64_t>(meanCount) * collection.fBytesPerElement;
+      std::printf("tagma_arrays: %-16s %7d %10llu %8.2f %8.0f %14llu\n", collection.fCountBranch.c_str(),
+                  (int)collection.fFields.size(), (unsigned long long)collection.fBytesPerElement, meanCount, maxCount,
+                  (unsigned long long)slotBytes);
    }
 
    const Long64_t entries = tree->GetEntries();
-   std::printf(
-       "tagma_arrays: entries=%lld fixed_slot_bytes_per_event=%llu "
-       "mean_used_bytes_per_event=%llu fixed_slot_store=%.2f GB "
-       "packed_store=%.2f GB\n",
-       static_cast<long long>(entries),
-       (unsigned long long)(scalarBytes + fixedSlotTotal),
-       (unsigned long long)(scalarBytes + packedMeanTotal),
-       1e-9 * (scalarBytes + fixedSlotTotal) * entries,
-       1e-9 * (scalarBytes + packedMeanTotal) * entries);
+   std::printf("tagma_arrays: entries=%lld fixed_slot_bytes_per_event=%llu "
+               "mean_used_bytes_per_event=%llu fixed_slot_store=%.2f GB "
+               "packed_store=%.2f GB\n",
+               static_cast<long long>(entries), (unsigned long long)(scalarBytes + fixedSlotTotal),
+               (unsigned long long)(scalarBytes + packedMeanTotal), 1e-9 * (scalarBytes + fixedSlotTotal) * entries,
+               1e-9 * (scalarBytes + packedMeanTotal) * entries);
    delete file;
    return 0;
 }
