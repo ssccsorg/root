@@ -41,6 +41,7 @@ public:
    TQt6Canvas(TCanvas *c, const char *name, Int_t x, Int_t y, UInt_t width, UInt_t height);
    ~TQt6Canvas() override;
 
+   QCanvasWidget *GetCanvasWidget() const { return fCanvasWidget; }
    QPaintWidget *GetPaintWidget() const { return fPaintWidget; }
 
    Int_t InitWindow() override;
@@ -64,6 +65,7 @@ public:
    void SetWindowSize(UInt_t w, UInt_t h) override;
    void SetWindowTitle(const char *newTitle) override;
    void SetCanvasSize(UInt_t w, UInt_t h) override;
+   void SetCursor(ECursor cursor) override;
    void Iconify() override;
    void RaiseWindow() override;
 
