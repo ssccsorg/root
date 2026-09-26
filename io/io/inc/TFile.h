@@ -30,6 +30,7 @@
 #include "TDirectoryFile.h"
 #include "TUrl.h"
 #include "ROOT/RConcurrentHashColl.hxx"
+#include "ROOT/TTagmaSource.hxx"
 #include "ROOT/TTagmaStore.hxx"
 #include <optional>
 
@@ -170,6 +171,7 @@ protected:
    Int_t            fTagmaReadCalls{0};       ///<Number of reads served from the coordinate-indexed store
    Int_t            fSysReadCalls{0};         ///<Number of read system calls issued to the byte source
    std::shared_ptr<ROOT::TTagmaStore> fTagmaStore{nullptr}; ///<!Coordinate-indexed store layout (if any)
+   std::shared_ptr<ROOT::TTagmaSource> fTagmaSource{nullptr}; ///<!Byte source behind the coordinate read path (if any)
    TString          fRealName;                ///<Effective real file name (not original url)
    TString          fOption;                  ///<File options
    Char_t           fUnits{0};                ///<Number of bytes for file pointers
@@ -222,6 +224,15 @@ protected:
            Bool_t      FlushWriteCache();
            Int_t       ReadBufferViaCache(char *buf, Int_t len);
            Int_t       ReadBufferViaTagma(char *buf, Long64_t pos, Int_t len);
+           /// Rebuild the byte source from the attached store's mapping state.
+           /// Called when the source is absent or its kind no longer matches.
+           void UpdateTagmaSource();
+           /// Serve a covered store range through the byte source and account
+           /// for it. Returns 1 when served and -1 when the read failed.
+           Int_t ServeTagma(char *buf, std::uint64_t pos, Int_t len);
+           /// One positioned read of the store's byte source, retried on an
+           /// interrupted call. The system call and its counter live here.
+           std::int64_t SysReadTagma(char *buf, std::uint64_t pos, std::uint64_t len);
            Int_t       WriteBufferViaCache(const char *buf, Int_t len);
 
    ////////////////////////////////////////////////////////////////////////////////
@@ -340,9 +351,14 @@ public:
    virtual Int_t       GetSysReadCalls() const { return fSysReadCalls; }
    virtual void        SetTagmaStore(std::shared_ptr<ROOT::TTagmaStore> store) { fTagmaStore = store; }
    virtual std::shared_ptr<ROOT::TTagmaStore> GetTagmaStore() const { return fTagmaStore; }
-           Int_t       GetVersion() const { return fVersion; }
-           Int_t       GetRecordHeader(char *buf, Long64_t first, Int_t maxbytes,
-                                       Int_t &nbytes, Int_t &objlen, Int_t &keylen);
+   /// Serve a byte range that the attached store owns, for ranges other
+   /// than one fixed-width record: the packed data region is read through
+   /// this call, and it is served from the mapping when one is attached.
+   /// Returns 1 when the range was served, -1 when the store does not cover
+   /// it or the read failed, and 0 when no store is attached.
+   virtual Int_t ReadTagmaRange(char *buf, Long64_t pos, Int_t len);
+   Int_t GetVersion() const { return fVersion; }
+   Int_t GetRecordHeader(char *buf, Long64_t first, Int_t maxbytes, Int_t &nbytes, Int_t &objlen, Int_t &keylen);
    virtual Int_t       GetNbytesInfo() const {return fNbytesInfo;}
    virtual Int_t       GetNbytesFree() const {return fNbytesFree;}
    virtual TString     GetNewUrl() { return ""; }

@@ -1706,7 +1706,28 @@ Int_t TBranch::GetEntry(Long64_t entry, Int_t getall)
    // Remember which entry we are reading.
    fReadEntry = entry;
 
+   // A branch the caller turned off is not read, as on the ordinary path:
+   // the store still holds the entry, and the enabled branches read it.
    if (R__unlikely(TestBit(kDoNotProcess) && !getall)) { return 0; }
+
+   // Coordinate read path: the branch address points into the tree's record
+   // buffer, so loading the record for this entry is the whole read. The
+   // leaves then report the record field with no basket, no leaf unpacking,
+   // and no copy. This is the seam the reader proxy enters through, which
+   // TTree::GetEntry alone cannot serve.
+   if (R__unlikely(fTagmaFieldSize != 0)) {
+      TTree *tree = GetTree();
+      if (!tree)
+         return -1;
+      if (!tree->LoadTagmaRecord(entry))
+         return -1;
+      if (fTagmaCollection < 0)
+         return fTagmaFieldSize;
+      // An array field: its elements are packed in the event's slice, and
+      // the branch address holds the buffer the schema sized for the
+      // collection maximum.
+      return tree->CopyTagmaField(entry, fTagmaCollection, fTagmaField, fAddress);
+   }
 
    TBasket *basket; // will be initialized in the if/then clauses.
    Long64_t first;

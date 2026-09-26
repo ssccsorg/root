@@ -154,6 +154,16 @@ protected:
    TBranch    *fMother;           ///<! Pointer to top-level parent branch in the tree.
    TBranch    *fParent;           ///<! Pointer to parent branch.
    char       *fAddress;          ///<! Address of 1st leaf (variable or object)
+   /// Byte size of the coordinate-indexed record field this branch serves,
+   /// or 0 when the branch is not on the coordinate read path. Set by
+   /// TTree::SetTagmaSchema; transient so the branch layout on file is
+   /// unchanged.
+   Int_t fTagmaFieldSize = 0; ///<!
+   /// Index of the collection and of the field inside it when this branch
+   /// serves an array field. fTagmaCollection is -1 for a scalar field,
+   /// whose value the index record carries.
+   Int_t fTagmaCollection = -1;   ///<!
+   Int_t fTagmaField = 0;         ///<!
    TDirectory *fDirectory;        ///<! Pointer to directory where this branch buffers are stored
    TString     fFileName;         ///<  Name of file where buffers are stored ("" if in same file as Tree header)
    TBuffer    *fEntryBuffer;      ///<! Buffer used to directly pass the content without streaming
@@ -232,6 +242,18 @@ public:
            Int_t     GetCompressionSettings() const;
    TDirectory       *GetDirectory() const {return fDirectory;}
    virtual Int_t     GetEntry(Long64_t entry=0, Int_t getall = 0);
+   /// Marks this branch as serving a fixed-width field of the coordinate
+   /// record. Its address is inside the tree's record buffer, so a read is
+   /// the tree loading the record for the entry.
+   void SetTagmaFieldSize(Int_t bytes) { fTagmaFieldSize = bytes; }
+   /// Marks this branch as serving one field of a collection, so a read
+   /// copies the field's elements for the entry out of the data region.
+   void SetTagmaField(Int_t collection, Int_t field)
+   {
+      fTagmaCollection = collection;
+      fTagmaField = field;
+   }
+   Bool_t IsTagmaField() const { return fTagmaFieldSize != 0; }
    virtual Int_t     GetEntryExport(Long64_t entry, Int_t getall, TClonesArray *list, Int_t n);
            Int_t     GetEntryOffsetLen() const { return fEntryOffsetLen; }
            Int_t     GetEvent(Long64_t entry=0) {return GetEntry(entry);}

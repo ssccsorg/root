@@ -24,45 +24,68 @@
 // the request and system call counts are media-independent.
 //
 // UPDATE THIS BLOCK AFTER EACH MEASURED RUN. The source is the per-run
-// JSON under benchmarks/tagma/result/ (gitignored per-run artifact;
-// this block is the tracked single source). Keep it aligned with
-// docs/works/cern/root-ttree/index.qmd and with the reference artifact
-// bench-20260810-153200-474b9af1ad.json.
+// JSON under benchmarks/tagma/result/ (gitignored per-run artifact; the
+// reference artifact is tracked there as reference.json). Keep it aligned
+// with docs/works/cern/root-ttree/index.qmd.
 //
 // Workload: read every event of the CMS Run2016G DoubleMuon NanoAOD
 // first file (tree Events, 2,315,223 events, 2,155,974,646 bytes), the
 // M1 workload. The coordinate rows read the fixed-width store converted
-// from the same events (2,560-byte records, 320 scalar leaves).
+// from the same events (2,560-byte records); of its 320 fields, 44 are
+// scalar leaves and 276 are variable-length arrays the writer stored
+// through their leading element.
+//
+// Protocol: the harness reads each local source through the page cache in an
+// untimed pass before its timed pass (warm_cache, on by default). The rows
+// below are three steady-state runs, and every range spans them. Row order
+// within a run: baseline, baseline_uncomp, coordinate, coordinate+map.
 //
 // Full dataset, same medium (local disk), cache-disabled baseline:
-//   path              wall_s   cpu_s   reads/ev  syscalls/ev  bytes/read    MB/s
-//   baseline          192.8    182.9   0.20      0.20         4,573         11.2
-//   coordinate          2.79    2.62   1.00      1.00         2,560        2,122   (69.0x)
-//   coordinate+map      1.06    1.05   1.00      0.00         2,560        5,584   (181.7x)
-//   served_checksum: match (233262869086)
+//   path              wall_s        cpu_s         reads/ev  syscalls/ev  bytes/read    MB/s
+//   baseline          187.0-188.2   183.6-185.9   0.20      0.20         4,573         11.5
+//   baseline_uncomp    81.1-85.7     74.1-74.7   0.17      0.17        28,043        133.8
+//   coordinate          2.71-2.81     2.69-2.73   1.00      1.00         2,560      2,190.1  (66.9-69.1x)
+//   coordinate+map      1.55-1.61     1.54-1.58   1.00      0.00         2,560      3,819.1  (116.6-120.5x)
+//   served_checksum: match (233262869086) in every run
+//
+// Decompression removal, baseline over baseline_uncomp: 2.20-2.31x.
+// The payload-equal rows (uncompressed with the store's columns active,
+// 35.935 s, 3.4 percent more bytes than the store) put the store at 13.1x,
+// or 22.8x mapped. ROOT's best configuration for that payload (the same
+// columns on the compressed file with a 32 MB cache, 111.111 s) puts it at
+// 40.5x, or 70.5x mapped.
 //
 // One-time conversion of the dataset into the store: 226.3 s.
 //
 // Analysis workload (MET_pt above 100 GeV and at least one muon, MET_pt
-// histogram), full dataset:
-//   analysis_baseline    188.9 s, selected 20,861, histogram mean 132.696
-//   analysis_coordinate    3.10 s, selected 20,861, histogram mean 132.696  (60.9x)
+// histogram), full dataset, same session as the rows above:
+//   analysis_baseline    187.9 s, selected 20,861, histogram mean 132.696
+//   analysis_coordinate    2.72 s, selected 20,861, histogram mean 132.696  (69.2x)
 //   analysis_match: yes
+// The store spends 2.715 s on those two columns against 2.698 s on the whole
+// record, which is its column independence. RDataFrame on the same file, on
+// a warm cache: entries only 0.030 s, one column 0.488 s, those two columns
+// 0.558 s, the store's 44 scalar columns 10.849 s. ROOT's column-selective
+// reader leads below about 11 columns, or about 6 with the store mapped. That
+// is the store's weakest case and it is stated as such.
 //
 // Baseline with the TTreeCache enabled (10,000 events): 8 read calls,
 // 1,943 KB per read, efficiency 0.917, miss rate 0.083. This is the
 // ideal sequential case; the documented cache degradation under
 // out-of-order multithreaded reads is not reproduced.
 //
-// M1 signature slice (2,000 events, same medium): baseline 1.37 reads
-// per event at 2,635 bytes per read, wall 0.461 s, matching the
-// documented 372,000 x 4.6 KB singular-read scale. The remote EOS
-// baseline (2,000 events) runs 100.1 s with about 98.8 percent I/O wait.
-// Same-media slice ratios: 230.5x (coordinate), 1512.0x (coordinate+map).
+// M1 signature slice (2,000 events, same medium, three runs): baseline
+// 1.37 reads per event at 2,635 bytes per read, wall 0.466-0.483 s,
+// matching the documented 372,000 x 4.6 KB singular-read scale, and the
+// coordinate walls at 0.002-0.003 s. The remote EOS baseline (2,000
+// events) runs 100.1 s with about 98.8 percent I/O wait; that row was not
+// re-measured. Both slice ratios sit at sub-millisecond scale and are
+// indicative.
 //
-// Synthetic (20,000 events, 2,560-byte records): baseline 0.124 s
-// (3.00 reads and syscalls per event, 1x), coordinate 0.019 s (6.5x),
-// coordinate+map 0.004 s (31.0x, zero syscalls).
+// Synthetic (20,000 events, 2,560-byte records): baseline 0.128-0.138 s at
+// 3.00 reads and syscalls per event, coordinate 0.026-0.078 s at 1.00 and
+// 1.00, coordinate+map 0.011-0.027 s at 0.00 syscalls. The spread is
+// per-syscall cost at that scale, so the counts are the claim there.
 //
 // Boundaries: phase 1 covers fixed-width records; the store holds a
 // scalar projection of the events; the documented 14-hour production
@@ -70,8 +93,9 @@
 //
 // Usage:
 //   root -l -b -q 'tagma_bench.C()'
-//   root -l -b -q 'tagma_bench.C("root://eospublic.cern.ch//eos/opendata/cms/Run2016G/DoubleMuon/NANOAOD/UL2016_MiniAODv2_NanoAODv9-v2/2430000/05DD095C-F6C3-9A4F-9FB3-348A5A6403D5.root", "Events", -1, 2560)'
-//   root -l -b -q 'tagma_bench.C("/path/to/local.root", "Events", 2000, 2560, 3, 1)'
+//   root -l -b -q
+//   'tagma_bench.C("root://eospublic.cern.ch//eos/opendata/cms/Run2016G/DoubleMuon/NANOAOD/UL2016_MiniAODv2_NanoAODv9-v2/2430000/05DD095C-F6C3-9A4F-9FB3-348A5A6403D5.root",
+//   "Events", -1, 2560)' root -l -b -q 'tagma_bench.C("/path/to/local.root", "Events", 2000, 2560, 3, 1)'
 //
 // Arguments:
 //   url           baseline data source; empty generates a synthetic
@@ -96,6 +120,11 @@
 //                 same MET_pt histogram on both read paths, over the
 //                 events the store covers; requires a converted store
 //                 with its layout sidecar
+//   warm_cache   1 reads each local source through the page cache before
+//                 its timed pass, so every row measures the read path
+//                 against resident data (default). 0 measures the medium
+//                 instead, in which case the row order matters: a pass
+//                 over the uncompressed rewrite evicts the store.
 //
 // The mapped coordinate row requires a Unix-like platform (mmap), like
 // the canonical CoordSpaceM reference.
@@ -122,7 +151,32 @@ namespace {
 constexpr Long64_t kDefaultEntries = 20000;
 constexpr Long64_t kDefaultRecordSize = 2560;
 const char *kScatterFile = "tagma_bench_scatter.root";
+const char *kScatterUncompressedFile = "tagma_bench_scatter_uncompressed.root";
 const char *kStoreFile = "tagma_bench_store.bin";
+
+// Populate the page cache for a local source, so the timed pass measures the
+// read path against resident data instead of against the medium. A remote URL
+// is left alone: its access cost is the subject of the remote row, and a warm
+// pass would move the whole file over the network.
+void WarmFile(const char *path)
+{
+   if (path == nullptr || path[0] == '\0')
+      return;
+   if (std::strstr(path, "://") != nullptr)
+      return;
+   FILE *in = std::fopen(path, "rb");
+   if (in == nullptr)
+      return;
+   constexpr std::size_t kChunk = 4u << 20;
+   std::vector<unsigned char> buffer(kChunk);
+   std::uint64_t total = 0;
+   std::size_t got = 0;
+   while ((got = std::fread(buffer.data(), 1, kChunk, in)) == kChunk)
+      total += got;
+   total += got;
+   std::fclose(in);
+   std::fprintf(stderr, "tagma_bench: warmed %s (%llu bytes)\n", path, static_cast<unsigned long long>(total));
+}
 
 struct BenchResult {
    const char *name = nullptr;
@@ -141,14 +195,19 @@ struct BenchResult {
 // event, one entry per basket, so that a cache-disabled sequential read
 // issues one small read per branch per event. The per-event payload is
 // exactly record_size bytes across the branches.
-bool MakeScatteredTree(const char *path, Long64_t entries, Int_t nscatter,
-                       Long64_t recordSize)
+bool MakeScatteredTree(const char *path, Long64_t entries, Int_t nscatter, Long64_t recordSize,
+                       Bool_t uncompressed = kFALSE)
 {
    TFile file(path, "RECREATE");
    if (file.IsZombie()) {
       std::fprintf(stderr, "tagma_bench: cannot create %s\n", path);
       return false;
    }
+   // The compression control writes the same tree with compression
+   // disabled, so the pair holds the read path and the payload constant
+   // and varies only the compression.
+   if (uncompressed)
+      file.SetCompressionLevel(0);
    TTree tree("Events", "Events");
    tree.SetAutoFlush(1);
 
@@ -558,11 +617,10 @@ void PrintAnalysis(const AnalysisResult &r)
 
 }  // namespace
 
-int tagma_bench(const char *url = "", const char *tree_name = "Events",
-                Long64_t max_entries = -1, Long64_t record_size = 0,
-                Int_t nscatter = 3, Bool_t disable_cache = kTRUE,
-                const char *store_path = "", Long64_t perf_entries = 0,
-                Bool_t analyze = kFALSE)
+int tagma_bench(const char *url = "", const char *tree_name = "Events", Long64_t max_entries = -1,
+                Long64_t record_size = 0, Int_t nscatter = 3, Bool_t disable_cache = kTRUE, const char *store_path = "",
+                Long64_t perf_entries = 0, Bool_t analyze = kFALSE, const char *uncompressed_path = "",
+                Bool_t warm_cache = kTRUE)
 {
    if (record_size <= 0)
       record_size = kDefaultRecordSize;
@@ -583,8 +641,12 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
       if (!MakeScatteredTree(kScatterFile, kDefaultEntries, nscatter,
                              record_size))
          return 1;
+      if (!MakeScatteredTree(kScatterUncompressedFile, kDefaultEntries, nscatter, record_size, kTRUE))
+         return 1;
       baselineFile = TFile::Open(kScatterFile);
    } else {
+      if (warm_cache)
+         WarmFile(url);
       baselineFile = TFile::Open(url);
    }
    if (!baselineFile || baselineFile->IsZombie()) {
@@ -617,17 +679,54 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
       std::vector<Long64_t> sizes;
       ScatteredSizes(nscatter, record_size, &sizes);
       addresses.resize(nscatter);
-      for (Int_t b = 0; b < nscatter; ++b) {
+      for (Int_t b = 0; b < nscatter; ++b)
          addresses[b].assign(sizes[b], 0);
-         baselineTree->SetBranchAddress(Form("b%02d", b),
-                                        addresses[b].data());
-      }
    }
+   auto BindPayload = [&](TTree *tree) {
+      for (Int_t b = 0; b < nscatter; ++b)
+         tree->SetBranchAddress(Form("b%02d", b), addresses[b].data());
+   };
+   if (synthetic)
+      BindPayload(baselineTree);
 
    const BenchResult base = MeasureBaseline(baselineFile, baselineTree, limit,
                                             disable_cache,
                                             synthetic ? &addresses : nullptr);
    delete baselineFile;
+
+   // The compression control: the same tree written with compression
+   // disabled and read through the ordinary path. The row holds the read
+   // path and the payload constant, so the gap to the baseline is the
+   // decompression component of the measured ratio.
+   BenchResult baseUncompressed;
+   Bool_t haveUncompressed = kFALSE;
+   const char *uncompressedSource = synthetic ? kScatterUncompressedFile : uncompressed_path;
+   if (uncompressedSource != nullptr && uncompressedSource[0] != '\0') {
+      if (warm_cache)
+         WarmFile(uncompressedSource);
+      TFile *ufile = TFile::Open(uncompressedSource);
+      TTree *utree = nullptr;
+      if (ufile && !ufile->IsZombie())
+         ufile->GetObject(tree_name, utree);
+      if (!utree) {
+         std::fprintf(stderr,
+                      "tagma_bench: uncompressed control skipped, cannot read "
+                      "tree %s from %s\n",
+                      tree_name, uncompressedSource);
+      } else if (utree->GetEntries() < limit) {
+         std::fprintf(stderr,
+                      "tagma_bench: uncompressed control skipped, %s holds "
+                      "%lld of %lld entries\n",
+                      uncompressedSource, static_cast<long long>(utree->GetEntries()), static_cast<long long>(limit));
+      } else {
+         if (synthetic)
+            BindPayload(utree);
+         baseUncompressed = MeasureBaseline(ufile, utree, limit, disable_cache, synthetic ? &addresses : nullptr);
+         baseUncompressed.name = "baseline_uncomp";
+         haveUncompressed = kTRUE;
+      }
+      delete ufile;
+   }
 
    std::uint64_t expectedChecksum = 0;
    Bool_t haveChecksum = kFALSE;
@@ -660,6 +759,8 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
       return 1;
    }
 
+   if (warm_cache)
+      WarmFile(store);
    TString storeRaw(store);
    storeRaw += "?filetype=raw";
    const BenchResult coord =
@@ -678,6 +779,8 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
        "path", "wall_s", "cpu_s", "reads", "tagma", "syscalls",
        "bytes_moved", "reads/ev", "bytes/read", "syscalls/ev", "MB/s");
    PrintResult(base);
+   if (haveUncompressed)
+      PrintResult(baseUncompressed);
    PrintResult(coord);
    PrintResult(coordMap);
 
@@ -695,8 +798,10 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events",
 
    if (!realStore)
       gSystem->Unlink(kStoreFile);
-   if (synthetic)
+   if (synthetic) {
       gSystem->Unlink(kScatterFile);
+      gSystem->Unlink(kScatterUncompressedFile);
+   }
 
    if (!coord.ok || !coordMap.ok)
       return 1;
