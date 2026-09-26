@@ -30,12 +30,13 @@ Each claim is carried by a gate, and the gate is what the claim rests on:
 | A store carries variable-length collections, read through the ordinary branch machinery, at two reads per event | `gtest-tree-tree-tagma-variable` |
 | The store can be produced, not only read | `gtest-io-io-tagma-writer` |
 | A store is self-describing, so it needs no sidecar and is reproducible | `gtest-io-io-tagma-writer`, `gtest-tree-tree-tagma-variable` |
+| The byte source behind the file hook is a seam, so a new source is an implementation, not a hook branch | `TTagmaSource`, with the existing tagma gtests and the benchmark rows unchanged |
 | The build consumes the canonical engine reproducibly | the pinned syntagma revision in `tree/tree/CMakeLists.txt` |
 
 What the measured claim does not yet cover, and what the open phases are for:
 the full-dataset re-measurement on the collection-carrying store (#120), the
 dataset-level layout over the run and lumi axes (P6), and the compressed and
-cached byte sources (P2).
+cached byte sources the record source seam admits.
 
 ## Where the code stands
 
@@ -45,18 +46,18 @@ cached byte sources (P2).
 | Field table | `io/io/inc/ROOT/TTagmaSchema.hxx` | In the library: scalar and collection fields, counts resolved from the count scalar, the text form, and validation against the record size |
 | Store format | `io/io/inc/ROOT/TTagmaHeader.hxx` | The index record and the packed data region are addressed by arithmetic, and a store the writer produces ends with a descriptor that names the axis maxima, the record size, the data size, and the field table, so the store is self-describing. The read path takes the layout and the schema from the caller, or from the descriptor itself through `TTree::SetTagmaStore(path)` |
 | Store producer | `io/io/inc/ROOT/TTagmaWriter.hxx` | Complete: the index region and the packed data region, written in one pass over the events, the counts read back out of the record the reader reads them from |
-| Byte source | `io/io/src/TFile.cxx` | Serves record-aligned requests of exactly the record size, and any range the store covers, the data slice among them, from the mapping when one is attached |
+| Byte source | `io/io/inc/ROOT/TTagmaSource.hxx`, `io/io/src/TFile.cxx` | The file hook resolves a record or a covered range and delegates to `TTagmaSource`: a mapped source copies from the mapping and issues no read system call, a positioned source takes one read. A new byte source is an implementation of the interface |
 | Branch read path | `tree/tree/src/TBranch.cxx` | `GetEntry` loads the tree's record for the entry and copies an array field's elements out of the slice, so `TTreeReader` and `RDataFrame` read store-backed events |
 | Entry hook | `tree/tree/src/TTree.cxx` | Fills the record in place, then drives the array branches. The short circuit stays for direct callers |
 
 Consequences. Leaf access, `TTreeReader`, and `RDataFrame` reach the store
 through the ordinary branch machinery, so the store is a byte source under
-the existing interfaces and analysis code does not change. Two gaps remain.
-The axis layout and the field table are caller-supplied, so the store is not
-self-describing, and the benchmark's conversion tool still writes a scalar
-projection of the event, so the store it converts carries the collections as
-their leading element; the store-side producer that carries them whole is in
-place.
+the existing interfaces and analysis code does not change. The store a writer
+produces is self-describing, so it needs no sidecar, and the byte source
+behind the file hook is a seam, so a new source is an implementation. One gap
+remains: the benchmark's conversion tool still writes a scalar projection of
+the event, so the store it converts carries the collections as their leading
+element; the store-side producer that carries them whole is in place.
 
 ## Target architecture
 
@@ -220,7 +221,8 @@ rewrite of the file hook.
 | P4 | Done | `gtest-tree-tree-tagma-dataframe`: identical histogram from file and store, and `gtest-tree-tree-tagma-schema` reads through `TTreeReader` |
 | P5 | Reader and producer done; benchmark conversion open | `gtest-tree-tree-tagma-variable`: collections read through the branches, the array values and counts checked against the store bytes, and a count past the bound rejected; `gtest-io-io-tagma-writer`: the producer lays out the index and data regions the reader addresses. The benchmark's conversion tool still emits the scalar projection, so the store it measures carries 276 of its 320 fields as array leading elements |
 | P3 | Descriptor done | `gtest-io-io-tagma-writer`: a store the writer produces names its layout and field table in a trailing descriptor, and a reader recovers both with no sidecar; `gtest-tree-tree-tagma-variable`: the tree attaches such a store from its path alone; the syntagma revision is pinned to the measured commit. The conversion tool still widens to double |
-| P2, P6 | Open | |
+| P2 | Done | The record source seam: `TFile` delegates a record and a covered range to `TTagmaSource`, with a mapped and a positioned implementation. The existing tagma gtests and the benchmark rows are unchanged |
+| P6 | Open | |
 
 Both gates run against a build with `dataframe=ON`; the RDataFrame gate is
 registered only when that module is enabled.

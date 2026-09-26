@@ -169,6 +169,7 @@ The structure of a directory is shown in TDirectoryFile::TDirectoryFile
 #include "TGlobal.h"
 #include "ROOT/RConcurrentHashColl.hxx"
 #include "ROOT/InternalIOUtils.hxx"
+#include "ROOT/TTagmaSource.hxx"
 
 #include <cinttypes>
 #include <cmath>
@@ -2029,56 +2030,88 @@ Int_t TFile::ReadBufferViaTagma(char *buf, Long64_t pos, Int_t len)
    if (!fTagmaStore->Contains(run, lumi, event))
       return 0;
 
+   // The record the position names, served through the byte source. A record
+   // request and a data-slice request share one path through the source.
+   return ServeTagma(buf, fTagmaStore->Offset(run, lumi, event), len);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Rebuild the byte source of the coordinate read path from the attached
+/// store's mapping state: a mapped store is served by a memory copy, an
+/// unmapped store by a positioned read. Called when the source is absent or
+/// its kind no longer matches the store, so a store mapped after it was
+/// attached takes effect on the next read.
+
+void TFile::UpdateTagmaSource()
+{
+   if (!fTagmaStore) {
+      fTagmaSource.reset();
+      return;
+   }
+   if (fTagmaStore->IsMapped()) {
+      fTagmaSource = std::make_shared<ROOT::TTagmaMappedSource>(fTagmaStore->GetMapped());
+      return;
+   }
+   // The positioned source reads through the file, so the system call and its
+   // counter stay where the accounting is.
+   TFile *file = this;
+   fTagmaSource = std::make_shared<ROOT::TTagmaPositionedSource>(
+      [file](char *buf, std::uint64_t pos, std::uint64_t len) { return file->SysReadTagma(buf, pos, len); });
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// One positioned read of the store's byte source, retried on an interrupted
+/// call. The read system call and the counter it maintains live here, in the
+/// file, so the byte source stays free of the medium.
+
+std::int64_t TFile::SysReadTagma(char *buf, std::uint64_t pos, std::uint64_t len)
+{
+   Seek(static_cast<Long64_t>(pos));
+   ssize_t siz;
+   while ((siz = SysRead(fD, buf, static_cast<Int_t>(len))) < 0 && GetErrno() == EINTR)
+      ResetErrno();
+   return siz;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Serve a covered store range through the byte source and account for it.
+///
+/// Returns 1 when served, and -1 when the source cannot serve the range. The
+/// read-call, byte, and coordinate counters and the monitoring and performance
+/// events are the file's, so every byte source is accounted for alike.
+
+Int_t TFile::ServeTagma(char *buf, std::uint64_t pos, Int_t len)
+{
+   if (fTagmaSource == nullptr || fTagmaSource->IsMapped() != fTagmaStore->IsMapped())
+      UpdateTagmaSource();
+   if (fTagmaSource == nullptr)
+      return -1;
+
    Double_t start = 0;
    if (gPerfStats)
       start = TTimeStamp();
 
-   // Memory-backed byte source: copy the record from the mapping. The
-   // map covers the full store extent, so the record range is in
-   // bounds; the syscall counter stays untouched.
-   if (fTagmaStore->IsMapped()) {
-      const std::uint64_t offset =
-         fTagmaStore->Offset(run, lumi, event);
-      const char *src = fTagmaStore->GetMapped() + offset;
-      std::memcpy(buf, src, static_cast<std::size_t>(len));
-      fBytesRead += len;
-      fgBytesRead += len;
-      fReadCalls++;
-      fgReadCalls++;
-      fTagmaReadCalls++;
-
-      if (gMonitoringWriter)
-         gMonitoringWriter->SendFileReadProgress(this);
-      if (gPerfStats)
-         gPerfStats->FileReadEvent(this, len, start);
-      return 1;
-   }
-
-   Seek(pos);
-   ssize_t siz;
-   while ((siz = SysRead(fD, buf, len)) < 0 && GetErrno() == EINTR)
-      ResetErrno();
-
-   if (siz < 0) {
-      SysError("ReadBuffer", "error reading from file %s", GetName());
+   const std::int64_t got = fTagmaSource->Read(buf, pos, static_cast<std::uint64_t>(len));
+   if (got < 0) {
+      SysError("ReadTagma", "error reading from file %s", GetName());
       return -1;
    }
-   if (siz != len) {
-      Error("ReadBuffer", "error reading all requested bytes from file %s, got %ld of %d",
-            GetName(), (Long_t)siz, len);
+   if (got != len) {
+      Error("ReadTagma", "error reading all requested bytes from file %s, got %lld of %d", GetName(),
+            static_cast<long long>(got), len);
       return -1;
    }
-   fBytesRead += siz;
-   fgBytesRead += siz;
+
+   fBytesRead += got;
+   fgBytesRead += got;
    fReadCalls++;
    fgReadCalls++;
    fTagmaReadCalls++;
 
    if (gMonitoringWriter)
       gMonitoringWriter->SendFileReadProgress(this);
-   if (gPerfStats) {
+   if (gPerfStats)
       gPerfStats->FileReadEvent(this, len, start);
-   }
    return 1;
 }
 
@@ -2103,50 +2136,7 @@ Int_t TFile::ReadTagmaRange(char *buf, Long64_t pos, Int_t len)
       return -1;
    if (!fTagmaStore->Covers(static_cast<std::uint64_t>(pos), static_cast<std::uint64_t>(len)))
       return -1;
-
-   Double_t start = 0;
-   if (gPerfStats)
-      start = TTimeStamp();
-
-   if (fTagmaStore->IsMapped()) {
-      std::memcpy(buf, fTagmaStore->GetMapped() + pos, static_cast<std::size_t>(len));
-      fBytesRead += len;
-      fgBytesRead += len;
-      fReadCalls++;
-      fgReadCalls++;
-      fTagmaReadCalls++;
-      if (gMonitoringWriter)
-         gMonitoringWriter->SendFileReadProgress(this);
-      if (gPerfStats)
-         gPerfStats->FileReadEvent(this, len, start);
-      return 1;
-   }
-
-   Seek(pos);
-   ssize_t siz;
-   while ((siz = SysRead(fD, buf, len)) < 0 && GetErrno() == EINTR)
-      ResetErrno();
-
-   if (siz < 0) {
-      SysError("ReadTagmaRange", "error reading from file %s", GetName());
-      return -1;
-   }
-   if (siz != len) {
-      Error("ReadTagmaRange", "error reading all requested bytes from file %s, got %ld of %d", GetName(), (Long_t)siz,
-            len);
-      return -1;
-   }
-   fBytesRead += siz;
-   fgBytesRead += siz;
-   fReadCalls++;
-   fgReadCalls++;
-   fTagmaReadCalls++;
-
-   if (gMonitoringWriter)
-      gMonitoringWriter->SendFileReadProgress(this);
-   if (gPerfStats)
-      gPerfStats->FileReadEvent(this, len, start);
-   return 1;
+   return ServeTagma(buf, static_cast<std::uint64_t>(pos), len);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

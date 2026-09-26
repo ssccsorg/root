@@ -30,6 +30,7 @@
 #include "TDirectoryFile.h"
 #include "TUrl.h"
 #include "ROOT/RConcurrentHashColl.hxx"
+#include "ROOT/TTagmaSource.hxx"
 #include "ROOT/TTagmaStore.hxx"
 #include <optional>
 
@@ -170,6 +171,7 @@ protected:
    Int_t            fTagmaReadCalls{0};       ///<Number of reads served from the coordinate-indexed store
    Int_t            fSysReadCalls{0};         ///<Number of read system calls issued to the byte source
    std::shared_ptr<ROOT::TTagmaStore> fTagmaStore{nullptr}; ///<!Coordinate-indexed store layout (if any)
+   std::shared_ptr<ROOT::TTagmaSource> fTagmaSource{nullptr}; ///<!Byte source behind the coordinate read path (if any)
    TString          fRealName;                ///<Effective real file name (not original url)
    TString          fOption;                  ///<File options
    Char_t           fUnits{0};                ///<Number of bytes for file pointers
@@ -222,6 +224,15 @@ protected:
            Bool_t      FlushWriteCache();
            Int_t       ReadBufferViaCache(char *buf, Int_t len);
            Int_t       ReadBufferViaTagma(char *buf, Long64_t pos, Int_t len);
+           /// Rebuild the byte source from the attached store's mapping state.
+           /// Called when the source is absent or its kind no longer matches.
+           void UpdateTagmaSource();
+           /// Serve a covered store range through the byte source and account
+           /// for it. Returns 1 when served and -1 when the read failed.
+           Int_t ServeTagma(char *buf, std::uint64_t pos, Int_t len);
+           /// One positioned read of the store's byte source, retried on an
+           /// interrupted call. The system call and its counter live here.
+           std::int64_t SysReadTagma(char *buf, std::uint64_t pos, std::uint64_t len);
            Int_t       WriteBufferViaCache(const char *buf, Int_t len);
 
    ////////////////////////////////////////////////////////////////////////////////
