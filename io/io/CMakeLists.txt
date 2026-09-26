@@ -59,6 +59,7 @@ ROOT_LINKER_LIBRARY(RIO
   src/TStreamerInfoWriteBuffer.cxx
   src/TTagmaSchema.cxx
   src/TTagmaStore.cxx
+  src/TTagmaWriter.cxx
   src/TZIPFile.cxx
   $<TARGET_OBJECTS:RootPcmObjs>
   LIBRARIES

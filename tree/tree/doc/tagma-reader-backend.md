@@ -17,6 +17,7 @@ per-analysis migration.
 | Address arithmetic | `io/io/inc/ROOT/TTagmaStore.hxx` | Complete: composition, decomposition, offset, bounds, the data-region extent, and mmap |
 | Field table | `io/io/inc/ROOT/TTagmaSchema.hxx` | In the library: scalar and collection fields, counts resolved from the count scalar, the text form, and validation against the record size |
 | Store format | none | The index record and the packed data region are addressed by arithmetic. The axis layout and the field table still arrive as a caller-supplied struct and a sidecar, so the store is not self-describing |
+| Store producer | `io/io/inc/ROOT/TTagmaWriter.hxx` | Complete: the index region and the packed data region, written in one pass over the events, the counts read back out of the record the reader reads them from |
 | Byte source | `io/io/src/TFile.cxx` | Serves record-aligned requests of exactly the record size, and any range the store covers, the data slice among them, from the mapping when one is attached |
 | Branch read path | `tree/tree/src/TBranch.cxx` | `GetEntry` loads the tree's record for the entry and copies an array field's elements out of the slice, so `TTreeReader` and `RDataFrame` read store-backed events |
 | Entry hook | `tree/tree/src/TTree.cxx` | Fills the record in place, then drives the array branches. The short circuit stays for direct callers |
@@ -25,8 +26,10 @@ Consequences. Leaf access, `TTreeReader`, and `RDataFrame` reach the store
 through the ordinary branch machinery, so the store is a byte source under
 the existing interfaces and analysis code does not change. Two gaps remain.
 The axis layout and the field table are caller-supplied, so the store is not
-self-describing, and the writer emits a scalar projection of the event, so
-the collections the schema can express are not yet produced by it.
+self-describing, and the benchmark's conversion tool still writes a scalar
+projection of the event, so the store it converts carries the collections as
+their leading element; the store-side producer that carries them whole is in
+place.
 
 ## Target architecture
 
@@ -139,8 +142,11 @@ rejection of a count past the schema bound. The record is the addressing
 unit, so the file side of the comparison stays in
 `gtest-tree-tree-tagma-dataframe`. The mechanism is the standard one, a count
 branch and an array branch whose leaflist names the count, so the work is in
-the store side, not in a new leaf type. The writer that produces a store of
-this shape is the open half of this phase.
+the store side, not in a new leaf type. The store side is
+`ROOT::TTagmaWriter`, which writes the index region and the packed data region
+in one pass over the events, the base of the current event's slice being the
+end of the data region so far; the benchmark's conversion tool is what remains
+to adopt it.
 
 One constraint the leaf machinery imposes decides the chunk layout. A leaf
 created from a count-carrying leaflist reads element i at its address plus i
@@ -184,7 +190,7 @@ rewrite of the file hook.
 | :--- | :--- | :--- |
 | P1 | Done | `gtest-tree-tree-tagma-schema`: leaf access over the record bytes |
 | P4 | Done | `gtest-tree-tree-tagma-dataframe`: identical histogram from file and store, and `gtest-tree-tree-tagma-schema` reads through `TTreeReader` |
-| P5 | Reader done, producer open | `gtest-tree-tree-tagma-variable`: collections read through the branches, the array values and counts checked against the store bytes, and a count past the bound rejected. The writer still emits the scalar projection, so the store the benchmark measures carries 276 of its 320 fields as array leading elements |
+| P5 | Reader and producer done; benchmark conversion open | `gtest-tree-tree-tagma-variable`: collections read through the branches, the array values and counts checked against the store bytes, and a count past the bound rejected; `gtest-io-io-tagma-writer`: the producer lays out the index and data regions the reader addresses. The benchmark's conversion tool still emits the scalar projection, so the store it measures carries 276 of its 320 fields as array leading elements |
 | P2, P3, P6 | Open | |
 
 Both gates run against a build with `dataframe=ON`; the RDataFrame gate is

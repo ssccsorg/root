@@ -23,6 +23,7 @@
 
 #include "ROOT/TTagmaSchema.hxx"
 #include "ROOT/TTagmaStore.hxx"
+#include "ROOT/TTagmaWriter.hxx"
 #include "ROOT/TestSupport.hxx"
 
 #include "TFile.h"
@@ -264,6 +265,71 @@ TEST(TTagmaVariable, SchemaAndStoreBoundsAreEnforced)
 
    // The failing count is reported once, not on every read of the entry.
    ROOT_EXPECT_NODIAG(EXPECT_LE(tree.GetEntry(0), 0));
+
+   delete file;
+}
+
+// The store-side producer closes P5: the store TTagmaWriter lays out is the
+// store the leaf machinery reads, so the gate and the benchmark convert with
+// one producer.
+TEST(TTagmaVariable, TheWriterProducesAStoreTheLeavesRead)
+{
+   ROOT::TTagmaSchema schema = MakeSchema();
+   ROOT::TTagmaWriter writer(schema, kEntries);
+   ASSERT_TRUE(writer.Open(kStorePath));
+   for (int entry = 0; entry < kEntries; ++entry) {
+      char scalars[kDataBaseOffset] = {};
+      std::memcpy(scalars + 0, &kMuonCount[entry], sizeof(kMuonCount[entry]));
+      std::memcpy(scalars + 4, &kJetCount[entry], sizeof(kJetCount[entry]));
+      std::vector<char> slice;
+      const auto append = [&slice](float value) {
+         const char *bytes = reinterpret_cast<const char *>(&value);
+         slice.insert(slice.end(), bytes, bytes + sizeof(value));
+      };
+      for (std::uint32_t i = 0; i < kMuonCount[entry]; ++i)
+         append(MuonPt(entry, i));
+      for (std::uint32_t i = 0; i < kMuonCount[entry]; ++i)
+         append(MuonEta(entry, i));
+      for (std::uint32_t i = 0; i < kJetCount[entry]; ++i)
+         append(JetPt(entry, i));
+      ASSERT_TRUE(writer.AddEvent(scalars, slice.data())) << "entry " << entry;
+   }
+   ASSERT_TRUE(writer.Close());
+
+   TFile *file = OpenStore();
+   ASSERT_NE(file, nullptr);
+   ASSERT_FALSE(file->IsZombie());
+
+   TTree tree("Events", "Events");
+   tree.SetDirectory(file);
+   tree.SetEntries(kEntries);
+   tree.SetTagmaStore(std::make_shared<ROOT::TTagmaStore>(writer.GetLayout()));
+   ASSERT_TRUE(tree.SetTagmaSchema(schema));
+
+   TLeaf *nMuon = tree.GetLeaf("nMuon");
+   TLeaf *muonPtLeaf = tree.GetLeaf("Muon_pt");
+   TLeaf *muonEtaLeaf = tree.GetLeaf("Muon_eta");
+   TLeaf *jetPtLeaf = tree.GetLeaf("Jet_pt");
+   ASSERT_NE(nMuon, nullptr);
+   ASSERT_NE(muonPtLeaf, nullptr);
+   ASSERT_NE(muonEtaLeaf, nullptr);
+   ASSERT_NE(jetPtLeaf, nullptr);
+
+   const Int_t calls0 = file->GetReadCalls();
+   for (int entry = 0; entry < kEntries; ++entry) {
+      ASSERT_GT(tree.GetEntry(entry), 0) << "entry " << entry;
+      EXPECT_EQ(nMuon->GetValue(0), kMuonCount[entry]) << "entry " << entry;
+      EXPECT_EQ(tree.GetLeaf("nJet")->GetValue(0), kJetCount[entry]);
+      for (std::uint32_t i = 0; i < kMuonCount[entry]; ++i) {
+         EXPECT_FLOAT_EQ(muonPtLeaf->GetValue(i), MuonPt(entry, i)) << "entry " << entry;
+         EXPECT_FLOAT_EQ(muonEtaLeaf->GetValue(i), MuonEta(entry, i));
+      }
+      for (std::uint32_t i = 0; i < kJetCount[entry]; ++i)
+         EXPECT_FLOAT_EQ(jetPtLeaf->GetValue(i), JetPt(entry, i)) << "entry " << entry;
+   }
+   // The writer store is served by the coordinate path: two reads per event,
+   // the index record and the data slice.
+   EXPECT_EQ(file->GetReadCalls(), calls0 + 2 * kEntries);
 
    delete file;
 }
