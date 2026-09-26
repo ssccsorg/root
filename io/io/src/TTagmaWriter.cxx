@@ -10,6 +10,9 @@
 
 #include "ROOT/TTagmaWriter.hxx"
 
+#include "ROOT/TTagmaHeader.hxx"
+
+#include <array>
 #include <cstdio>
 #include <cstring>
 #include <limits>
@@ -18,7 +21,10 @@
 #include <vector>
 
 #if !defined(_WIN32)
+#include <sys/stat.h>
 #include <sys/types.h>
+#else
+#include <sys/stat.h>
 #endif
 
 namespace ROOT {
@@ -35,6 +41,21 @@ int Seek(std::FILE *file, std::uint64_t offset)
 #else
    return ::fseeko(file, static_cast<off_t>(offset), SEEK_SET);
 #endif
+}
+
+// File size in bytes, or zero when the file cannot be stat'ed.
+std::uint64_t FileSize(const char *path)
+{
+#if defined(_WIN32)
+   struct _stat64 st;
+   if (::_stat64(path, &st) != 0)
+      return 0;
+#else
+   struct stat st;
+   if (::stat(path, &st) != 0)
+      return 0;
+#endif
+   return static_cast<std::uint64_t>(st.st_size);
 }
 
 } // namespace
@@ -122,11 +143,112 @@ bool TTagmaWriter::Close()
 {
    if (fFile == nullptr)
       return false;
+   const bool complete = fAdded == fEntries;
+   const bool described = complete ? WriteDescriptor() : false;
    std::FILE *file = fFile;
    fFile = nullptr;
-   const bool complete = fAdded == fEntries;
    const bool flushed = std::fclose(file) == 0;
-   return complete && flushed;
+   return complete && described && flushed;
+}
+
+// Appends the field table and the descriptor after the payload, so the store
+// carries its own layout and schema.
+bool TTagmaWriter::WriteDescriptor()
+{
+   const std::string table = fSchema.Text();
+
+   TTagmaHeader header;
+   const TTagmaStore::Layout layout = GetLayout();
+   header.fRunMax = layout.fRunMax;
+   header.fLumiMax = layout.fLumiMax;
+   header.fEventMax = layout.fEventMax;
+   header.fRecordSize = layout.fRecordSize;
+   header.fDataSize = layout.fDataSize;
+   header.fFieldTableBytes = table.size();
+   header.fChecksum = TTagmaHeader::Checksum(table.data(), table.size());
+
+   if (Seek(fFile, IndexBytes() + fDataSize) != 0)
+      return false;
+   if (!table.empty() && std::fwrite(table.data(), 1, table.size(), fFile) != table.size())
+      return false;
+   const std::array<unsigned char, TTagmaHeader::kSize> bytes = header.Serialize();
+   return std::fwrite(bytes.data(), 1, bytes.size(), fFile) == bytes.size();
+}
+
+bool TTagmaWriter::ReadStore(const char *path, TTagmaStore::Layout *layout, TTagmaSchema *schema, std::string *why)
+{
+   const auto reject = [why](const std::string &reason) {
+      if (why)
+         *why = reason;
+      return false;
+   };
+   if (path == nullptr || layout == nullptr || schema == nullptr)
+      return reject("no path or output");
+
+   const std::uint64_t size = FileSize(path);
+   if (size < TTagmaHeader::kSize)
+      return reject("the store is shorter than its descriptor");
+
+   std::FILE *in = std::fopen(path, "rb");
+   if (in == nullptr)
+      return reject("cannot open the store");
+
+   const std::uint64_t descriptorOffset = size - TTagmaHeader::kSize;
+   std::array<unsigned char, TTagmaHeader::kSize> bytes{};
+   if (Seek(in, descriptorOffset) != 0 || std::fread(bytes.data(), 1, bytes.size(), in) != bytes.size()) {
+      std::fclose(in);
+      return reject("cannot read the descriptor");
+   }
+
+   TTagmaHeader header;
+   if (!TTagmaHeader::Parse(bytes.data(), bytes.size(), &header, why)) {
+      std::fclose(in);
+      return false;
+   }
+
+   // The field table sits immediately before the descriptor.
+   if (header.fFieldTableBytes > descriptorOffset) {
+      std::fclose(in);
+      return reject("the field table runs past the start of the store");
+   }
+   std::string table(static_cast<std::size_t>(header.fFieldTableBytes), '\0');
+   if (header.fFieldTableBytes > 0) {
+      if (Seek(in, descriptorOffset - header.fFieldTableBytes) != 0 ||
+          std::fread(&table[0], 1, table.size(), in) != table.size()) {
+         std::fclose(in);
+         return reject("cannot read the field table");
+      }
+   }
+   std::fclose(in);
+
+   if (TTagmaHeader::Checksum(table.data(), table.size()) != header.fChecksum)
+      return reject("the field table checksum disagrees");
+
+   TTagmaSchema parsed;
+   if (!parsed.ParseText(table))
+      return reject("the field table holds no valid field");
+
+   // The descriptor has to account for the whole file: the payload it names,
+   // the field table, and the descriptor itself.
+   const std::uint64_t max = std::numeric_limits<std::uint64_t>::max();
+   if (header.fRunMax > max / header.fLumiMax)
+      return reject("the descriptor names a store larger than uint64");
+   const std::uint64_t plane = header.fRunMax * header.fLumiMax;
+   if (plane > max / header.fEventMax)
+      return reject("the descriptor names a store larger than uint64");
+   const std::uint64_t records = plane * header.fEventMax;
+   if (records > max / header.fRecordSize)
+      return reject("the descriptor names a store larger than uint64");
+   const std::uint64_t payload = records * header.fRecordSize;
+   if (payload > max - header.fDataSize || payload + header.fDataSize > max - header.fFieldTableBytes)
+      return reject("the descriptor names a store larger than uint64");
+   const std::uint64_t expected = payload + header.fDataSize + header.fFieldTableBytes + TTagmaHeader::kSize;
+   if (expected != size)
+      return reject("the descriptor disagrees with the store size");
+
+   *layout = header.Layout();
+   *schema = std::move(parsed);
+   return true;
 }
 
 TTagmaStore::Layout TTagmaWriter::GetLayout() const

@@ -50,6 +50,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <string>
 
 namespace ROOT {
 
@@ -85,8 +86,17 @@ public:
 
    // Flushes and closes the file. Returns false when the writer holds no open
    // file, when a write failed, or when fewer than `entries` events were
-   // added.
+   // added. On the complete path the writer first appends the field table and
+   // the descriptor TTagmaHeader, so the store is self-describing.
    bool Close();
+
+   // Reads the descriptor a store written by the writer ends with, so a store
+   // carries its own layout and schema and needs no sidecar file. Returns
+   // false, with the reason in `why`, when the file is absent or short, the
+   // descriptor is malformed, the field table does not match its checksum, or
+   // the descriptor disagrees with the file size.
+   static bool
+   ReadStore(const char *path, TTagmaStore::Layout *layout, TTagmaSchema *schema, std::string *why = nullptr);
 
    // The layout the written store carries, for a TTagmaStore and the read
    // path. The record size is the schema's index record size and the data
@@ -95,6 +105,8 @@ public:
    TTagmaStore::Layout GetLayout() const;
 
 private:
+   bool WriteDescriptor();
+
    TTagmaSchema fSchema;
    std::uint64_t fEntries = 0;
    std::uint64_t fIndexRecordSize = 0;

@@ -14,6 +14,7 @@
 // read path consumes. The bytes are checked against the schema arithmetic, not
 // through the read path, which the tree gate covers.
 
+#include "ROOT/TTagmaHeader.hxx"
 #include "ROOT/TTagmaSchema.hxx"
 #include "ROOT/TTagmaStore.hxx"
 #include "ROOT/TTagmaWriter.hxx"
@@ -175,7 +176,9 @@ TEST(TTagmaWriter, LaysOutTheIndexAndDataRegions)
    const std::uint64_t indexBytes = kEntries * kIndexRecordSize;
 
    const std::vector<char> bytes = ReadFile();
-   ASSERT_EQ(bytes.size(), indexBytes + dataSize);
+   // The payload is the index region then the data region; the field table
+   // and the descriptor follow, checked by the descriptor tests.
+   ASSERT_GE(bytes.size(), indexBytes + dataSize);
 
    // The index region: one record per event, the counts at their offsets and
    // the data base at the offset the schema resolves.
@@ -187,7 +190,7 @@ TEST(TTagmaWriter, LaysOutTheIndexAndDataRegions)
       EXPECT_EQ(ReadAt<std::uint64_t>(bytes, record + kDataBaseOffset), expectedBase) << "entry " << entry;
       expectedBase += SliceBytes(entry);
    }
-   EXPECT_EQ(expectedBase, bytes.size());
+   EXPECT_EQ(expectedBase, indexBytes + dataSize);
 
    // The data region: each event's slice packs the fields in schema order,
    // each field contiguous, at the base the index record names.
@@ -291,4 +294,86 @@ TEST(TTagmaWriter, GetLayoutMatchesTheWrittenStore)
       base += SliceBytes(entry);
    }
    std::remove(kStorePath);
+}
+
+TEST(TTagmaWriter, DescriptorMakesTheStoreSelfDescribing)
+{
+   const ROOT::TTagmaSchema schema = MakeSchema();
+   WriteStore();
+
+   std::uint64_t dataSize = 0;
+   for (int entry = 0; entry < kEntries; ++entry)
+      dataSize += SliceBytes(entry);
+   const std::string table = schema.Text();
+
+   // The file is the payload, then the field table, then the fixed descriptor.
+   const std::vector<char> bytes = ReadFile();
+   ASSERT_EQ(bytes.size(), kEntries * kIndexRecordSize + dataSize + table.size() + ROOT::TTagmaHeader::kSize);
+
+   // The store carries its own layout and schema: no sidecar is read.
+   ROOT::TTagmaStore::Layout layout;
+   ROOT::TTagmaSchema read;
+   std::string why;
+   ASSERT_TRUE(ROOT::TTagmaWriter::ReadStore(kStorePath, &layout, &read, &why)) << why;
+   EXPECT_EQ(layout.fRunMax, 1u);
+   EXPECT_EQ(layout.fLumiMax, 1u);
+   EXPECT_EQ(layout.fEventMax, static_cast<std::uint64_t>(kEntries));
+   EXPECT_EQ(layout.fRecordSize, kIndexRecordSize);
+   EXPECT_EQ(layout.fDataSize, dataSize);
+   EXPECT_EQ(read.Text(), table);
+
+   std::remove(kStorePath);
+}
+
+TEST(TTagmaWriter, DescriptorRejectsACorruptedFieldTable)
+{
+   WriteStore();
+   std::vector<char> bytes = ReadFile();
+   ASSERT_GT(bytes.size(), ROOT::TTagmaHeader::kSize);
+
+   // Flip a byte of the field table, which sits just before the descriptor.
+   const std::size_t tableByte = bytes.size() - ROOT::TTagmaHeader::kSize - 1;
+   bytes[tableByte] = bytes[tableByte] == 'X' ? 'Y' : 'X';
+   FILE *out = std::fopen(kStorePath, "wb");
+   ASSERT_NE(out, nullptr);
+   ASSERT_EQ(std::fwrite(bytes.data(), 1, bytes.size(), out), bytes.size());
+   std::fclose(out);
+
+   ROOT::TTagmaStore::Layout layout;
+   ROOT::TTagmaSchema read;
+   std::string why;
+   EXPECT_FALSE(ROOT::TTagmaWriter::ReadStore(kStorePath, &layout, &read, &why));
+   EXPECT_FALSE(why.empty());
+   std::remove(kStorePath);
+}
+
+TEST(TTagmaWriter, DescriptorRejectsAFileWithoutOne)
+{
+   FILE *out = std::fopen(kStorePath, "wb");
+   ASSERT_NE(out, nullptr);
+   const std::vector<char> junk(256, 'j');
+   ASSERT_EQ(std::fwrite(junk.data(), 1, junk.size(), out), junk.size());
+   std::fclose(out);
+
+   ROOT::TTagmaStore::Layout layout;
+   ROOT::TTagmaSchema read;
+   std::string why;
+   EXPECT_FALSE(ROOT::TTagmaWriter::ReadStore(kStorePath, &layout, &read, &why));
+   EXPECT_FALSE(why.empty());
+   std::remove(kStorePath);
+}
+
+TEST(TTagmaWriter, SchemaTextRoundTripsAndRejectsGarbage)
+{
+   const ROOT::TTagmaSchema schema = MakeSchema();
+   const std::string text = schema.Text();
+
+   ROOT::TTagmaSchema parsed;
+   ASSERT_TRUE(parsed.ParseText(text));
+   EXPECT_EQ(parsed.Text(), text);
+
+   // A malformed line leaves the schema unchanged.
+   ROOT::TTagmaSchema unchanged = parsed;
+   EXPECT_FALSE(unchanged.ParseText("Muon_pt notanumber float nMuon 4\n"));
+   EXPECT_EQ(unchanged.Text(), text);
 }

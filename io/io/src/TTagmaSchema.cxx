@@ -77,6 +77,24 @@ const char *TTagmaSchema::LeafCode(EType type)
    return "";
 }
 
+const char *TTagmaSchema::TypeName(EType type)
+{
+   switch (type) {
+   case EType::kDouble: return "double";
+   case EType::kFloat: return "float";
+   case EType::kInt32: return "int32";
+   case EType::kUInt32: return "uint32";
+   case EType::kInt64: return "int64";
+   case EType::kUInt64: return "uint64";
+   case EType::kInt16: return "int16";
+   case EType::kUInt16: return "uint16";
+   case EType::kInt8: return "int8";
+   case EType::kUInt8: return "uint8";
+   case EType::kBool: return "bool";
+   }
+   return "";
+}
+
 bool TTagmaSchema::ParseType(const std::string &name, EType *type)
 {
    if (name == "double" || name == "Double_t")
@@ -307,8 +325,29 @@ bool TTagmaSchema::Read(const char *path)
    std::ifstream in(path);
    if (!in)
       return false;
-   fFields.clear();
-   Rebuild();
+   std::ostringstream buffer;
+   buffer << in.rdbuf();
+   return ParseText(buffer.str());
+}
+
+std::string TTagmaSchema::Text() const
+{
+   std::ostringstream out;
+   for (const auto &field : fFields) {
+      out << field.fName << ' ' << field.fOffset << ' ' << TypeName(field.fType);
+      if (field.IsArray())
+         out << ' ' << field.fCountField << ' ' << field.fMaxCount;
+      out << '\n';
+   }
+   return out.str();
+}
+
+bool TTagmaSchema::ParseText(const std::string &text)
+{
+   // Parse into a fresh schema, so a malformed line leaves this one
+   // unchanged.
+   TTagmaSchema fresh;
+   std::istringstream in(text);
    std::string line;
    while (std::getline(in, line)) {
       std::istringstream probe(line);
@@ -316,13 +355,13 @@ bool TTagmaSchema::Read(const char *path)
       probe >> first;
       if (first.empty() || first[0] == '#')
          continue;
-      if (!AddLine(line)) {
-         fFields.clear();
-         Rebuild();
+      if (!fresh.AddLine(line))
          return false;
-      }
    }
-   return !fFields.empty();
+   if (fresh.fFields.empty())
+      return false;
+   *this = std::move(fresh);
+   return true;
 }
 
 bool TTagmaSchema::Validate(std::uint64_t indexRecordSize, std::string *why) const

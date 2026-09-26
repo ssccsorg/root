@@ -89,6 +89,8 @@ public:
 
    static std::uint64_t SizeOf(EType type);
    static const char *LeafCode(EType type);
+   // The canonical name ParseType accepts for a type, used by Text.
+   static const char *TypeName(EType type);
    static bool ParseType(const std::string &name, EType *type);
    // True for the types a count field may use.
    static bool IsIntegral(EType type);
@@ -135,6 +137,17 @@ public:
    // non-blank character is '#' are ignored. Returns false when the file
    // cannot be read or holds no valid field.
    bool Read(const char *path);
+
+   // The text form the sidecar holds and AddLine reads back, one field per
+   // line in field order. A scalar field is `<name> <offset> <type>`; an
+   // array field is `<name> <offset> <type> <count> <maxCount>`. Ended by a
+   // newline after the last line.
+   std::string Text() const;
+
+   // Parses the text form. Blank lines and '#' comment lines are ignored.
+   // Returns false, leaving the schema unchanged, on a malformed line or
+   // when the text holds no field.
+   bool ParseText(const std::string &text);
 
    // Rejects a schema that is empty, whose index record does not fit the
    // store, whose scalar or object fields overlap, whose collection names an
