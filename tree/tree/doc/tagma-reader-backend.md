@@ -16,7 +16,7 @@ per-analysis migration.
 | :--- | :--- | :--- |
 | Address arithmetic | `io/io/inc/ROOT/TTagmaStore.hxx` | Complete: composition, decomposition, offset, bounds, the data-region extent, and mmap |
 | Field table | `io/io/inc/ROOT/TTagmaSchema.hxx` | In the library: scalar and collection fields, counts resolved from the count scalar, the text form, and validation against the record size |
-| Store format | `io/io/inc/ROOT/TTagmaHeader.hxx` | The index record and the packed data region are addressed by arithmetic, and a store the writer produces ends with a descriptor that names the axis maxima, the record size, the data size, and the field table, so the store is self-describing. The read path still takes the layout and the schema from the caller |
+| Store format | `io/io/inc/ROOT/TTagmaHeader.hxx` | The index record and the packed data region are addressed by arithmetic, and a store the writer produces ends with a descriptor that names the axis maxima, the record size, the data size, and the field table, so the store is self-describing. The read path takes the layout and the schema from the caller, or from the descriptor itself through `TTree::SetTagmaStore(path)` |
 | Store producer | `io/io/inc/ROOT/TTagmaWriter.hxx` | Complete: the index region and the packed data region, written in one pass over the events, the counts read back out of the record the reader reads them from |
 | Byte source | `io/io/src/TFile.cxx` | Serves record-aligned requests of exactly the record size, and any range the store covers, the data slice among them, from the mapping when one is attached |
 | Branch read path | `tree/tree/src/TBranch.cxx` | `GetEntry` loads the tree's record for the entry and copies an array field's elements out of the slice, so `TTreeReader` and `RDataFrame` read store-backed events |
@@ -191,7 +191,7 @@ rewrite of the file hook.
 | P1 | Done | `gtest-tree-tree-tagma-schema`: leaf access over the record bytes |
 | P4 | Done | `gtest-tree-tree-tagma-dataframe`: identical histogram from file and store, and `gtest-tree-tree-tagma-schema` reads through `TTreeReader` |
 | P5 | Reader and producer done; benchmark conversion open | `gtest-tree-tree-tagma-variable`: collections read through the branches, the array values and counts checked against the store bytes, and a count past the bound rejected; `gtest-io-io-tagma-writer`: the producer lays out the index and data regions the reader addresses. The benchmark's conversion tool still emits the scalar projection, so the store it measures carries 276 of its 320 fields as array leading elements |
-| P3 | Descriptor done | `gtest-io-io-tagma-writer`: a store the writer produces names its layout and field table in a trailing descriptor, and a reader recovers both with no sidecar; the read path still takes the layout from the caller, and the conversion tool still widens to double |
+| P3 | Descriptor done | `gtest-io-io-tagma-writer`: a store the writer produces names its layout and field table in a trailing descriptor, and a reader recovers both with no sidecar; `gtest-tree-tree-tagma-variable`: the tree attaches such a store from its path alone. The conversion tool still widens to double |
 | P2, P6 | Open | |
 
 Both gates run against a build with `dataframe=ON`; the RDataFrame gate is

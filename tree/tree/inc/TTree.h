@@ -718,6 +718,12 @@ public:
    static  void            SetBranchStyle(Int_t style = 1);  //style=0 for old branch, =1 for new branch style
    virtual Int_t           SetCacheSize(Long64_t cachesize = -1);
    virtual void            SetTagmaStore(std::shared_ptr<ROOT::TTagmaStore> store);
+   /// Attach the store a self-describing file carries: read the trailing
+   /// descriptor TTagmaHeader from `path`, attach the store to this tree and
+   /// its file, and materialize the schema, so a self-describing store needs
+   /// no sidecar file and no caller-supplied layout. Returns kFALSE, with the
+   /// reason logged, when the descriptor cannot be read.
+   virtual Bool_t SetTagmaStore(const char *path);
    virtual std::shared_ptr<ROOT::TTagmaStore> GetTagmaStore() const { return fTagmaStore; }
    /// Materialize one branch per schema field over the record buffer, so
    /// that leaf access reads the store-backed record. The record buffer is

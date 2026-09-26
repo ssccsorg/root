@@ -392,6 +392,7 @@ End_Macro
 #include "TTree.h"
 
 #include "ROOT/TIOFeatures.hxx"
+#include "ROOT/TTagmaWriter.hxx"
 #include "TArrayC.h"
 #include "TBufferFile.h"
 #include "TBaseClass.h"
@@ -6079,6 +6080,35 @@ void TTree::SetTagmaStore(std::shared_ptr<ROOT::TTagmaStore> store)
    TFile *file = fDirectory ? fDirectory->GetFile() : nullptr;
    if (file != nullptr && fTagmaStore && !file->GetTagmaStore())
       file->SetTagmaStore(fTagmaStore);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Attach the coordinate-indexed store a self-describing file carries.
+///
+/// A store written by TTagmaWriter ends with the descriptor TTagmaHeader,
+/// which names the axis maxima, the record size, the data size, and the field
+/// table. This overload reads it from `path`, attaches the store to this tree
+/// and its file, and materializes the schema, so a self-describing store
+/// reaches the leaf machinery with no sidecar file and no caller-supplied
+/// layout. Returns kFALSE, with the reason logged, when the descriptor cannot
+/// be read or the schema does not materialize.
+
+Bool_t TTree::SetTagmaStore(const char *path)
+{
+   ROOT::TTagmaStore::Layout layout;
+   ROOT::TTagmaSchema schema;
+   std::string why;
+   if (!ROOT::TTagmaWriter::ReadStore(path, &layout, &schema, &why)) {
+      Error("SetTagmaStore", "%s", why.c_str());
+      return kFALSE;
+   }
+   try {
+      SetTagmaStore(std::make_shared<ROOT::TTagmaStore>(layout));
+   } catch (const std::invalid_argument &e) {
+      Error("SetTagmaStore", "%s", e.what());
+      return kFALSE;
+   }
+   return SetTagmaSchema(schema);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

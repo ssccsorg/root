@@ -150,6 +150,35 @@ void WriteStore()
    std::fclose(out);
 }
 
+// Writes the store with the store-side producer, so a test reads back what
+// the conversion path lays out. `layout` receives the layout the writer
+// resolved, or is left alone when null.
+void WriteStoreWithWriter(ROOT::TTagmaStore::Layout *layout)
+{
+   ROOT::TTagmaWriter writer(MakeSchema(), kEntries);
+   ASSERT_TRUE(writer.Open(kStorePath));
+   for (int entry = 0; entry < kEntries; ++entry) {
+      char scalars[kDataBaseOffset] = {};
+      std::memcpy(scalars + 0, &kMuonCount[entry], sizeof(kMuonCount[entry]));
+      std::memcpy(scalars + 4, &kJetCount[entry], sizeof(kJetCount[entry]));
+      std::vector<char> slice;
+      const auto append = [&slice](float value) {
+         const char *bytes = reinterpret_cast<const char *>(&value);
+         slice.insert(slice.end(), bytes, bytes + sizeof(value));
+      };
+      for (std::uint32_t i = 0; i < kMuonCount[entry]; ++i)
+         append(MuonPt(entry, i));
+      for (std::uint32_t i = 0; i < kMuonCount[entry]; ++i)
+         append(MuonEta(entry, i));
+      for (std::uint32_t i = 0; i < kJetCount[entry]; ++i)
+         append(JetPt(entry, i));
+      ASSERT_TRUE(writer.AddEvent(scalars, slice.data())) << "entry " << entry;
+   }
+   ASSERT_TRUE(writer.Close());
+   if (layout != nullptr)
+      *layout = writer.GetLayout();
+}
+
 TFile *OpenStore()
 {
    return TFile::Open((std::string(kStorePath) + "?filetype=raw").c_str());
@@ -274,27 +303,8 @@ TEST(TTagmaVariable, SchemaAndStoreBoundsAreEnforced)
 // one producer.
 TEST(TTagmaVariable, TheWriterProducesAStoreTheLeavesRead)
 {
-   ROOT::TTagmaSchema schema = MakeSchema();
-   ROOT::TTagmaWriter writer(schema, kEntries);
-   ASSERT_TRUE(writer.Open(kStorePath));
-   for (int entry = 0; entry < kEntries; ++entry) {
-      char scalars[kDataBaseOffset] = {};
-      std::memcpy(scalars + 0, &kMuonCount[entry], sizeof(kMuonCount[entry]));
-      std::memcpy(scalars + 4, &kJetCount[entry], sizeof(kJetCount[entry]));
-      std::vector<char> slice;
-      const auto append = [&slice](float value) {
-         const char *bytes = reinterpret_cast<const char *>(&value);
-         slice.insert(slice.end(), bytes, bytes + sizeof(value));
-      };
-      for (std::uint32_t i = 0; i < kMuonCount[entry]; ++i)
-         append(MuonPt(entry, i));
-      for (std::uint32_t i = 0; i < kMuonCount[entry]; ++i)
-         append(MuonEta(entry, i));
-      for (std::uint32_t i = 0; i < kJetCount[entry]; ++i)
-         append(JetPt(entry, i));
-      ASSERT_TRUE(writer.AddEvent(scalars, slice.data())) << "entry " << entry;
-   }
-   ASSERT_TRUE(writer.Close());
+   ROOT::TTagmaStore::Layout layout;
+   WriteStoreWithWriter(&layout);
 
    TFile *file = OpenStore();
    ASSERT_NE(file, nullptr);
@@ -303,8 +313,8 @@ TEST(TTagmaVariable, TheWriterProducesAStoreTheLeavesRead)
    TTree tree("Events", "Events");
    tree.SetDirectory(file);
    tree.SetEntries(kEntries);
-   tree.SetTagmaStore(std::make_shared<ROOT::TTagmaStore>(writer.GetLayout()));
-   ASSERT_TRUE(tree.SetTagmaSchema(schema));
+   tree.SetTagmaStore(std::make_shared<ROOT::TTagmaStore>(layout));
+   ASSERT_TRUE(tree.SetTagmaSchema(MakeSchema()));
 
    TLeaf *nMuon = tree.GetLeaf("nMuon");
    TLeaf *muonPtLeaf = tree.GetLeaf("Muon_pt");
@@ -330,6 +340,42 @@ TEST(TTagmaVariable, TheWriterProducesAStoreTheLeavesRead)
    // The writer store is served by the coordinate path: two reads per event,
    // the index record and the data slice.
    EXPECT_EQ(file->GetReadCalls(), calls0 + 2 * kEntries);
+
+   delete file;
+}
+
+// The self-describing gate: the store names its own layout and schema in its
+// trailing descriptor, so the tree attaches it from the file path alone.
+TEST(TTagmaVariable, ASelfDescribingStoreReadsWithoutASidecar)
+{
+   WriteStoreWithWriter(nullptr);
+
+   TFile *file = OpenStore();
+   ASSERT_NE(file, nullptr);
+   ASSERT_FALSE(file->IsZombie());
+
+   TTree tree("Events", "Events");
+   tree.SetDirectory(file);
+   tree.SetEntries(kEntries);
+   ASSERT_TRUE(tree.SetTagmaStore(kStorePath));
+   EXPECT_FALSE(tree.GetTagmaSchema().IsEmpty());
+
+   TLeaf *nMuon = tree.GetLeaf("nMuon");
+   TLeaf *muonPtLeaf = tree.GetLeaf("Muon_pt");
+   TLeaf *jetPtLeaf = tree.GetLeaf("Jet_pt");
+   ASSERT_NE(nMuon, nullptr);
+   ASSERT_NE(muonPtLeaf, nullptr);
+   ASSERT_NE(jetPtLeaf, nullptr);
+
+   for (int entry = 0; entry < kEntries; ++entry) {
+      ASSERT_GT(tree.GetEntry(entry), 0) << "entry " << entry;
+      EXPECT_EQ(nMuon->GetValue(0), kMuonCount[entry]) << "entry " << entry;
+      EXPECT_EQ(tree.GetLeaf("nJet")->GetValue(0), kJetCount[entry]);
+      for (std::uint32_t i = 0; i < kMuonCount[entry]; ++i)
+         EXPECT_FLOAT_EQ(muonPtLeaf->GetValue(i), MuonPt(entry, i)) << "entry " << entry;
+      for (std::uint32_t i = 0; i < kJetCount[entry]; ++i)
+         EXPECT_FLOAT_EQ(jetPtLeaf->GetValue(i), JetPt(entry, i)) << "entry " << entry;
+   }
 
    delete file;
 }
