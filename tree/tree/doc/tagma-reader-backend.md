@@ -31,12 +31,13 @@ Each claim is carried by a gate, and the gate is what the claim rests on:
 | The store can be produced, not only read | `gtest-io-io-tagma-writer` |
 | A store is self-describing, so it needs no sidecar and is reproducible | `gtest-io-io-tagma-writer`, `gtest-tree-tree-tagma-variable` |
 | The byte source behind the file hook is a seam, so a new source is an implementation, not a hook branch | `TTagmaSource`, with the existing tagma gtests and the benchmark rows unchanged |
+| Several stores address as one dataset, so a coordinate resolves to a file and a record | `gtest-io-io-tagma-dataset` |
 | The build consumes the canonical engine reproducibly | the pinned syntagma revision in `tree/tree/CMakeLists.txt` |
 
 What the measured claim does not yet cover, and what the open phases are for:
 the full-dataset re-measurement on the collection-carrying store (#120), the
-dataset-level layout over the run and lumi axes (P6), and the compressed and
-cached byte sources the record source seam admits.
+dataset-wide read the addressing admits and the concurrency half of P6, and
+the compressed and cached byte sources the record source seam admits.
 
 ## Where the code stands
 
@@ -47,6 +48,7 @@ cached byte sources the record source seam admits.
 | Store format | `io/io/inc/ROOT/TTagmaHeader.hxx` | The index record and the packed data region are addressed by arithmetic, and a store the writer produces ends with a descriptor that names the axis maxima, the record size, the data size, and the field table, so the store is self-describing. The read path takes the layout and the schema from the caller, or from the descriptor itself through `TTree::SetTagmaStore(path)` |
 | Store producer | `io/io/inc/ROOT/TTagmaWriter.hxx` | Complete: the index region and the packed data region, written in one pass over the events, the counts read back out of the record the reader reads them from |
 | Byte source | `io/io/inc/ROOT/TTagmaSource.hxx`, `io/io/src/TFile.cxx` | The file hook resolves a record or a covered range and delegates to `TTagmaSource`: a mapped source copies from the mapping and issues no read system call, a positioned source takes one read. A new byte source is an implementation of the interface |
+| Dataset | `io/io/inc/ROOT/TTagmaDataset.hxx` | Files laid out along the run axis, so a coordinate resolves to the file that owns it and the record inside it, with the per-file ranges derived from the descriptors and a requested mapping serving the record |
 | Branch read path | `tree/tree/src/TBranch.cxx` | `GetEntry` loads the tree's record for the entry and copies an array field's elements out of the slice, so `TTreeReader` and `RDataFrame` read store-backed events |
 | Entry hook | `tree/tree/src/TTree.cxx` | Fills the record in place, then drives the array branches. The short circuit stays for direct callers |
 
@@ -191,10 +193,14 @@ of it.
 P6. Dataset addressing and concurrency.
 A dataset object holding per-file axis ranges so a (run, luminosity block,
 event number) coordinate resolves to a file and an offset, with the axis
-maxima derived from the data. Make the hook counters thread-safe, and drive
-the standard implicit multi-threading path.
-Gate: a measured read that exercises the multi-axis composition, and a
-multithread run against a bounded baseline cache.
+maxima derived from the data. `ROOT::TTagmaDataset` lays the files out along
+the run axis in the order they are added, reads each file's descriptor for its
+axes and record size, and resolves a coordinate to the file and the record
+inside it. The remaining half is concurrency: make the hook counters
+thread-safe, and drive the standard implicit multi-threading path.
+Gate: `gtest-io-io-tagma-dataset` exercises the multi-axis composition and the
+record read across the files; a multithread run against a bounded baseline
+cache remains.
 
 ## Risks
 
@@ -222,7 +228,7 @@ rewrite of the file hook.
 | P5 | Reader and producer done; benchmark conversion open | `gtest-tree-tree-tagma-variable`: collections read through the branches, the array values and counts checked against the store bytes, and a count past the bound rejected; `gtest-io-io-tagma-writer`: the producer lays out the index and data regions the reader addresses. The benchmark's conversion tool still emits the scalar projection, so the store it measures carries 276 of its 320 fields as array leading elements |
 | P3 | Descriptor done | `gtest-io-io-tagma-writer`: a store the writer produces names its layout and field table in a trailing descriptor, and a reader recovers both with no sidecar; `gtest-tree-tree-tagma-variable`: the tree attaches such a store from its path alone; the syntagma revision is pinned to the measured commit. The conversion tool still widens to double |
 | P2 | Done | The record source seam: `TFile` delegates a record and a covered range to `TTagmaSource`, with a mapped and a positioned implementation. The existing tagma gtests and the benchmark rows are unchanged |
-| P6 | Open | |
+| P6 | Dataset addressing done; concurrency open | `gtest-io-io-tagma-dataset`: files laid out along the run axis, a coordinate resolved to the file that owns it and the record inside it, the flat index round-tripped, out-of-range coordinates rejected, and a record read from the owning file. The hook counters are not yet thread-safe |
 
 Both gates run against a build with `dataframe=ON`; the RDataFrame gate is
 registered only when that module is enabled.

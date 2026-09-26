@@ -5,6 +5,7 @@
 # For the list of contributors see $ROOTSYS/README/CREDITS.
 
 ROOT_ADD_GTEST(RRawFile RRawFile.cxx LIBRARIES RIO)
+ROOT_ADD_GTEST(tagma_dataset tagma_dataset.cxx LIBRARIES RIO)
 ROOT_ADD_GTEST(tagma_store tagma_store.cxx LIBRARIES RIO)
 ROOT_ADD_GTEST(tagma_writer tagma_writer.cxx LIBRARIES RIO)
 ROOT_ADD_GTEST(TFile TFileTests.cxx LIBRARIES RIO)
