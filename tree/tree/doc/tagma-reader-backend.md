@@ -10,6 +10,33 @@ machinery, so that ordinary leaf access, `TTreeReader`, and `RDataFrame`
 read store-backed events without a new user-facing API and without
 per-analysis migration.
 
+## What this proves
+
+The fork exists to test one claim: replacing the branch, basket, and cache
+traversal of the TTree read path with closed-form coordinate addressing
+removes the per-request I/O overhead of the production pattern, behind the
+unchanged TTree API, with analysis results that are identical. The measured
+report (`ssccsorg/ssccs#120`) states the claim and the ratios. This document
+tracks the code that has to hold for the claim to generalize from the
+measured fixed-width projection to a store that carries the data.
+
+Each claim is carried by a gate, and the gate is what the claim rests on:
+
+| Claim | Gate |
+| :--- | :--- |
+| An event resolves to a byte offset by closed-form arithmetic, no hash and no index scan | `gtest-io-io-tagma-store`: composition round trip, closed-form offset, bounds, extent |
+| A store serves fixed-width records through the existing file layer, one read per event | `gtest-io-io-tagma-store`: the `TFile` hook; `gtest-tree-tree-tagma-record` |
+| Ordinary leaf access, `TTreeReader`, and `RDataFrame` read store-backed events with no new API | `gtest-tree-tree-tagma-schema`, `gtest-tree-tree-tagma-dataframe` |
+| A store carries variable-length collections, read through the ordinary branch machinery, at two reads per event | `gtest-tree-tree-tagma-variable` |
+| The store can be produced, not only read | `gtest-io-io-tagma-writer` |
+| A store is self-describing, so it needs no sidecar and is reproducible | `gtest-io-io-tagma-writer`, `gtest-tree-tree-tagma-variable` |
+| The build consumes the canonical engine reproducibly | the pinned syntagma revision in `tree/tree/CMakeLists.txt` |
+
+What the measured claim does not yet cover, and what the open phases are for:
+the full-dataset re-measurement on the collection-carrying store (#120), the
+dataset-level layout over the run and lumi axes (P6), and the compressed and
+cached byte sources (P2).
+
 ## Where the code stands
 
 | Layer | File | State |
@@ -71,11 +98,12 @@ implementation. `TFile::ReadBufferViaTagma` delegates to it.
 Gate: the existing tagma gtests and the benchmark rows are unchanged.
 
 P3. Self-describing store.
-Header with magic, version, axis maxima, record size, field table, and
-checksum; the sidecars go away; the writer preserves field types instead of
-widening every value to `double`. Pin the syntagma dependency to a tag or
-commit: `GIT_TAG main` in `tree/tree/CMakeLists.txt` makes the build
-unreproducible and needs network access at configure time.
+A descriptor with magic, version, axis maxima, record size, data size, and
+field table, written after the payload so the addressing stays closed-form
+from zero; the sidecars go away; the writer preserves field types instead of
+widening every value to `double`. The syntagma dependency is pinned to the
+measured commit in `tree/tree/CMakeLists.txt`, so the build is reproducible;
+a cold configure still needs network to fetch the pinned revision.
 Gate: a store written by the writer opens and reads with no sidecar files.
 
 P4. Interoperability gate.
@@ -191,7 +219,7 @@ rewrite of the file hook.
 | P1 | Done | `gtest-tree-tree-tagma-schema`: leaf access over the record bytes |
 | P4 | Done | `gtest-tree-tree-tagma-dataframe`: identical histogram from file and store, and `gtest-tree-tree-tagma-schema` reads through `TTreeReader` |
 | P5 | Reader and producer done; benchmark conversion open | `gtest-tree-tree-tagma-variable`: collections read through the branches, the array values and counts checked against the store bytes, and a count past the bound rejected; `gtest-io-io-tagma-writer`: the producer lays out the index and data regions the reader addresses. The benchmark's conversion tool still emits the scalar projection, so the store it measures carries 276 of its 320 fields as array leading elements |
-| P3 | Descriptor done | `gtest-io-io-tagma-writer`: a store the writer produces names its layout and field table in a trailing descriptor, and a reader recovers both with no sidecar; `gtest-tree-tree-tagma-variable`: the tree attaches such a store from its path alone. The conversion tool still widens to double |
+| P3 | Descriptor done | `gtest-io-io-tagma-writer`: a store the writer produces names its layout and field table in a trailing descriptor, and a reader recovers both with no sidecar; `gtest-tree-tree-tagma-variable`: the tree attaches such a store from its path alone; the syntagma revision is pinned to the measured commit. The conversion tool still widens to double |
 | P2, P6 | Open | |
 
 Both gates run against a build with `dataframe=ON`; the RDataFrame gate is
