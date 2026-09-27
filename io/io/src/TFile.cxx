@@ -2063,14 +2063,33 @@ void TFile::UpdateTagmaSource()
 /// One positioned read of the store's byte source, retried on an interrupted
 /// call. The read system call and the counter it maintains live here, in the
 /// file, so the byte source stays free of the medium.
+///
+/// The read is positioned, so it does not move the file offset the ordinary
+/// path maintains: several threads can share one file and one byte source
+/// without serializing on the offset, and the single read system call stays
+/// the file's.
 
 std::int64_t TFile::SysReadTagma(char *buf, std::uint64_t pos, std::uint64_t len)
 {
+#ifndef WIN32
+   ssize_t siz;
+   while (true) {
+      fSysReadCalls++;
+      siz = ::pread(fD, buf, static_cast<std::size_t>(len), static_cast<off_t>(pos));
+      if (siz >= 0 || GetErrno() != EINTR)
+         break;
+      ResetErrno();
+   }
+   return siz;
+#else
+   // No positional read through this layer on Windows: fall back to the
+   // seek-and-read the ordinary path uses.
    Seek(static_cast<Long64_t>(pos));
    ssize_t siz;
    while ((siz = SysRead(fD, buf, static_cast<Int_t>(len))) < 0 && GetErrno() == EINTR)
       ResetErrno();
    return siz;
+#endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////

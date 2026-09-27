@@ -168,8 +168,8 @@ protected:
    Int_t            fWritten{0};              ///<Number of objects written so far
    Int_t            fNProcessIDs{0};          ///<Number of TProcessID written to this file
    Int_t            fReadCalls{0};            ///<Number of read calls ( not counting the cache calls )
-   Int_t            fTagmaReadCalls{0};       ///<Number of reads served from the coordinate-indexed store
-   Int_t            fSysReadCalls{0};         ///<Number of read system calls issued to the byte source
+   std::atomic<Int_t> fTagmaReadCalls{0};     ///< Number of reads served from the coordinate-indexed store
+   std::atomic<Int_t> fSysReadCalls{0};       ///< Number of read system calls issued to the byte source
    std::shared_ptr<ROOT::TTagmaStore> fTagmaStore{nullptr}; ///<!Coordinate-indexed store layout (if any)
    std::shared_ptr<ROOT::TTagmaSource> fTagmaSource{nullptr}; ///<!Byte source behind the coordinate read path (if any)
    TString          fRealName;                ///<Effective real file name (not original url)
