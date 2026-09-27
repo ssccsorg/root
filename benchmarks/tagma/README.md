@@ -131,11 +131,13 @@ rows; driving the branches a whole-event schema materializes costs about 50
 microseconds per event, so the same coordinate row with the branches active
 runs 117.6 s and the analysis workload 123.4 s against the baseline's 180.3 s.
 The store reads the whole slice whatever the selection, so it is
-column-independent: RDataFrame on the same file with a warm cache runs 0.448 s
-for one column, 0.539 s for the two-column selection and 135.319 s for the 974
-scalar columns. Upstream therefore leads on narrow selections and the store
-leads on the whole-event read. The one-time conversion is 1,963.3 s against
-226.3 s for the mode-0 projection.
+column-independent: RDataFrame on the same file with a warm cache, the column
+sum runs 0.132 s at one column, 1.716 s at eight, 7.411 s at 32, 16.806 s at 64
+and 139.798 s at the whole 974 scalar columns, so the store's fixed 10.2 s
+crosses that ramp near 42 columns (about 11 for the fixed-width store).
+Upstream therefore leads on narrow selections and the store leads on the
+whole-event read. The one-time conversion is 1,963.3 s against 226.3 s for the
+mode-0 projection.
 
 Append a positive eighth argument to also measure the baseline with
 the TTreeCache enabled on a fresh file open: the cache efficiency and

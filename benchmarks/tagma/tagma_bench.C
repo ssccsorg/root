@@ -105,10 +105,11 @@
 // the baseline's 180.3 s, so delivery, not the read path, decides that
 // comparison. The store reads the whole slice whatever the selection, so it
 // is column-independent: against RDataFrame on the same file with a warm
-// cache, entries 0.029 s, one column 0.448 s, the two-column selection
-// 0.539 s, the 974 scalar columns 135.319 s. The store's 10.2 s sits
-// between, so upstream leads on narrow selections and the store leads on
-// the whole-event read.
+// cache, the column sum runs 0.132 s at one column, 1.716 s at eight,
+// 7.411 s at 32, 16.806 s at 64 and 139.798 s at the whole 974 scalar
+// columns. The store's fixed 10.2 s crosses that ramp near 42 columns,
+// against about 11 for the fixed-width store, so upstream leads on narrow
+// selections and the store leads on the whole-event read.
 //
 // One-time conversion into the collection store: 1,963.3 s, against 226.3 s
 // for the mode-0 projection.

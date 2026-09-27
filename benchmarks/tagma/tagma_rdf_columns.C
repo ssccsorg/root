@@ -6,7 +6,9 @@
 // TTreeReader reads the active columns through their branches and never
 // calls TTree::GetEntry. This macro measures that path on the same events,
 // so the coordinate store is compared against ROOT's best column-selective
-// reader rather than against a reader that walks every branch.
+// reader rather than against a reader that walks every branch. The sweep
+// rows sum the first N scalar columns, so the column count where the store's
+// column-independent read stops winning is visible.
 //
 // Usage:
 //   root -l -b -q 'tagma_rdf_columns.C("/path/to/source.root", "Events")'
@@ -180,6 +182,22 @@ int tagma_rdf_columns(const char *url, const char *tree_name = "Events", Long64_
       PrintRow(Measure("store columns", url, tree_name, max_entries, [&expression](ROOT::RDataFrame &df) {
          return df.Define("tagma_sum", expression).Sum("tagma_sum").GetValue();
       }));
+
+      // The crossover sweep: the same sum over the first N scalar columns,
+      // so the column count where the store's column-independent read stops
+      // winning is visible.
+      const int sweep[] = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512};
+      for (int n : sweep) {
+         if (static_cast<std::size_t>(n) > scalarColumns.size())
+            break;
+         std::vector<std::string> subset(scalarColumns.begin(), scalarColumns.begin() + n);
+         const std::string subsetExpression = SumExpression(subset);
+         char name[32];
+         std::snprintf(name, sizeof(name), "sweep %d", n);
+         PrintRow(Measure(name, url, tree_name, max_entries, [&subsetExpression](ROOT::RDataFrame &df) {
+            return df.Define("tagma_sum", subsetExpression).Sum("tagma_sum").GetValue();
+         }));
+      }
    }
 
    return 0;
