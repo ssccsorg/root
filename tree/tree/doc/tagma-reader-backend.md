@@ -40,7 +40,9 @@ What the measured claim does not yet cover, and what the open phases are for:
 the dataset-wide read the addressing admits, and the compressed and cached
 byte sources the record source seam admits. The collection store is measured
 (one run, recorded in the harness): its advantage is on the read path, and it
-is column-independent, so a column-selective reader leads below the crossover.
+is column-independent, so a column-selective reader leads below the crossover
+(about 42 scalar columns for the collection store, against about 11 for the
+fixed-width projection).
 
 ## Where the code stands
 
