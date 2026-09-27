@@ -75,11 +75,11 @@ third argument for a quick check.
 ## Real-data run against a converted store
 
 The benchmark serves real converted records when the store is built
-with the preparation tool first. The tool reads each event (cache on)
-and writes a fixed-width record holding the first (record_size / 8)
-scalar leaf values as doubles, zero-padded, plus a sidecar checksum
-file. The conversion cost is reported separately from the read-path
-measurement.
+with the preparation tool first. In its default mode (0) the tool reads
+each event (cache on) and writes a fixed-width record holding the first
+(record_size / 8) scalar leaf values as doubles, zero-padded, plus a
+sidecar checksum file. The conversion cost is reported separately from
+the read-path measurement.
 
 ```bash
 ../root-build-tagma/bin/root -l -b -q 'tagma_make_store.C("/path/to/local.root", "Events", "tagma_store.bin", 2560)'
@@ -91,6 +91,21 @@ records (size check) and that the bytes the coordinate paths serve
 match the sidecar checksum, so the measured rows run against real
 event data, not a pattern. Without the store path argument the
 benchmark generates a deterministic pattern store.
+
+The tool also has a collection mode, selected by a sixth argument of 1. It
+derives a `TTagmaSchema` from the tree, one scalar field per scalar numeric
+leaf and one collection per variable-length array leaf bounded by its count
+leaf, with the leaf types preserved instead of widened to `double`, and writes
+a self-describing store with `ROOT::TTagmaWriter`: an index record per event,
+then the packed data region, then the trailing descriptor. Such a store is read
+back with `TTree::SetTagmaStore(path)`, which recovers the layout and the
+schema from the descriptor, so no sidecar is needed to read it. The harness
+still measures the fixed-width projection; measuring the collection store is
+the open follow-up, tracked with the report revisions.
+
+```bash
+../root-build-tagma/bin/root -l -b -q 'tagma_make_store.C("/path/to/local.root", "Events", "tagma_store.bin", 2560, -1, 1)'
+```
 
 Append a positive eighth argument to also measure the baseline with
 the TTreeCache enabled on a fresh file open: the cache efficiency and
