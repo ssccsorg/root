@@ -23,7 +23,9 @@
 //                     packed data region, then the field table and the
 //                     trailing descriptor. Reading it needs no sidecar;
 //                     TTree::SetTagmaStore(path) recovers the layout and the
-//                     schema from the descriptor.
+//                     schema from the descriptor. A collection that is empty
+//                     over the converted range is left out, since a store
+//                     carries no objects for it.
 //
 // The sidecar file <out_path>.sum holds the sum of the payload bytes the
 // read path serves (the index and data regions). tagma_bench reads it and
@@ -151,6 +153,25 @@ int MakeCollectionStore(const char *url, TTree *tree, const char *out_path, Long
          if (count > maxCounts[name])
             maxCounts[name] = count;
       }
+   }
+
+   // A collection empty over the converted range carries nothing, so it is
+   // left out rather than bounded at zero.
+   {
+      std::map<std::string, bool> reported;
+      std::vector<TLeaf *> carried;
+      for (TLeaf *leaf : collections) {
+         const std::string name = leaf->GetLeafCount()->GetName();
+         if (maxCounts[name] == 0) {
+            if (!reported[name]) {
+               reported[name] = true;
+               std::fprintf(stderr, "tagma_make_store: skipping empty collection %s\n", name.c_str());
+            }
+            continue;
+         }
+         carried.push_back(leaf);
+      }
+      collections.swap(carried);
    }
 
    // The schema: the scalars first, in tree order, then the collection
