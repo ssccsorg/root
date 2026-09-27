@@ -48,7 +48,9 @@ public:
       std::uint64_t fRunMax = 0;      // exclusive bound of the run axis
       std::uint64_t fLumiMax = 0;     // exclusive bound of the lumi axis
       std::uint64_t fEventMax = 0;    // exclusive bound of the event axis
-      std::uint64_t fRecordSize = 0;  // bytes per fixed-width event record
+      std::uint64_t fRecordSize = 0;  // bytes per index record
+      std::uint64_t fDataSize = 0;    // bytes of the packed data region, 0 for
+                                      // a fixed-width store
    };
 
    // Validates the layout: every axis and the record size must be
@@ -73,8 +75,14 @@ public:
    // Number of addressable records (run_max * lumi_max * event_max).
    std::uint64_t RecordCount() const;
 
-   // Total store extent in bytes.
+   // Bytes of the index region, one index record per addressable event.
+   std::uint64_t IndexBytes() const { return RecordCount() * fLayout.fRecordSize; }
+
+   // Bytes of the whole store: the index region followed by the data region.
    std::uint64_t SizeBytes() const;
+
+   // True when [offset, offset + length) lies inside the store.
+   bool Covers(std::uint64_t offset, std::uint64_t length) const;
 
    // True when all three axes fall inside the layout bounds.
    bool Contains(std::uint64_t run, std::uint64_t lumi,

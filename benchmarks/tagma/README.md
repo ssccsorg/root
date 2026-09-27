@@ -22,6 +22,14 @@ pattern with the same record layout; content correctness is covered by
 the unit tests in `io/io/test/tagma_store.cxx` and
 `tree/tree/test/tagma_record.cxx`.
 
+The comparison runs three baselines and two coordinate paths. The
+`baseline` row reads the compressed source through the ordinary path,
+and the `baseline_uncomp` row reads the same tree written with
+compression disabled, so the gap between the two rows is the
+decompression component of the measured ratio. The coordinate rows serve
+raw fixed-width records, so the remaining gap to `baseline_uncomp` is
+the addressing component.
+
 ## Prerequisites
 
 A fork build with RIO and Tree. The M1 build from the baseline runbook
@@ -31,7 +39,8 @@ satisfies the harness; the harness itself does not need treeplayer.
 ## Synthetic run
 
 The default mode generates a scattered tree with the same per-event
-payload as the coordinate store and needs no network or dataset:
+payload as the coordinate store, plus an uncompressed copy of it for the
+control row, and needs no network or dataset:
 
 ```bash
 ../root-build-tagma/bin/root -l -b -q 'tagma_bench.C()'
@@ -66,11 +75,11 @@ third argument for a quick check.
 ## Real-data run against a converted store
 
 The benchmark serves real converted records when the store is built
-with the preparation tool first. The tool reads each event (cache on)
-and writes a fixed-width record holding the first (record_size / 8)
-scalar leaf values as doubles, zero-padded, plus a sidecar checksum
-file. The conversion cost is reported separately from the read-path
-measurement.
+with the preparation tool first. In its default mode (0) the tool reads
+each event (cache on) and writes a fixed-width record holding the first
+(record_size / 8) scalar leaf values as doubles, zero-padded, plus a
+sidecar checksum file. The conversion cost is reported separately from
+the read-path measurement.
 
 ```bash
 ../root-build-tagma/bin/root -l -b -q 'tagma_make_store.C("/path/to/local.root", "Events", "tagma_store.bin", 2560)'
@@ -82,6 +91,21 @@ records (size check) and that the bytes the coordinate paths serve
 match the sidecar checksum, so the measured rows run against real
 event data, not a pattern. Without the store path argument the
 benchmark generates a deterministic pattern store.
+
+The tool also has a collection mode, selected by a sixth argument of 1. It
+derives a `TTagmaSchema` from the tree, one scalar field per scalar numeric
+leaf and one collection per variable-length array leaf bounded by its count
+leaf, with the leaf types preserved instead of widened to `double`, and writes
+a self-describing store with `ROOT::TTagmaWriter`: an index record per event,
+then the packed data region, then the trailing descriptor. Such a store is read
+back with `TTree::SetTagmaStore(path)`, which recovers the layout and the
+schema from the descriptor, so no sidecar is needed to read it. The harness
+still measures the fixed-width projection; measuring the collection store is
+the open follow-up, tracked with the report revisions.
+
+```bash
+../root-build-tagma/bin/root -l -b -q 'tagma_make_store.C("/path/to/local.root", "Events", "tagma_store.bin", 2560, -1, 1)'
+```
 
 Append a positive eighth argument to also measure the baseline with
 the TTreeCache enabled on a fresh file open: the cache efficiency and
@@ -102,6 +126,41 @@ path reproduces the baseline analysis exactly:
 ../root-build-tagma/bin/root -l -b -q 'tagma_bench.C("/path/to/local.root", "Events", -1, 2560, 3, 1, "tagma_store.bin", 0, 1)'
 ```
 
+## Uncompressed control
+
+The compression control needs the same events in a second ROOT file with
+compression disabled. `tagma_make_uncompressed.C` writes it: the tree is
+cloned without the `fast` option, so every basket is unzipped and
+re-streamed at the destination compression level, which is zero. Branch
+definitions, entry counts, and basket sizes are preserved, and the
+on-disk basket grouping can differ from the source.
+
+```bash
+../root-build-tagma/bin/root -l -b -q 'tagma_make_uncompressed.C("/path/to/local.root", "Events", "tagma_uncompressed.root")'
+```
+
+The benchmark takes the uncompressed file as its tenth argument and
+reports the `baseline_uncomp` row over the same entries:
+
+```bash
+../root-build-tagma/bin/root -l -b -q 'tagma_bench.C("/path/to/local.root", "Events", -1, 2560, 3, 1, "tagma_store.bin", 0, 0, "tagma_uncompressed.root")'
+```
+
+## Warm sources
+
+The harness reads each local source once through the page cache in an untimed
+pass before the timed pass. The eleventh argument, `warm_cache`, controls it
+and defaults to on. Every row then measures the read path against resident
+data, which is what makes the rows comparable: without the pass the row order
+decides the result, because a pass over the uncompressed rewrite evicts the
+store. The same comparison measured the coordinate row at 2.79 s, 3.56 s and
+4.05 s across unwarmed runs, and at 2.71 s to 2.81 s with the pass on, while
+the mapped row moved from 1.06 s to 1.55 s to 1.61 s. Pass 0 to measure the
+medium instead, and read the rows as a sequence in that case.
+
+A remote URL is never warmed. Its access cost is what the remote row is about,
+and a warm pass would move the whole file over the network.
+
 ## What to record
 
 | Quantity | Source |
@@ -113,6 +172,7 @@ path reproduces the baseline analysis exactly:
 | Derived per-event metrics | `reads/ev`, `bytes/read`, `syscalls/ev`, `MB/s` in the macro output |
 | Cache efficiency and miss rate | `TTreePerfStats` pass, enabled with the eighth argument (e.g. `perf_entries = 10000`); requires treeplayer |
 | Analysis workload | same selection and MET_pt histogram on both paths, enabled with the ninth argument; `analysis_match` verifies identical results |
+| Compression control | the `baseline_uncomp` row: the same workload on the uncompressed rewrite, read through the ordinary path; enabled with the tenth argument, and written by the harness itself in synthetic mode |
 
 The system call count is meaningful for local files, where every
 `TFile::ReadBuffer` request is served by one `TFile::SysRead`. Remote
@@ -138,6 +198,10 @@ locality.
 - Wall time per event scales with the request count when the two paths
   move the same payload bytes: the overhead is per request, the target
   of the coordinate store
+- A `baseline_uncomp` row near the coordinate row means decompression
+  carried the measured gap; a row near `baseline` means the addressing
+  carries it. Both baseline rows move the same leaf payload through the
+  same read path, so the difference between them is decompression alone
 
 The real-data run measures the baseline against the remote EOS file and
 the coordinate paths against the local store file. The two paths live on

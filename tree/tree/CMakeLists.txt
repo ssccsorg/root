@@ -10,15 +10,17 @@
 ############################################################################
 
 # Tagma coordinate engine (ssccsorg/syntagma, sw/cpp/tagma_core). The
-# canonical C++ implementation is fetched from the upstream main branch as
-# a CMake module instead of being vendored, so this fork consumes the
-# reference without copying code files. The fetched subproject exposes the
-# tagma_core target with the `tagma_core/...` include directory.
+# canonical C++ implementation is fetched as a CMake module instead of being
+# vendored, so this fork consumes the reference without copying code files.
+# The revision is pinned to the commit the measurements were taken with: a
+# moving branch would make the build unreproducible and could change the
+# engine under a published result. A cold configure needs network to fetch
+# the pinned revision. The fetched subproject exposes the tagma_core target
+# with the `tagma_core/...` include directory.
 include(FetchContent)
 FetchContent_Declare(tagma
   GIT_REPOSITORY https://github.com/ssccsorg/syntagma.git
-  GIT_TAG main
-  GIT_SHALLOW TRUE
+  GIT_TAG 43e8be6cf589e4dbfdb709f39fefa0de5fc2ded1
   SOURCE_SUBDIR sw/cpp/tagma_core)
 FetchContent_MakeAvailable(tagma)
 
