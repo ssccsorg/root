@@ -33,6 +33,7 @@ Each claim is carried by a gate, and the gate is what the claim rests on:
 | The byte source behind the file hook is a seam, so a new source is an implementation, not a hook branch | `TTagmaSource`, with the existing tagma gtests and the benchmark rows unchanged |
 | Several stores address as one dataset, so a coordinate resolves to a file and a record | `gtest-io-io-tagma-dataset` |
 | One store is read from several threads, with no per-read shared state | `gtest-io-io-tagma-threads` |
+| The harness measures a collection store through its descriptor, not only the fixed-width projection | the harness reads a self-describing store's layout and schema, and its `analysis_match` on one |
 | The build consumes the canonical engine reproducibly | the pinned syntagma revision in `tree/tree/CMakeLists.txt` |
 
 What the measured claim does not yet cover, and what the open phases are for:
@@ -52,15 +53,17 @@ sources the record source seam admits.
 | Dataset | `io/io/inc/ROOT/TTagmaDataset.hxx` | Files laid out along the run axis, so a coordinate resolves to the file that owns it and the record inside it, with the per-file ranges derived from the descriptors and a requested mapping serving the record |
 | Branch read path | `tree/tree/src/TBranch.cxx` | `GetEntry` loads the tree's record for the entry and copies an array field's elements out of the slice, so `TTreeReader` and `RDataFrame` read store-backed events |
 | Entry hook | `tree/tree/src/TTree.cxx` | Fills the record in place, then drives the array branches. The short circuit stays for direct callers |
+| Harness | `benchmarks/tagma/tagma_bench.C` | Reads a self-describing store back through its descriptor: the layout addresses the index and data regions and the schema resolves the collections through the leaves, so the benchmark measures a collection store, not only the fixed-width projection |
 
 Consequences. Leaf access, `TTreeReader`, and `RDataFrame` reach the store
 through the ordinary branch machinery, so the store is a byte source under
 the existing interfaces and analysis code does not change. The store a writer
 produces is self-describing, so it needs no sidecar, and the byte source
 behind the file hook is a seam, so a new source is an implementation. One gap
-remains: the benchmark's conversion tool still writes a scalar projection of
-the event, so the store it converts carries the collections as their leading
-element; the store-side producer that carries them whole is in place.
+remains: the reference rows come from the mode-0 projection of the event,
+which carries the collections as their leading element. The conversion tool
+and the harness both handle a collection store now, so re-measuring the rows
+on one replaces the projection.
 
 ## Target architecture
 
@@ -178,7 +181,7 @@ the store side, not in a new leaf type. The store side is
 `ROOT::TTagmaWriter`, which writes the index region and the packed data region
 in one pass over the events, the base of the current event's slice being the
 end of the data region so far; the conversion tool adopts it in mode 1, and the
-harness adoption is open.
+harness reads a self-describing store back through the same descriptor.
 
 One constraint the leaf machinery imposes decides the chunk layout. A leaf
 created from a count-carrying leaflist reads element i at its address plus i
@@ -228,7 +231,7 @@ rewrite of the file hook.
 | :--- | :--- | :--- |
 | P1 | Done | `gtest-tree-tree-tagma-schema`: leaf access over the record bytes |
 | P4 | Done | `gtest-tree-tree-tagma-dataframe`: identical histogram from file and store, and `gtest-tree-tree-tagma-schema` reads through `TTreeReader` |
-| P5 | Reader and producer done; harness adoption open | `gtest-tree-tree-tagma-variable`: collections read through the branches, the array values and counts checked against the store bytes, and a count past the bound rejected; `gtest-io-io-tagma-writer`: the producer lays out the index and data regions the reader addresses. The conversion tool adopts the producer in mode 1, deriving the schema from the tree and writing the packed collections; the harness still measures the mode-0 projection, so the rows carry 276 of the 320 fields as array leading elements |
+| P5 | Done | `gtest-tree-tree-tagma-variable`: collections read through the branches, the array values and counts checked against the store bytes, and a count past the bound rejected; `gtest-io-io-tagma-writer`: the producer lays out the index and data regions the reader addresses. The conversion tool adopts the producer in mode 1, deriving the schema from the tree and writing the packed collections, and the harness reads such a store back through its descriptor, so a collection store is measurable; the reference rows still come from the mode-0 projection, which the #120 re-measurement replaces |
 | P3 | Descriptor done | `gtest-io-io-tagma-writer`: a store the writer produces names its layout and field table in a trailing descriptor, and a reader recovers both with no sidecar; `gtest-tree-tree-tagma-variable`: the tree attaches such a store from its path alone; the syntagma revision is pinned to the measured commit. The mode-0 projection still widens to double; mode 1 preserves the leaf types |
 | P2 | Done | The record source seam: `TFile` delegates a record and a covered range to `TTagmaSource`, with a mapped and a positioned implementation. The existing tagma gtests and the benchmark rows are unchanged |
 | P6 | Done | `gtest-io-io-tagma-dataset`: files laid out along the run axis, a coordinate resolved to the file that owns it and the record inside it, the flat index round-tripped, out-of-range coordinates rejected, and a record read from the owning file. `gtest-io-io-tagma-threads`: one mapped store read from several threads with every value intact and the per-file counts exact, the tagma counters atomic and the positioned source reading positioned |

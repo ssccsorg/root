@@ -100,12 +100,19 @@ a self-describing store with `ROOT::TTagmaWriter`: an index record per event,
 then the packed data region, then the trailing descriptor. Such a store is read
 back with `TTree::SetTagmaStore(path)`, which recovers the layout and the
 schema from the descriptor, so no sidecar is needed to read it. The harness
-still measures the fixed-width projection; measuring the collection store is
-the open follow-up, tracked with the report revisions.
+reads it the same way: it recovers the layout and the schema from the
+descriptor and attaches the schema to the tree, so each entry read serves the
+index record and then the event's packed data slice, and the collections come
+out through the leaves.
 
 ```bash
 ../root-build-tagma/bin/root -l -b -q 'tagma_make_store.C("/path/to/local.root", "Events", "tagma_store.bin", 2560, -1, 1)'
+../root-build-tagma/bin/root -l -b -q 'tagma_bench.C("/path/to/local.root", "Events", -1, 2560, 3, 1, "tagma_store.bin")'
 ```
+
+A self-describing store needs no sidecar, so the fixed-width size check and the
+sidecar checksum are skipped for it; the `analysis_match` row verifies the read
+path instead, by reading the selected scalars through the leaves.
 
 Append a positive eighth argument to also measure the baseline with
 the TTreeCache enabled on a fresh file open: the cache efficiency and
@@ -118,9 +125,11 @@ miss rate (requires treeplayer):
 Append a ninth argument of 1 to run the analysis workload: the same
 selection (MET_pt above 100 GeV and at least one muon) and the same
 MET_pt histogram on both read paths, over the events the store covers.
-The layout sidecar written by the conversion tool maps the record
-fields; the reported `analysis_match` verifies that the coordinate
-path reproduces the baseline analysis exactly:
+For a fixed-width store the layout sidecar written by the conversion
+tool maps the record fields; for a self-describing store the selected
+scalars are read through the leaves. The reported `analysis_match`
+verifies that the coordinate path reproduces the baseline analysis
+exactly:
 
 ```bash
 ../root-build-tagma/bin/root -l -b -q 'tagma_bench.C("/path/to/local.root", "Events", -1, 2560, 3, 1, "tagma_store.bin", 0, 1)'
@@ -191,6 +200,10 @@ locality.
 - Coordinate reads per event of exactly one at the record size: the
   fixed-width record path collapses the per-event scatter into a single
   aligned read
+- A self-describing collection store reads the index record and then the
+  event's packed data slice per entry, so its reads per event is the two
+  reads that entry read costs (fewer when a slice is empty), and the bytes
+  moved are the store's payload rather than a fixed-width projection
 - Mapped coordinate reads per event of exactly one with zero read
   system calls: the byte source is the mapped region, and the read path
   never reaches the medium for mapped data, the structural removal the

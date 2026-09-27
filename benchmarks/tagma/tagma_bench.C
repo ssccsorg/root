@@ -87,9 +87,11 @@
 // 1.00, coordinate+map 0.011-0.027 s at 0.00 syscalls. The spread is
 // per-syscall cost at that scale, so the counts are the claim there.
 //
-// Boundaries: phase 1 covers fixed-width records; the store holds a
-// scalar projection of the events; the documented 14-hour production
-// workload is not reproduced end to end.
+// Boundaries: the fixed-width rows cover phase 1 and hold a scalar
+// projection of the events; the harness also measures a self-describing
+// store that carries the collections, which the reference numbers above
+// do not yet cover; the documented 14-hour production workload is not
+// reproduced end to end.
 //
 // Usage:
 //   root -l -b -q 'tagma_bench.C()'
@@ -110,7 +112,11 @@
 //   store_path   pre-built coordinate store file from tagma_make_store;
 //                 when given, the benchmark serves the real converted
 //                 records and verifies the served bytes against the
-//                 sidecar checksum instead of generating a pattern store
+//                 sidecar checksum instead of generating a pattern store.
+//                 A store written in mode 1 carries its own descriptor,
+//                 which the harness reads back to address the index and
+//                 data regions and to read the collections through the
+//                 leaves, so it needs no sidecar
 //   perf_entries entries to read for the cache-efficiency pass; 0 skips
 //                 it. The pass opens the source fresh with the
 //                 TTreeCache enabled and reports the cache efficiency
@@ -137,7 +143,9 @@
 #include <string>
 #include <vector>
 
+#include "ROOT/TTagmaSchema.hxx"
 #include "ROOT/TTagmaStore.hxx"
+#include "ROOT/TTagmaWriter.hxx"
 #include "TFile.h"
 #include "TH1F.h"
 #include "TStopwatch.h"
@@ -319,8 +327,27 @@ BenchResult MeasureBaseline(TFile *file, TTree *tree, Long64_t limit,
    return r;
 }
 
-BenchResult MeasureCoordinate(const char *storePath, const char *mapPath,
-                              Long64_t limit, Long64_t recordSize)
+// A store that carries its own descriptor, read back with the writer's
+// reader: the layout and the schema the writer laid out. A store without
+// one is addressed as fixed-width records with a layout the harness
+// synthesizes, the projection the earlier conversion writes.
+struct StoreShape {
+   ROOT::TTagmaStore::Layout layout;
+   ROOT::TTagmaSchema schema;
+   Bool_t described = kFALSE;
+};
+
+StoreShape ReadStoreShape(const char *path)
+{
+   StoreShape shape;
+   std::string why;
+   if (ROOT::TTagmaWriter::ReadStore(path, &shape.layout, &shape.schema, &why))
+      shape.described = kTRUE;
+   return shape;
+}
+
+BenchResult MeasureCoordinate(const char *storePath, const char *mapPath, Long64_t limit, Long64_t recordSize,
+                              const StoreShape *shape)
 {
    BenchResult r;
    r.name = mapPath ? "coordinate+map" : "coordinate";
@@ -334,10 +361,14 @@ BenchResult MeasureCoordinate(const char *storePath, const char *mapPath,
    }
 
    ROOT::TTagmaStore::Layout layout;
-   layout.fRunMax = 1;
-   layout.fLumiMax = 1;
-   layout.fEventMax = static_cast<std::uint64_t>(limit);
-   layout.fRecordSize = static_cast<std::uint64_t>(recordSize);
+   if (shape != nullptr && shape->described) {
+      layout = shape->layout;
+   } else {
+      layout.fRunMax = 1;
+      layout.fLumiMax = 1;
+      layout.fEventMax = static_cast<std::uint64_t>(limit);
+      layout.fRecordSize = static_cast<std::uint64_t>(recordSize);
+   }
    std::shared_ptr<ROOT::TTagmaStore> store;
    try {
       store = std::make_shared<ROOT::TTagmaStore>(layout);
@@ -353,14 +384,25 @@ BenchResult MeasureCoordinate(const char *storePath, const char *mapPath,
       r.ok = kFALSE;
       return r;
    }
-   // The byte source serves aligned fixed-width record requests, and the
-   // entry layer resolves each event through the same store.
+   // The byte source serves the store's record requests, and the entry
+   // layer resolves each event through the same store.
    file->SetTagmaStore(store);
 
    TTree tree("Events", "Events");
    tree.SetDirectory(file);
    tree.SetEntries(limit);
    tree.SetTagmaStore(store);
+   if (shape != nullptr && shape->described) {
+      // The descriptor's schema resolves the collections as well as the
+      // scalars, so the entry read serves the event's data slice after the
+      // index record, the two reads the leaf gate measures.
+      if (!tree.SetTagmaSchema(shape->schema)) {
+         std::fprintf(stderr, "tagma_bench: cannot attach the store's schema\n");
+         delete file;
+         r.ok = kFALSE;
+         return r;
+      }
+   }
 
    const Int_t calls0 = file->GetReadCalls();
    const Int_t tagma0 = file->GetTagmaReadCalls();
@@ -544,24 +586,23 @@ AnalysisResult AnalyzeBaseline(TFile *file, TTree *tree, Long64_t limit)
    return r;
 }
 
-AnalysisResult AnalyzeCoordinate(const char *storePath, Long64_t limit,
-                                 Long64_t recordSize,
-                                 const std::map<std::string, Long64_t> &offsets)
+AnalysisResult AnalyzeCoordinate(const char *storePath, Long64_t limit, Long64_t recordSize,
+                                 const std::map<std::string, Long64_t> &offsets, const StoreShape *shape)
 {
    AnalysisResult r;
    r.name = "analysis_coordinate";
    r.entries = limit;
-   auto metIt = offsets.find("MET_pt");
-   auto nmuonIt = offsets.find("nMuon");
-   if (metIt == offsets.end() || nmuonIt == offsets.end()) {
+   const Bool_t described = (shape != nullptr && shape->described);
+   const Bool_t haveOffsets = !described && offsets.count("MET_pt") != 0 && offsets.count("nMuon") != 0;
+   if (!described && !haveOffsets) {
       std::fprintf(stderr,
                    "tagma_bench: analysis skipped, MET_pt/nMuon not in "
                    "the store layout\n");
       r.histEntries = -1;
       return r;
    }
-   const Long64_t metOff = metIt->second;
-   const Long64_t nmuonOff = nmuonIt->second;
+   const Long64_t metOff = haveOffsets ? offsets.at("MET_pt") : 0;
+   const Long64_t nmuonOff = haveOffsets ? offsets.at("nMuon") : 0;
 
    TFile *file = TFile::Open(storePath);
    if (!file || file->IsZombie()) {
@@ -571,27 +612,51 @@ AnalysisResult AnalyzeCoordinate(const char *storePath, Long64_t limit,
       return r;
    }
    ROOT::TTagmaStore::Layout layout;
-   layout.fRunMax = 1;
-   layout.fLumiMax = 1;
-   layout.fEventMax = static_cast<std::uint64_t>(limit);
-   layout.fRecordSize = static_cast<std::uint64_t>(recordSize);
+   if (described) {
+      layout = shape->layout;
+   } else {
+      layout.fRunMax = 1;
+      layout.fLumiMax = 1;
+      layout.fEventMax = static_cast<std::uint64_t>(limit);
+      layout.fRecordSize = static_cast<std::uint64_t>(recordSize);
+   }
    auto store = std::make_shared<ROOT::TTagmaStore>(layout);
    file->SetTagmaStore(store);
    TTree tree("Events", "Events");
    tree.SetDirectory(file);
    tree.SetEntries(limit);
    tree.SetTagmaStore(store);
+   TLeaf *metLeaf = nullptr;
+   TLeaf *nmuonLeaf = nullptr;
+   if (described) {
+      // Read the two selected scalars through the leaves, the ordinary
+      // branch interface a store-backed analysis uses.
+      if (!tree.SetTagmaSchema(shape->schema)) {
+         std::fprintf(stderr, "tagma_bench: analysis skipped, cannot attach the "
+                              "store's schema\n");
+         delete file;
+         r.histEntries = -1;
+         return r;
+      }
+      metLeaf = tree.GetLeaf("MET_pt");
+      nmuonLeaf = tree.GetLeaf("nMuon");
+   }
 
    TH1F hist("met_pt", "MET_pt;MET_pt [GeV];events", 100, 0, 1000);
    TStopwatch watch;
    watch.Start();
    for (Long64_t i = 0; i < limit; ++i) {
       if (tree.GetEntry(i) > 0) {
-         const char *buf = tree.GetTagmaRecordBuffer();
          Double_t met = 0;
          Double_t nMuon = 0;
-         std::memcpy(&met, buf + metOff, sizeof(met));
-         std::memcpy(&nMuon, buf + nmuonOff, sizeof(nMuon));
+         if (described) {
+            met = metLeaf ? metLeaf->GetValue(0) : 0;
+            nMuon = nmuonLeaf ? nmuonLeaf->GetValue(0) : 0;
+         } else {
+            const char *buf = tree.GetTagmaRecordBuffer();
+            std::memcpy(&met, buf + metOff, sizeof(met));
+            std::memcpy(&nMuon, buf + nmuonOff, sizeof(nMuon));
+         }
          if (met > kMetCut && nMuon >= kMinMuons) {
             ++r.selected;
             hist.Fill(met);
@@ -632,6 +697,13 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events", Long64_t
        !synthetic && store_path != nullptr && store_path[0] != '\0';
    const char *source = synthetic ? "<synthetic>" : url;
    const char *store = realStore ? store_path : kStoreFile;
+
+   // A self-describing store carries its layout and schema in a trailing
+   // descriptor, so the harness reads them back instead of assuming
+   // fixed-width records with a sidecar layout.
+   StoreShape shape;
+   if (realStore)
+      shape = ReadStoreShape(store_path);
 
    TFile *baselineFile = nullptr;
    TTree *baselineTree = nullptr;
@@ -730,9 +802,10 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events", Long64_t
 
    std::uint64_t expectedChecksum = 0;
    Bool_t haveChecksum = kFALSE;
-   if (realStore) {
-      // The converted store must hold exactly limit records of
-      // record_size bytes.
+   if (realStore && !shape.described) {
+      // The converted fixed-width store must hold exactly limit records of
+      // record_size bytes; a self-describing store is checked against its
+      // descriptor by ReadStore above.
       Long64_t size = 0;
       gSystem->GetPathInfo(store_path, nullptr, &size, nullptr, nullptr);
       if (size != limit * record_size) {
@@ -755,7 +828,7 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events", Long64_t
          }
          std::fclose(sum);
       }
-   } else if (!MakeStoreFile(kStoreFile, limit, record_size)) {
+   } else if (!realStore && !MakeStoreFile(kStoreFile, limit, record_size)) {
       return 1;
    }
 
@@ -763,17 +836,18 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events", Long64_t
       WarmFile(store);
    TString storeRaw(store);
    storeRaw += "?filetype=raw";
-   const BenchResult coord =
-       MeasureCoordinate(storeRaw.Data(), nullptr, limit, record_size);
-   const BenchResult coordMap =
-       MeasureCoordinate(storeRaw.Data(), store, limit, record_size);
+   const BenchResult coord = MeasureCoordinate(storeRaw.Data(), nullptr, limit, record_size, &shape);
+   const BenchResult coordMap = MeasureCoordinate(storeRaw.Data(), store, limit, record_size, &shape);
 
    std::printf("tagma_bench: source=%s\n", source);
+   const Long64_t reportedRecord = shape.described ? static_cast<Long64_t>(shape.layout.fRecordSize) : record_size;
    std::printf("tagma_bench: entries=%lld record_size=%lld nscatter=%d "
                "cache_disabled=%d store=%s\n",
-               static_cast<long long>(limit),
-               static_cast<long long>(record_size), nscatter,
-               disable_cache ? 1 : 0, store);
+               static_cast<long long>(limit), static_cast<long long>(reportedRecord), nscatter, disable_cache ? 1 : 0,
+               store);
+   if (shape.described)
+      std::printf("tagma_bench: store self-describing data_size=%llu\n",
+                  static_cast<unsigned long long>(shape.layout.fDataSize));
    std::printf(
        "tagma_bench: %-16s %8s %8s %7s %7s %8s %12s %7s %10s %10s %9s\n",
        "path", "wall_s", "cpu_s", "reads", "tagma", "syscalls",
@@ -826,21 +900,20 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events", Long64_t
          return 1;
       }
       std::map<std::string, Long64_t> offsets;
-      const std::string layoutPath = std::string(store_path) + ".layout";
-      if (!ReadLayout(layoutPath.c_str(), &offsets)) {
-         std::fprintf(stderr,
-                      "tagma_bench: analysis skipped, no layout %s\n",
-                      layoutPath.c_str());
-         delete afile;
-         return 1;
+      if (!shape.described) {
+         const std::string layoutPath = std::string(store_path) + ".layout";
+         if (!ReadLayout(layoutPath.c_str(), &offsets)) {
+            std::fprintf(stderr, "tagma_bench: analysis skipped, no layout %s\n", layoutPath.c_str());
+            delete afile;
+            return 1;
+         }
       }
 
       const AnalysisResult base = AnalyzeBaseline(afile, atree, limit);
       delete afile;
       TString storeRaw(store_path);
       storeRaw += "?filetype=raw";
-      const AnalysisResult coord =
-          AnalyzeCoordinate(storeRaw.Data(), limit, record_size, offsets);
+      const AnalysisResult coord = AnalyzeCoordinate(storeRaw.Data(), limit, record_size, offsets, &shape);
 
       PrintAnalysis(base);
       PrintAnalysis(coord);
