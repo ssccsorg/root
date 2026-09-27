@@ -320,11 +320,6 @@ ROOT::RExtraTypeInfoDescriptor ROOT::RExtraTypeInfoDescriptor::Clone() const
 
 ////////////////////////////////////////////////////////////////////////////////
 
-ROOT::DescriptorId_t ROOT::Internal::CallFindClusterIdOn(const RNTupleDescriptor &desc, ROOT::NTupleSize_t entryIdx)
-{
-   return desc.FindClusterId(entryIdx);
-}
-
 ROOT::RNTupleDescriptor::RNTupleDescriptor() : fStringPool(std::make_shared<Internal::RStringPool>())
 {
    // We need to make sure that for cloning fields, the empty string that is not explicitly entered for
@@ -366,13 +361,11 @@ ROOT::Internal::GetClusterBoundaries(const ROOT::RNTupleDescriptor &desc)
 {
    std::vector<Internal::RNTupleClusterBoundaries> boundaries;
    boundaries.reserve(desc.GetNClusters());
-   auto clusterId = desc.FindClusterId(0, 0);
-   while (clusterId != ROOT::kInvalidDescriptorId) {
-      const auto &clusterDesc = desc.GetClusterDescriptor(clusterId);
+   R__ASSERT(desc.GetNClusters() == desc.GetNActiveClusters());
+   for (const auto &clusterDesc : desc.GetActiveClusterIterable()) {
       R__ASSERT(clusterDesc.GetNEntries() > 0);
       boundaries.emplace_back(ROOT::Internal::RNTupleClusterBoundaries{
          clusterDesc.GetFirstEntryIndex(), clusterDesc.GetFirstEntryIndex() + clusterDesc.GetNEntries()});
-      clusterId = desc.FindNextClusterId(clusterId);
    }
    return boundaries;
 }

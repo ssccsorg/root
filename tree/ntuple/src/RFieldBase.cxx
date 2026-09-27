@@ -933,8 +933,12 @@ void ROOT::RFieldBase::AutoAdjustColumnTypes(const ROOT::RNTupleWriteOptions &op
       SetColumnRepresentatives({rep});
    }
 
-   if (fTypeAlias == "Double32_t")
-      SetColumnRepresentatives({{ROOT::ENTupleColumnType::kSplitReal32}});
+   if (fTypeAlias == "Double32_t") {
+      if (options.GetCompression() != 0)
+         SetColumnRepresentatives({{ROOT::ENTupleColumnType::kSplitReal32}});
+      else
+         SetColumnRepresentatives({{ROOT::ENTupleColumnType::kReal32}});
+   }
 }
 
 void ROOT::RFieldBase::ConnectPageSink(ROOT::Internal::RPageSink &pageSink, ROOT::NTupleSize_t firstEntry)
@@ -985,10 +989,10 @@ void ROOT::RFieldBase::ConnectPageSource(ROOT::Internal::RPageSource &pageSource
       // we would need to handle it in each and every ReconcileOnDiskField()
       // Note that we have to do this before calling BeforeConnectPageSource(), which already may compare the field
       // to its on-disk description.
-      const auto &desc = pageSource.GetSharedDescriptorGuard().GetRef();
+      auto descGuard = pageSource.GetSharedDescriptorGuard();
       if (!dynamic_cast<RAtomicField *>(this) &&
-          Internal::IsStdAtomicFieldDesc(desc.GetFieldDescriptor(GetOnDiskId()))) {
-         SetOnDiskId(desc.GetFieldDescriptor(GetOnDiskId()).GetLinkIds()[0]);
+          Internal::IsStdAtomicFieldDesc(descGuard->GetFieldDescriptor(GetOnDiskId()))) {
+         SetOnDiskId(descGuard->GetFieldDescriptor(GetOnDiskId()).GetLinkIds()[0]);
       }
    }
 
@@ -1014,8 +1018,8 @@ void ROOT::RFieldBase::ConnectPageSource(ROOT::Internal::RPageSource &pageSource
    }
 
    if (!fIsArtificial) {
-      const auto &desc = pageSource.GetSharedDescriptorGuard().GetRef();
-      ReconcileOnDiskField(desc);
+      auto descGuard = pageSource.GetSharedDescriptorGuard();
+      ReconcileOnDiskField(descGuard.GetRef());
    }
 
    for (auto &f : fSubfields) {

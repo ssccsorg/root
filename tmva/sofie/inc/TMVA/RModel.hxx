@@ -2,11 +2,19 @@
 #define TMVA_SOFIE_RMODEL
 
 #include "TMVA/RModel_Base.hxx"
-#include "TMVA/ROperator.hxx"
+#include "TMVA/SOFIE_common.hxx"
 
 #include "Rtypes.h" // for ClassDefNV
 
+#include <unordered_set>
+
 namespace TMVA::Experimental::SOFIE {
+
+// The ROperator interface is an implementation detail of the code generation
+// and deliberately not exposed to the public: only this forward declaration
+// is visible here, the full definition (TMVA/ROperator.hxx) is a private
+// header of the SOFIE libraries.
+class ROperator;
 
 class RModel final : public RModel_Base {
 
@@ -29,12 +37,21 @@ private:
    std::unordered_map<std::string, DynamicTensorInfo> fDynamicTensorInfos;
    std::unordered_map<std::string, std::pair<std::vector<Dim>, bool>> fShapeTensors; // constant tensors describing a shape
    std::unordered_map<std::string, std::string> fShapeParams; // parameters defining the dynamic shape (e.g. batch size), store also its default value
+   std::unordered_set<std::string> fComputedShapeParams;      ///<! shape parameters computed at run time by an operator
    std::unordered_map<std::string, std::string> fAliasTensors;   // list of alias tensors
    std::vector<std::string> fDimShapeNames; // parameter names used to define the shapes
    std::vector<std::string> fOutputTensorNames;
    std::vector<std::string> fInputTensorNames; // input tensor names using ONNX order
 
-   std::vector<std::unique_ptr<ROperator>> fOperators;
+   // A bare std::unique_ptr<ROperator> would require the complete ROperator
+   // type wherever a destroyed RModel is instantiated; with the
+   // out-of-line-deleter declared here and defined in RModel.cxx the
+   // forward declaration above is enough, so the ROperator interface can stay
+   // private.
+   struct ROperatorDeleter {
+      void operator()(ROperator *ptr) const;
+   };
+   std::vector<std::unique_ptr<ROperator, ROperatorDeleter>> fOperators;
 
    std::vector<std::shared_ptr<RModel>> fSubGraphs;    ///<!  sub-graph models (transient)
    RModel * fParentGraph = nullptr;
@@ -52,6 +69,14 @@ public:
    */
    RModel() = default;
    RModel(std::string name, std::string parsedtime) : RModel_Base(name, parsedtime) {}
+
+   // Defined out of line because ROperator is an incomplete type in this
+   // header (the definition is a private implementation header).
+   ~RModel();
+   RModel(RModel &&);
+   RModel &operator=(RModel &&);
+   RModel(RModel const &) = delete;
+   RModel &operator=(RModel const &) = delete;
 
    int Verbose() const { return fVerbose;}
 
@@ -128,6 +153,11 @@ public:
    void AddDynamicTensor(std::string tensor_name, ETensorType type, std::vector<Dim> shape);
    // void Add a shape parameter
    void AddShapeParam(const std::string & name, size_t def_value = 0);
+   /// Declare a shape parameter as computed at run time by an operator (e.g. the number of
+   /// non-zero elements found by NonZero): the operator declares it itself, so it is never a
+   /// Session constructor argument. A later AddShapeParam for the same name has no effect.
+   void AddComputedShapeParam(const std::string &name);
+   bool IsComputedShapeParam(const std::string &name) const { return fComputedShapeParams.count(name) != 0; }
    void AddInputTensorName(std::string name);
    void AddOutputTensorNameList(std::vector<std::string> output_tensor_names);
    void

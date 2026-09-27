@@ -1365,17 +1365,13 @@ TLatex::TLatexFormSize TLatex::Analyse(Double_t x, Double_t y, const TextSpec_t 
       TextSpec_t newSpec = spec;
       newSpec.fFont = fItalic ? 152 : 122;
       char letter = '\243' + opSpec;
-      if(opSpec == 75 || opSpec == 76) {
+      if (opSpec == 75) {
          newSpec.fFont = GetTextFont();
-         if (gPad->GetPainter()->IsCocoa()) {
-            if (opSpec == 75) letter = '\201'; // AA Angstroem
-            else if (opSpec == 76) letter = '\214'; // aa Angstroem
-         } else {
-            if (opSpec == 75) letter = '\305'; // AA Angstroem
-            else if (opSpec == 76) letter = '\345'; // aa Angstroem
-         }
-      }
-      if(opSpec == 80)
+         letter = '\305'; // AA Angstroem
+      } else if (opSpec == 76) {
+         newSpec.fFont = GetTextFont();
+         letter = '\345'; // aa Angstroem
+      } else if (opSpec == 80)
          letter = '\042'; // #forall
       else if (opSpec == 81)
          letter = '\044'; // #exists
@@ -1509,8 +1505,6 @@ TLatex::TLatexFormSize TLatex::Analyse(Double_t x, Double_t y, const TextSpec_t 
                ps->SetTextAlign(22);
                ps->Text(xx, yy, "~");
             } else {
-               if (gPad->GetPainter()->IsCocoa())
-                  y2 -= 4.7*sub;
                Rotate(gPad, spec.fAngle, x2, y2, xx, yy);
                // TODO: use pad painter SetAttText and DrawText directly
                TText tilde;
