@@ -87,11 +87,37 @@
 // 1.00, coordinate+map 0.011-0.027 s at 0.00 syscalls. The spread is
 // per-syscall cost at that scale, so the counts are the claim there.
 //
+// Collection store (mode 1, this fork's P5). The same harness against the
+// self-describing store the conversion tool writes in mode 1: the whole
+// event, 974 scalars and 19 collections, index record 1,280 bytes, data
+// region 4,118,805,545 bytes, payload 7,082,290,985 bytes, 2,315,223
+// events, one run on the same machine:
+//   path              wall_s   reads        syscalls  bytes_moved     reads/ev  bytes/read  MB/s
+//   baseline          176.7    470,131      470,131   2,149,961,076   0.20       4,573     12.2
+//   baseline_uncomp    77.2    387,007      387,007  10,852,850,385   0.17      28,043    140.7
+//   coordinate         10.2  4,630,378    4,630,378   7,082,290,985   2.00       1,530    697.2
+//   coordinate+map      8.3  4,630,378            0   7,082,290,985   2.00       1,530    854.7
+//
+// The rows read the store's record and slice only, the shape of the
+// fixed-width rows. Driving the branches a whole-event schema materializes
+// adds about 50 microseconds per event: the same coordinate row with the
+// branches active runs 117.6 s, and the analysis workload 123.4 s against
+// the baseline's 180.3 s, so delivery, not the read path, decides that
+// comparison. The store reads the whole slice whatever the selection, so it
+// is column-independent: against RDataFrame on the same file with a warm
+// cache, entries 0.029 s, one column 0.448 s, the two-column selection
+// 0.539 s, the 974 scalar columns 135.319 s. The store's 10.2 s sits
+// between, so upstream leads on narrow selections and the store leads on
+// the whole-event read.
+//
+// One-time conversion into the collection store: 1,963.3 s, against 226.3 s
+// for the mode-0 projection.
+//
 // Boundaries: the fixed-width rows cover phase 1 and hold a scalar
-// projection of the events; the harness also measures a self-describing
-// store that carries the collections, which the reference numbers above
-// do not yet cover; the documented 14-hour production workload is not
-// reproduced end to end.
+// projection of the events; the collection-store rows above carry the whole
+// event, and their advantage is on the read path, not on delivery or narrow
+// selections; the documented 14-hour production workload is not reproduced
+// end to end.
 //
 // Usage:
 //   root -l -b -q 'tagma_bench.C()'
@@ -402,6 +428,11 @@ BenchResult MeasureCoordinate(const char *storePath, const char *mapPath, Long64
          r.ok = kFALSE;
          return r;
       }
+      // The row measures the store's read path the way the fixed-width rows
+      // do: the index record and the event's slice, without driving the
+      // branches a whole-event schema materializes. The analysis row reads
+      // the fields and covers the delivery.
+      tree.SetBranchStatus("*", 0);
    }
 
    const Int_t calls0 = file->GetReadCalls();

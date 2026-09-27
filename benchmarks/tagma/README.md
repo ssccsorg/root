@@ -114,6 +114,29 @@ A self-describing store needs no sidecar, so the fixed-width size check and the
 sidecar checksum are skipped for it; the `analysis_match` row verifies the read
 path instead, by reading the selected scalars through the leaves.
 
+### Collection-store measurement (ssccs #121)
+
+On the M1 file the collection store (974 scalars, 19 collections, index record
+1,280 bytes, payload 7,082,290,985 bytes) measures:
+
+| row | wall_s | reads | syscalls | bytes_moved | reads/ev |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| baseline | 176.7 | 470,131 | 470,131 | 2,149,961,076 | 0.20 |
+| baseline_uncomp | 77.2 | 387,007 | 387,007 | 10,852,850,385 | 0.17 |
+| coordinate | 10.2 | 4,630,378 | 4,630,378 | 7,082,290,985 | 2.00 |
+| coordinate+map | 8.3 | 4,630,378 | 0 | 7,082,290,985 | 2.00 |
+
+The rows read the store's record and slice only, the shape of the fixed-width
+rows; driving the branches a whole-event schema materializes costs about 50
+microseconds per event, so the same coordinate row with the branches active
+runs 117.6 s and the analysis workload 123.4 s against the baseline's 180.3 s.
+The store reads the whole slice whatever the selection, so it is
+column-independent: RDataFrame on the same file with a warm cache runs 0.448 s
+for one column, 0.539 s for the two-column selection and 135.319 s for the 974
+scalar columns. Upstream therefore leads on narrow selections and the store
+leads on the whole-event read. The one-time conversion is 1,963.3 s against
+226.3 s for the mode-0 projection.
+
 Append a positive eighth argument to also measure the baseline with
 the TTreeCache enabled on a fresh file open: the cache efficiency and
 miss rate (requires treeplayer):
