@@ -13,6 +13,7 @@
 #include "ROOT/TTagmaSchema.hxx"
 #include "ROOT/TTagmaWriter.hxx"
 
+#include <algorithm>
 #include <cstring>
 #include <stdexcept>
 
@@ -114,6 +115,56 @@ bool TTagmaDataset::ReadRecord(std::uint64_t run, std::uint64_t lumi, std::uint6
       return false;
    std::memcpy(buf, f.fStore->GetMapped() + offset, static_cast<std::size_t>(len));
    return true;
+}
+
+bool TTagmaDataset::ReadRecord(std::uint64_t flat, char *buf, std::uint64_t len) const
+{
+   if (buf == nullptr)
+      return false;
+   for (const File &f : fFiles) {
+      const std::uint64_t count = f.fStore->RecordCount();
+      if (flat < f.fRecordBase || flat - f.fRecordBase >= count)
+         continue;
+      if (f.fStore == nullptr || !f.fStore->IsMapped() || len != f.fLayout.fRecordSize)
+         return false;
+      const std::uint64_t offset = (flat - f.fRecordBase) * f.fLayout.fRecordSize;
+      if (!f.fStore->Covers(offset, len))
+         return false;
+      std::memcpy(buf, f.fStore->GetMapped() + offset, static_cast<std::size_t>(len));
+      return true;
+   }
+   return false;
+}
+
+bool TTagmaDataset::ReadRecords(std::uint64_t flat, std::uint64_t count, char *buf, std::uint64_t recordSize) const
+{
+   if (buf == nullptr || count == 0)
+      return false;
+   std::uint64_t remaining = count;
+   std::uint64_t at = flat;
+   char *out = buf;
+   for (const File &f : fFiles) {
+      if (remaining == 0)
+         break;
+      const std::uint64_t fileCount = f.fStore->RecordCount();
+      if (at >= f.fRecordBase + fileCount)
+         continue;
+      if (at < f.fRecordBase)
+         return false;
+      if (f.fStore == nullptr || !f.fStore->IsMapped() || recordSize != f.fLayout.fRecordSize)
+         return false;
+      const std::uint64_t local = at - f.fRecordBase;
+      const std::uint64_t take = std::min(remaining, fileCount - local);
+      const std::uint64_t bytes = take * recordSize;
+      const std::uint64_t offset = local * recordSize;
+      if (!f.fStore->Covers(offset, bytes))
+         return false;
+      std::memcpy(out, f.fStore->GetMapped() + offset, static_cast<std::size_t>(bytes));
+      out += bytes;
+      at += take;
+      remaining -= take;
+   }
+   return remaining == 0;
 }
 
 } // namespace ROOT

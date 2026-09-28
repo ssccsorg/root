@@ -93,6 +93,19 @@ public:
    // without a mapping, or `len` is not the record size.
    bool ReadRecord(std::uint64_t run, std::uint64_t lumi, std::uint64_t event, char *buf, std::uint64_t len) const;
 
+   // Reads the record at the flat dataset index, so a caller that walks the
+   // dataset as one sequence does not decompose the index itself. `len` must be
+   // the owning file's record size. Returns false under the same conditions as
+   // the coordinate overload, and when the index is outside the dataset.
+   bool ReadRecord(std::uint64_t flat, char *buf, std::uint64_t len) const;
+
+   // Reads `count` consecutive records from flat index `flat` into `buf`, each
+   // of `recordSize` bytes, stitching the files the range touches at a file
+   // boundary, so a read spans the dataset. Returns false when the range leaves
+   // the dataset, a file was added without a mapping, or a file's record size
+   // is not `recordSize`.
+   bool ReadRecords(std::uint64_t flat, std::uint64_t count, char *buf, std::uint64_t recordSize) const;
+
 private:
    std::vector<File> fFiles;
    std::uint64_t fRecordCount = 0;

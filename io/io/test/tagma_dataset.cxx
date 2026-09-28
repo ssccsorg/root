@@ -174,3 +174,38 @@ TEST(TTagmaDataset, RejectsAFileWithoutADescriptor)
    EXPECT_EQ(dataset.Size(), 0u);
    std::remove(kFile0);
 }
+
+TEST(TTagmaDataset, ReadsTheDatasetAsOneSequence)
+{
+   WriteStore(kFile0, 4, 10);  // records 0..3
+   WriteStore(kFile1, 3, 110); // records 4..6
+
+   ROOT::TTagmaDataset dataset;
+   dataset.AddFile(kFile0, true);
+   dataset.AddFile(kFile1, true);
+
+   const std::uint64_t recordSize = dataset.GetFile(0).fLayout.fRecordSize;
+   std::vector<char> record(recordSize);
+
+   // The flat index walks the dataset as one sequence: the first file's records,
+   // then the next file's, with no per-file stitching by the caller.
+   const std::uint32_t expected[] = {10, 11, 12, 13, 110, 111, 112};
+   for (std::uint64_t flat = 0; flat < dataset.RecordCount(); ++flat) {
+      ASSERT_TRUE(dataset.ReadRecord(flat, record.data(), recordSize)) << "flat " << flat;
+      EXPECT_EQ(RecordMuonCount(record.data()), expected[flat]);
+   }
+   EXPECT_FALSE(dataset.ReadRecord(dataset.RecordCount(), record.data(), recordSize));
+
+   // A range read spans the boundary between the two files.
+   std::vector<char> range(5 * recordSize);
+   ASSERT_TRUE(dataset.ReadRecords(2, 5, range.data(), recordSize));
+   for (std::uint64_t i = 0; i < 5; ++i)
+      EXPECT_EQ(RecordMuonCount(range.data() + i * recordSize), expected[2 + i]);
+
+   // A range that leaves the dataset and a wrong record size are rejected.
+   EXPECT_FALSE(dataset.ReadRecords(5, 3, range.data(), recordSize));
+   EXPECT_FALSE(dataset.ReadRecords(0, 2, range.data(), recordSize - 1));
+
+   std::remove(kFile0);
+   std::remove(kFile1);
+}
