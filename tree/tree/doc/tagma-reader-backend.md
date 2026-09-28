@@ -166,13 +166,14 @@ offset is needed. Per event the record is about 228 bytes of index plus about
 1,053 bytes of packed data, so about 1,281 bytes against the current 2,560,
 carrying all ten collections rather than their leading elements.
 
-The cost is one extra read per event: the index record, then the event's slice
-of the data region. Both are contiguous and both are covered by the mapping, so
-the mapped path stays at zero application read calls. A partial read becomes
-possible, since an analysis that needs one collection can read the index record
-and only that collection's slice, whose offset and length both follow from the
-counts. That is column pruning at collection granularity, which the fixed-width
-record cannot offer at all.
+The read is the index record, then the slice of the data region, and the slice
+covers only the collections the read asks for: the reader reads the collections
+whose field branches are enabled, and only the span they fall in, whose offset
+and length follow from the counts, while a read that enables no collection stays
+in the index record and touches the data region not at all. That is column
+pruning at collection granularity, which the fixed-width record cannot offer at
+all. Both regions are contiguous and both are covered by the mapping, so the
+mapped path stays at zero application read calls.
 
 Gate: `gtest-tree-tree-tagma-variable`, which writes a store carrying two
 collections, reads it through the ordinary branch machinery, and checks the

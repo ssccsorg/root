@@ -288,6 +288,12 @@ TEST(TTagmaVariable, AScalarOnlyReadLeavesTheSliceUnread)
    ASSERT_GT(tree.GetEntry(3), 0);
    EXPECT_EQ(file->GetTagmaReadCalls() - collectionBefore, 2);
 
+   // A read that asks for every branch reads every collection whatever the
+   // branch status, so the slice comes in as well.
+   const Int_t allBefore = file->GetTagmaReadCalls();
+   ASSERT_GT(tree.GetEntry(1, 1), 0);
+   EXPECT_EQ(file->GetTagmaReadCalls() - allBefore, 2);
+
    delete file;
 }
 
