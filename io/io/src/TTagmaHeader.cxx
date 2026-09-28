@@ -73,7 +73,7 @@ std::array<unsigned char, TTagmaHeader::kSize> TTagmaHeader::Serialize() const
 {
    std::array<unsigned char, kSize> bytes{};
    std::memcpy(bytes.data(), kMagic.data(), kMagic.size());
-   PutLE32(bytes.data() + 8, kVersion);
+   PutLE32(bytes.data() + 8, fVersion);
    PutLE32(bytes.data() + 12, 0); // reserved
    PutLE64(bytes.data() + 16, fRunMax);
    PutLE64(bytes.data() + 24, fLumiMax);
@@ -97,10 +97,11 @@ bool TTagmaHeader::Parse(const unsigned char *bytes, std::size_t len, TTagmaHead
    if (std::memcmp(bytes, kMagic.data(), kMagic.size()) != 0)
       return reject("the store carries no coordinate descriptor");
    const std::uint32_t version = GetLE32(bytes + 8);
-   if (version != kVersion)
+   if (version != kVersion && version != kCompressedVersion)
       return reject("unknown descriptor version " + std::to_string(version));
 
    TTagmaHeader header;
+   header.fVersion = version;
    header.fRunMax = GetLE64(bytes + 16);
    header.fLumiMax = GetLE64(bytes + 24);
    header.fEventMax = GetLE64(bytes + 32);

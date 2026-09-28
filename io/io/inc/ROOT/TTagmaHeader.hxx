@@ -41,10 +41,15 @@ class TTagmaHeader {
 public:
    static constexpr std::array<unsigned char, 8> kMagic = {'T', 'A', 'G', 'M', 'A', 'S', 'T', '0'};
    static constexpr std::uint32_t kVersion = 1;
+   // A block-compressed store carries the same descriptor with this version, so
+   // a reader that expects a plain store rejects it and the decompressing source
+   // recognizes it.
+   static constexpr std::uint32_t kCompressedVersion = 2;
    // magic (8) + version (4) + reserved (4) + run, lumi, event, record, data,
    // field table, checksum (7 * 8).
    static constexpr std::size_t kSize = 72;
 
+   std::uint32_t fVersion = kVersion;  // kVersion, or kCompressedVersion for a block-compressed store
    std::uint64_t fRunMax = 0;          // exclusive bound of the run axis
    std::uint64_t fLumiMax = 0;         // exclusive bound of the lumi axis
    std::uint64_t fEventMax = 0;        // exclusive bound of the event axis

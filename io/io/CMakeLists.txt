@@ -57,6 +57,7 @@ ROOT_LINKER_LIBRARY(RIO
   src/TStreamerInfoActions.cxx
   src/TStreamerInfoReadBuffer.cxx
   src/TStreamerInfoWriteBuffer.cxx
+  src/TTagmaBlockSource.cxx
   src/TTagmaDataset.cxx
   src/TTagmaHeader.cxx
   src/TTagmaSchema.cxx

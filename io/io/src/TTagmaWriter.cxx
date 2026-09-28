@@ -205,6 +205,12 @@ bool TTagmaWriter::ReadStore(const char *path, TTagmaStore::Layout *layout, TTag
       std::fclose(in);
       return false;
    }
+   // A block-compressed store ends with the same descriptor at a higher version;
+   // it is read through TTagmaBlockSource, not as a plain store.
+   if (header.fVersion != TTagmaHeader::kVersion) {
+      std::fclose(in);
+      return reject("the store is block-compressed");
+   }
 
    // The field table sits immediately before the descriptor.
    if (header.fFieldTableBytes > descriptorOffset) {
