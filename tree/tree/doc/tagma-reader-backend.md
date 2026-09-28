@@ -40,9 +40,13 @@ Each claim is carried by a gate, and the gate is what the claim rests on:
 | The store reads the collections a selection enables and no others | the scalar-only read in the harness serves the index record alone |
 | The build consumes the canonical engine reproducibly | the pinned syntagma revision in `tree/tree/CMakeLists.txt` |
 
-The phases are delivered. What the measured claim does not yet cover is a run
-taken against the compressed store, which the harness can take once a converted
-store is compressed, and the report revisions that follow it (#120). The
+The phases are delivered, and the compressed store is measured. It holds the
+same payload in 2.44 times fewer bytes and reads through the same seam, but the
+decompression it pays is charged to the read: on the M1 file the whole-event
+read runs 197.6 s against the plain store's 120.2 s and the baseline's 177.4 s,
+and the index-only read 35.2 s against 4.2 s. The store's advantage is not the
+bytes it moves but the bytes it does not decode, so a compressed store gives
+that back. What remains is the report revisions that follow (#120). The
 collection store is measured
 (one run, recorded in the harness): the reader serves the collections whose
 field branches are enabled and no others, so the read is column-selective at

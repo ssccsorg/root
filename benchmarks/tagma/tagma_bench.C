@@ -172,6 +172,7 @@
 
 #include "ROOT/TTagmaSchema.hxx"
 #include "ROOT/TTagmaStore.hxx"
+#include "ROOT/TTagmaBlockSource.hxx"
 #include "ROOT/TTagmaWriter.hxx"
 #include "TFile.h"
 #include "TH1F.h"
@@ -362,14 +363,27 @@ struct StoreShape {
    ROOT::TTagmaStore::Layout layout;
    ROOT::TTagmaSchema schema;
    Bool_t described = kFALSE;
+   // A block-compressed store is read through its own source, which the harness
+   // installs in place of the one the hook builds from the mapping.
+   std::shared_ptr<ROOT::TTagmaSource> source;
 };
 
 StoreShape ReadStoreShape(const char *path)
 {
    StoreShape shape;
    std::string why;
-   if (ROOT::TTagmaWriter::ReadStore(path, &shape.layout, &shape.schema, &why))
+   if (ROOT::TTagmaWriter::ReadStore(path, &shape.layout, &shape.schema, &why)) {
       shape.described = kTRUE;
+      return shape;
+   }
+   auto block = std::make_shared<ROOT::TTagmaBlockSource>();
+   if (block->Open(path, &why)) {
+      shape.described = kTRUE;
+      shape.layout = block->GetLayout();
+      shape.schema = block->GetSchema();
+      shape.source = std::make_shared<ROOT::TTagmaCachedSource>(block, ROOT::TTagmaBlockSource::kBlockBytes, 16,
+                                                                block->PayloadBytes());
+   }
    return shape;
 }
 
@@ -418,6 +432,8 @@ BenchResult MeasureCoordinate(const char *storePath, const char *mapPath, Long64
    // The byte source serves the store's record requests, and the entry
    // layer resolves each event through the same store.
    file->SetTagmaStore(store);
+   if (shape != nullptr && shape->source)
+      file->SetTagmaSource(shape->source);
 
    TTree tree("Events", "Events");
    tree.SetDirectory(file);
@@ -659,6 +675,8 @@ AnalysisResult AnalyzeCoordinate(const char *storePath, Long64_t limit, Long64_t
    }
    auto store = std::make_shared<ROOT::TTagmaStore>(layout);
    file->SetTagmaStore(store);
+   if (shape != nullptr && shape->source)
+      file->SetTagmaSource(shape->source);
    TTree tree("Events", "Events");
    tree.SetDirectory(file);
    tree.SetEntries(limit);
