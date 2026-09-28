@@ -248,6 +248,49 @@ TEST(TTagmaVariable, CollectionsReadThroughTheLeaves)
    delete file;
 }
 
+// The column pruning the packed layout admits: a read that stays in the
+// scalar fields is served from the index record alone, and a read of one
+// collection brings in that collection's chunk of the slice and nothing else.
+TEST(TTagmaVariable, AScalarOnlyReadLeavesTheSliceUnread)
+{
+   WriteStore();
+   ROOT::TTagmaSchema schema = MakeSchema();
+
+   TFile *file = OpenStore();
+   ASSERT_NE(file, nullptr);
+   ASSERT_FALSE(file->IsZombie());
+
+   TTree tree("Events", "Events");
+   tree.SetDirectory(file);
+   tree.SetEntries(kEntries);
+   Attach(tree, schema);
+
+   // No collection field branch is enabled, so the entry is served from the
+   // index record: one read, and no data-region read.
+   tree.SetBranchStatus("*", 0);
+   const Int_t scalarBefore = file->GetTagmaReadCalls();
+   ASSERT_GT(tree.GetEntry(0), 0);
+   EXPECT_EQ(file->GetTagmaReadCalls() - scalarBefore, 1);
+   EXPECT_EQ(tree.GetLeaf("nMuon")->GetValue(0), kMuonCount[0]);
+   EXPECT_EQ(tree.GetLeaf("nJet")->GetValue(0), kJetCount[0]);
+
+   // Asking for one collection brings that collection's chunk in: the index
+   // record and the slice span, two reads. Entry 3 carries one muon.
+   UInt_t found = 0;
+   tree.SetBranchStatus("Muon_pt", 1, &found);
+   ASSERT_EQ(found, 1u);
+   const Int_t collectionBefore = file->GetTagmaReadCalls();
+   ASSERT_GT(tree.GetEntry(3), 0);
+   EXPECT_EQ(file->GetTagmaReadCalls() - collectionBefore, 2);
+   EXPECT_FLOAT_EQ(tree.GetLeaf("Muon_pt")->GetValue(0), MuonPt(3, 0));
+
+   // A repeat of the loaded entry adds no read.
+   ASSERT_GT(tree.GetEntry(3), 0);
+   EXPECT_EQ(file->GetTagmaReadCalls() - collectionBefore, 2);
+
+   delete file;
+}
+
 TEST(TTagmaVariable, SchemaAndStoreBoundsAreEnforced)
 {
    WriteStore();

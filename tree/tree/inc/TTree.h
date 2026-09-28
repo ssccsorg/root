@@ -146,6 +146,7 @@ protected:
    std::vector<TBranch *> fTagmaFieldBranches; ///<!
    std::vector<std::uint64_t> fTagmaCounts;    ///<! Object counts of the loaded entry
    Bool_t fTagmaCountError = kFALSE;           ///<! Set once when a count passes the schema bound
+   Bool_t fTagmaSliceLoaded = kFALSE;          ///<! Set when the loaded entry's slice was read
    TObjArray      fBranches;              ///<  List of Branches
    TObjArray      fLeaves;                ///<  Direct pointers to individual branch leaves
    TList         *fAliases;               ///<  List of aliases for expressions based on the tree branches.
@@ -739,7 +740,11 @@ public:
    /// buffer is pinned by a schema that does not match, or the read failed.
    /// The materialized branches call this, so a consumer that drives the
    /// branch read path reaches the store through the same buffer.
-   Bool_t LoadTagmaRecord(Long64_t entry);
+   Bool_t LoadTagmaRecord(Long64_t entry, Bool_t getall = kFALSE);
+   /// Whether the entry's slice has to be read: true when the caller asks for
+   /// every branch, or when any collection field branch is enabled. A
+   /// scalar-only read stays in the index record.
+   Bool_t TagmaSliceNeeded(Bool_t getall) const;
    /// Copy the elements of one collection field of the loaded entry into
    /// `dest`, which holds the buffer the schema sized for the collection
    /// maximum. Returns the bytes copied, or -1 when the loaded entry, the

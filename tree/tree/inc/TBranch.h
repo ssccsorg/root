@@ -254,6 +254,11 @@ public:
       fTagmaField = field;
    }
    Bool_t IsTagmaField() const { return fTagmaFieldSize != 0; }
+   /// Whether this branch serves one field of a collection, whose elements the
+   /// entry's slice carries, rather than a scalar the index record carries.
+   Bool_t IsTagmaCollectionField() const { return fTagmaCollection >= 0; }
+   /// Index of the collection this branch serves, or -1 for a scalar branch.
+   Int_t GetTagmaCollection() const { return fTagmaCollection; }
    virtual Int_t     GetEntryExport(Long64_t entry, Int_t getall, TClonesArray *list, Int_t n);
            Int_t     GetEntryOffsetLen() const { return fEntryOffsetLen; }
            Int_t     GetEvent(Long64_t entry=0) {return GetEntry(entry);}

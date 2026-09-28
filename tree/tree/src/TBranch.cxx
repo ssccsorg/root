@@ -1719,7 +1719,7 @@ Int_t TBranch::GetEntry(Long64_t entry, Int_t getall)
       TTree *tree = GetTree();
       if (!tree)
          return -1;
-      if (!tree->LoadTagmaRecord(entry))
+      if (!tree->LoadTagmaRecord(entry, getall))
          return -1;
       if (fTagmaCollection < 0)
          return fTagmaFieldSize;

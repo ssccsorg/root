@@ -374,10 +374,14 @@ StoreShape ReadStoreShape(const char *path)
 }
 
 BenchResult MeasureCoordinate(const char *storePath, const char *mapPath, Long64_t limit, Long64_t recordSize,
-                              const StoreShape *shape)
+                              const StoreShape *shape, Bool_t allFields = kFALSE)
 {
    BenchResult r;
-   r.name = mapPath ? "coordinate+map" : "coordinate";
+   if (shape != nullptr && shape->described)
+      r.name =
+         mapPath ? (allFields ? "coordinate+map" : "coord+map-scal") : (allFields ? "coordinate" : "coordinate-scal");
+   else
+      r.name = mapPath ? "coordinate+map" : "coordinate";
    r.entries = limit;
 
    TFile *file = TFile::Open(storePath);
@@ -429,11 +433,12 @@ BenchResult MeasureCoordinate(const char *storePath, const char *mapPath, Long64
          r.ok = kFALSE;
          return r;
       }
-      // The row measures the store's read path the way the fixed-width rows
-      // do: the index record and the event's slice, without driving the
-      // branches a whole-event schema materializes. The analysis row reads
-      // the fields and covers the delivery.
-      tree.SetBranchStatus("*", 0);
+      // With the collection branches enabled the read serves the index record
+      // and the event's slice, the whole event; with them disabled the read
+      // stays in the index record, the column pruning the packed layout
+      // admits. The analysis row reads the fields and covers the delivery.
+      if (!allFields)
+         tree.SetBranchStatus("*", 0);
    }
 
    const Int_t calls0 = file->GetReadCalls();
@@ -868,8 +873,8 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events", Long64_t
       WarmFile(store);
    TString storeRaw(store);
    storeRaw += "?filetype=raw";
-   const BenchResult coord = MeasureCoordinate(storeRaw.Data(), nullptr, limit, record_size, &shape);
-   const BenchResult coordMap = MeasureCoordinate(storeRaw.Data(), store, limit, record_size, &shape);
+   const BenchResult coord = MeasureCoordinate(storeRaw.Data(), nullptr, limit, record_size, &shape, kTRUE);
+   const BenchResult coordMap = MeasureCoordinate(storeRaw.Data(), store, limit, record_size, &shape, kTRUE);
 
    std::printf("tagma_bench: source=%s\n", source);
    const Long64_t reportedRecord = shape.described ? static_cast<Long64_t>(shape.layout.fRecordSize) : record_size;
@@ -889,6 +894,13 @@ int tagma_bench(const char *url = "", const char *tree_name = "Events", Long64_t
       PrintResult(baseUncompressed);
    PrintResult(coord);
    PrintResult(coordMap);
+   if (shape.described) {
+      // The scalar-only read: the entry is served from the index record and
+      // the data region stays unread, the pruning the collection addressing
+      // admits.
+      PrintResult(MeasureCoordinate(storeRaw.Data(), nullptr, limit, record_size, &shape, kFALSE));
+      PrintResult(MeasureCoordinate(storeRaw.Data(), store, limit, record_size, &shape, kFALSE));
+   }
 
    if (haveChecksum) {
       const Bool_t match = coord.servedChecksum == expectedChecksum &&

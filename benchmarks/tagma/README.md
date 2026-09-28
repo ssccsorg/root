@@ -121,23 +121,27 @@ On the M1 file the collection store (974 scalars, 19 collections, index record
 
 | row | wall_s | reads | syscalls | bytes_moved | reads/ev |
 | :--- | ---: | ---: | ---: | ---: | ---: |
-| baseline | 176.7 | 470,131 | 470,131 | 2,149,961,076 | 0.20 |
-| baseline_uncomp | 77.2 | 387,007 | 387,007 | 10,852,850,385 | 0.17 |
-| coordinate | 10.2 | 4,630,378 | 4,630,378 | 7,082,290,985 | 2.00 |
-| coordinate+map | 8.3 | 4,630,378 | 0 | 7,082,290,985 | 2.00 |
+| baseline | 177.2 | 470,131 | 470,131 | 2,149,961,076 | 0.20 |
+| coordinate | 120.2 | 4,657,986 | 4,657,986 | 7,117,629,225 | 2.01 |
+| coordinate+map | 118.2 | 4,657,986 | 0 | 7,117,629,225 | 2.01 |
+| coordinate-scal | 4.2 | 2,315,223 | 2,315,223 | 2,963,485,440 | 1.00 |
+| coord+map-scal | 3.3 | 2,315,223 | 0 | 2,963,485,440 | 1.00 |
 
-The rows read the store's record and slice only, the shape of the fixed-width
-rows; driving the branches a whole-event schema materializes costs about 50
-microseconds per event, so the same coordinate row with the branches active
-runs 117.6 s and the analysis workload 123.4 s against the baseline's 180.3 s.
-The store reads the whole slice whatever the selection, so it is
-column-independent: RDataFrame on the same file with a warm cache, the column
-sum runs 0.132 s at one column, 1.716 s at eight, 7.411 s at 32, 16.806 s at 64
-and 139.798 s at the whole 974 scalar columns, so the store's fixed 10.2 s
-crosses that ramp near 42 columns (about 11 for the fixed-width store).
-Upstream therefore leads on narrow selections and the store leads on the
-whole-event read. The one-time conversion is 1,963.3 s against 226.3 s for the
-mode-0 projection.
+The `-scal` rows leave the collection branches disabled, so the read is served
+from the index record alone: the store moves 2.96 GB in one read per event,
+3.3 to 4.2 s against the baseline's 177.2 s, 42 to 54 times. The `coordinate`
+rows enable the collection branches, so the read serves the index record and
+the event's slice, 7.12 GB in two reads per event, and the delivery of the
+whole event dominates: 118 to 120 s, 1.47 to 1.50 times the baseline. The
+delivery is the branches a whole-event schema materializes, about 50
+microseconds per event, so the read path of the whole store is about 11 s. The
+reader reads the collections whose field branches are enabled and no others,
+so the store is column-selective at collection granularity: RDataFrame on the
+same file with a warm cache, the column sum runs 0.132 s at one column, 1.716 s
+at eight, 7.411 s at 32, 16.806 s at 64 and 139.798 s at the whole 974 scalar
+columns. Upstream therefore leads on the narrowest selections and the store
+leads from about the whole-event read on. The uncompressed control reads 77.2 s.
+The one-time conversion is 1,963.3 s against 226.3 s for the mode-0 projection.
 
 Append a positive eighth argument to also measure the baseline with
 the TTreeCache enabled on a fresh file open: the cache efficiency and

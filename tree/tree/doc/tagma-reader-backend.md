@@ -34,15 +34,16 @@ Each claim is carried by a gate, and the gate is what the claim rests on:
 | Several stores address as one dataset, so a coordinate resolves to a file and a record | `gtest-io-io-tagma-dataset` |
 | One store is read from several threads, with no per-read shared state | `gtest-io-io-tagma-threads` |
 | The harness measures a collection store through its descriptor, not only the fixed-width projection | the harness reads a self-describing store's layout and schema, and its `analysis_match` on one |
+| The store reads the collections a selection enables and no others | the scalar-only read in the harness serves the index record alone |
 | The build consumes the canonical engine reproducibly | the pinned syntagma revision in `tree/tree/CMakeLists.txt` |
 
 What the measured claim does not yet cover, and what the open phases are for:
 the dataset-wide read the addressing admits, and the compressed and cached
 byte sources the record source seam admits. The collection store is measured
-(one run, recorded in the harness): its advantage is on the read path, and it
-is column-independent, so a column-selective reader leads below the crossover
-(about 42 scalar columns for the collection store, against about 11 for the
-fixed-width projection).
+(one run, recorded in the harness): the reader serves the collections whose
+field branches are enabled and no others, so the read is column-selective at
+collection granularity, upstream leads on the narrowest selections, and the
+store leads from the whole-event read on.
 
 ## Where the code stands
 
@@ -234,7 +235,7 @@ rewrite of the file hook.
 | :--- | :--- | :--- |
 | P1 | Done | `gtest-tree-tree-tagma-schema`: leaf access over the record bytes |
 | P4 | Done | `gtest-tree-tree-tagma-dataframe`: identical histogram from file and store, and `gtest-tree-tree-tagma-schema` reads through `TTreeReader` |
-| P5 | Done | `gtest-tree-tree-tagma-variable`: collections read through the branches, the array values and counts checked against the store bytes, and a count past the bound rejected; `gtest-io-io-tagma-writer`: the producer lays out the index and data regions the reader addresses. The conversion tool adopts the producer in mode 1, deriving the schema from the tree and writing the packed collections, and the harness reads such a store back through its descriptor. Measured on the M1 file: the read path is 17.4x/21.3x the cache-disabled baseline and 7.6x/9.3x the uncompressed control, the whole-event delivery adds about 50 microseconds per event, and the store is column-independent, so upstream leads on narrow selections |
+| P5 | Done | `gtest-tree-tree-tagma-variable`: collections read through the branches, the array values and counts checked against the store bytes, and a count past the bound rejected; `gtest-io-io-tagma-writer`: the producer lays out the index and data regions the reader addresses. The conversion tool adopts the producer in mode 1, deriving the schema from the tree and writing the packed collections, and the harness reads such a store back through its descriptor. Measured on the M1 file: a scalar-only read is served from the index record alone, 2.96 GB in one read per event, 3.3 to 4.2 s, 42x to 54x the cache-disabled baseline; the whole-event read moves 7.12 GB in two reads per event, 118 to 120 s, 1.47x to 1.50x, the branch delivery, about 50 microseconds per event, dominating |
 | P3 | Descriptor done | `gtest-io-io-tagma-writer`: a store the writer produces names its layout and field table in a trailing descriptor, and a reader recovers both with no sidecar; `gtest-tree-tree-tagma-variable`: the tree attaches such a store from its path alone; the syntagma revision is pinned to the measured commit. The mode-0 projection still widens to double; mode 1 preserves the leaf types |
 | P2 | Done | The record source seam: `TFile` delegates a record and a covered range to `TTagmaSource`, with a mapped and a positioned implementation. The existing tagma gtests and the benchmark rows are unchanged |
 | P6 | Done | `gtest-io-io-tagma-dataset`: files laid out along the run axis, a coordinate resolved to the file that owns it and the record inside it, the flat index round-tripped, out-of-range coordinates rejected, and a record read from the owning file. `gtest-io-io-tagma-threads`: one mapped store read from several threads with every value intact and the per-file counts exact, the tagma counters atomic and the positioned source reading positioned |
