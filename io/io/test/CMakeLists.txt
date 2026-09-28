@@ -6,6 +6,7 @@
 
 ROOT_ADD_GTEST(RRawFile RRawFile.cxx LIBRARIES RIO)
 ROOT_ADD_GTEST(tagma_dataset tagma_dataset.cxx LIBRARIES RIO)
+ROOT_ADD_GTEST(tagma_sources tagma_sources.cxx LIBRARIES RIO)
 ROOT_ADD_GTEST(tagma_store tagma_store.cxx LIBRARIES RIO)
 ROOT_ADD_GTEST(tagma_threads tagma_threads.cxx LIBRARIES RIO Thread)
 ROOT_ADD_GTEST(tagma_writer tagma_writer.cxx LIBRARIES RIO)

@@ -2040,10 +2040,13 @@ Int_t TFile::ReadBufferViaTagma(char *buf, Long64_t pos, Int_t len)
 /// store's mapping state: a mapped store is served by a memory copy, an
 /// unmapped store by a positioned read. Called when the source is absent or
 /// its kind no longer matches the store, so a store mapped after it was
-/// attached takes effect on the next read.
+/// attached takes effect on the next read. A source a caller installed stays:
+/// the hook uses it and rebuilds nothing.
 
 void TFile::UpdateTagmaSource()
 {
+   if (fTagmaSourcePinned)
+      return;
    if (!fTagmaStore) {
       fTagmaSource.reset();
       return;
@@ -2057,6 +2060,18 @@ void TFile::UpdateTagmaSource()
    TFile *file = this;
    fTagmaSource = std::make_shared<ROOT::TTagmaPositionedSource>(
       [file](char *buf, std::uint64_t pos, std::uint64_t len) { return file->SysReadTagma(buf, pos, len); });
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Install the byte source of the coordinate read path, in place of the one
+/// the hook builds from the store's mapping state. The source a caller installs
+/// serves the ranges the hook asks for, so a block cache or a decompressing
+/// source is an implementation rather than a branch in the hook.
+
+void TFile::SetTagmaSource(std::shared_ptr<ROOT::TTagmaSource> source)
+{
+   fTagmaSource = std::move(source);
+   fTagmaSourcePinned = kTRUE;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -172,6 +172,7 @@ protected:
    std::atomic<Int_t> fSysReadCalls{0};       ///< Number of read system calls issued to the byte source
    std::shared_ptr<ROOT::TTagmaStore> fTagmaStore{nullptr}; ///<!Coordinate-indexed store layout (if any)
    std::shared_ptr<ROOT::TTagmaSource> fTagmaSource{nullptr}; ///<!Byte source behind the coordinate read path (if any)
+   Bool_t fTagmaSourcePinned{kFALSE};                         ///<!Set once a caller installs its own byte source
    TString          fRealName;                ///<Effective real file name (not original url)
    TString          fOption;                  ///<File options
    Char_t           fUnits{0};                ///<Number of bytes for file pointers
@@ -350,6 +351,10 @@ public:
    virtual Int_t       GetTagmaReadCalls() const { return fTagmaReadCalls; }
    virtual Int_t       GetSysReadCalls() const { return fSysReadCalls; }
    virtual void        SetTagmaStore(std::shared_ptr<ROOT::TTagmaStore> store) { fTagmaStore = store; }
+   /// Installs the byte source the hook uses instead of the one it builds from
+   /// the store's mapping state, so a caller wraps a source (a block cache,
+   /// say) without the hook branching on it. Install it after the store.
+   virtual void SetTagmaSource(std::shared_ptr<ROOT::TTagmaSource> source);
    virtual std::shared_ptr<ROOT::TTagmaStore> GetTagmaStore() const { return fTagmaStore; }
    /// Serve a byte range that the attached store owns, for ranges other
    /// than one fixed-width record: the packed data region is read through

@@ -32,14 +32,16 @@ Each claim is carried by a gate, and the gate is what the claim rests on:
 | A store is self-describing, so it needs no sidecar and is reproducible | `gtest-io-io-tagma-writer`, `gtest-tree-tree-tagma-variable` |
 | The byte source behind the file hook is a seam, so a new source is an implementation, not a hook branch | `TTagmaSource`, with the existing tagma gtests and the benchmark rows unchanged |
 | Several stores address as one dataset, so a coordinate resolves to a file and a record | `gtest-io-io-tagma-dataset` |
+| The dataset is read as one sequence, a range crossing a file boundary included | `gtest-io-io-tagma-dataset` |
 | One store is read from several threads, with no per-read shared state | `gtest-io-io-tagma-threads` |
+| A byte source can wrap another, so a cache is an implementation, not a hook branch | `gtest-io-io-tagma-sources` |
 | The harness measures a collection store through its descriptor, not only the fixed-width projection | the harness reads a self-describing store's layout and schema, and its `analysis_match` on one |
 | The store reads the collections a selection enables and no others | the scalar-only read in the harness serves the index record alone |
 | The build consumes the canonical engine reproducibly | the pinned syntagma revision in `tree/tree/CMakeLists.txt` |
 
 What the measured claim does not yet cover, and what the open phases are for:
-the dataset-wide read the addressing admits, and the compressed and cached
-byte sources the record source seam admits. The collection store is measured
+the block-compressed byte source the seam admits, which the install point the
+cached source uses already serves. The collection store is measured
 (one run, recorded in the harness): the reader serves the collections whose
 field branches are enabled and no others, so the read is column-selective at
 collection granularity, upstream leads on the narrowest selections, and the
@@ -53,8 +55,8 @@ store leads from the whole-event read on.
 | Field table | `io/io/inc/ROOT/TTagmaSchema.hxx` | In the library: scalar and collection fields, counts resolved from the count scalar, the text form, and validation against the record size |
 | Store format | `io/io/inc/ROOT/TTagmaHeader.hxx` | The index record and the packed data region are addressed by arithmetic, and a store the writer produces ends with a descriptor that names the axis maxima, the record size, the data size, and the field table, so the store is self-describing. The read path takes the layout and the schema from the caller, or from the descriptor itself through `TTree::SetTagmaStore(path)` |
 | Store producer | `io/io/inc/ROOT/TTagmaWriter.hxx` | Complete: the index region and the packed data region, written in one pass over the events, the counts read back out of the record the reader reads them from |
-| Byte source | `io/io/inc/ROOT/TTagmaSource.hxx`, `io/io/src/TFile.cxx` | The file hook resolves a record or a covered range and delegates to `TTagmaSource`: a mapped source copies from the mapping and issues no read system call, a positioned source takes one positioned read that leaves the file offset alone. A new byte source is an implementation of the interface |
-| Dataset | `io/io/inc/ROOT/TTagmaDataset.hxx` | Files laid out along the run axis, so a coordinate resolves to the file that owns it and the record inside it, with the per-file ranges derived from the descriptors and a requested mapping serving the record |
+| Byte source | `io/io/inc/ROOT/TTagmaSource.hxx`, `io/io/src/TFile.cxx` | The file hook resolves a record or a covered range and delegates to `TTagmaSource`: a mapped source copies from the mapping and issues no read system call, a positioned source takes one positioned read that leaves the file offset alone, and `TTagmaCachedSource` wraps another source and holds its least recently used blocks. `TFile::SetTagmaSource` installs one, so a cache, and later a decompressing source, is an implementation rather than a branch in the hook |
+| Dataset | `io/io/inc/ROOT/TTagmaDataset.hxx` | Files laid out along the run axis, so a coordinate resolves to the file that owns it and the record inside it, with the per-file ranges derived from the descriptors and a requested mapping serving the record. The flat index addresses the files as one sequence, `ReadRecord(flat)` serves it, and `ReadRecords` stitches a range that crosses a file boundary |
 | Branch read path | `tree/tree/src/TBranch.cxx` | `GetEntry` loads the tree's record for the entry and copies an array field's elements out of the slice, so `TTreeReader` and `RDataFrame` read store-backed events |
 | Entry hook | `tree/tree/src/TTree.cxx` | Fills the record in place, then drives the array branches. The short circuit stays for direct callers |
 | Harness | `benchmarks/tagma/tagma_bench.C` | Reads a self-describing store back through its descriptor: the layout addresses the index and data regions and the schema resolves the collections through the leaves, so the benchmark measures a collection store, not only the fixed-width projection |
