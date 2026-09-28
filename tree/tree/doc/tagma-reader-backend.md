@@ -41,13 +41,14 @@ Each claim is carried by a gate, and the gate is what the claim rests on:
 | The build consumes the canonical engine reproducibly | the pinned syntagma revision in `tree/tree/CMakeLists.txt` |
 
 The phases are delivered, and the compressed store is measured. It holds the
-same payload in 2.44 times fewer bytes and reads through the same seam, but the
-decompression it pays is charged to the read: on the M1 file the whole-event
-read runs 197.6 s against the plain store's 120.2 s and the baseline's 177.4 s,
-and the index-only read 35.2 s against 4.2 s. The store's advantage is not the
-bytes it moves but the bytes it does not decode, so a compressed store gives
-that back. What remains is the report revisions that follow (#120). The
-collection store is measured
+same payload in 2.44 times fewer bytes and reads it back through the same seam
+at 12.6 s, 562 MB/s, against the plain store's 10.2 s and the baseline's
+177.4 s, so compressing the store keeps the read-path advantage: the decode is
+fast and the bytes read fall with the file. The whole-event delivery row,
+197.6 s, is not the read path; the branch machinery dominates it, as it does on
+the plain store. The store's advantage is the reads it does not make and the
+bytes it does not decode, and a compressed store keeps both. What remains is the
+report revisions that follow (#120). The collection store is measured
 (one run, recorded in the harness): the reader serves the collections whose
 field branches are enabled and no others, so the read is column-selective at
 collection granularity, upstream leads on the narrowest selections, and the
