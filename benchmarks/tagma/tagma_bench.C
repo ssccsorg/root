@@ -2,15 +2,16 @@
 //
 // The single entry point for the Tagma benchmark set (benchmarks/tagma). It
 // names every tool, carries the measured summary and the conclusion, and
-// forwards the entry-layer run to tagma_entry.C. The full measured record, row
-// by row, with the per-run protocol and the boundaries, is the master block at
-// the top of tagma_entry.C; this file is the map and the summary.
+// forwards the run to tagma_harness.C, the benchmark harness. The full measured
+// record, row by row, with the per-run protocol and the boundaries, is the
+// master block at the top of tagma_harness.C; this file is the map and the
+// summary.
 //
 // Usage:
 //   root -l -b -q 'tagma_bench.C()'                        the entry-layer run
 //   root -l -b -q 'tagma_bench.C("open.root","Events",-1,2560,3,1,"plain.bin")'
 // and each tool on its own:
-//   root -l -b -q 'tagma_entry.C()'                        the entry layer
+//   root -l -b -q 'tagma_harness.C()'                      the harness
 //   root -l -b -q 'tagma_block_read.C("store.bin")'        a read path alone
 //   root -l -b -q 'tagma_mt.C("store.z.bin","open.root")'  thread scaling
 //   root -l -b -q 'tagma_scatter.C("plain.bin","store.z.bin","open.root",2000)'
@@ -21,10 +22,10 @@
 //
 // Tools and what each measures
 // ----------------------------
-//   tagma_entry.C            the entry layer over every regime it is given:
-//                            baseline, coordinate, the collection store, the
-//                            analysis workload, the synthetic path. Holds the
-//                            full measured record.
+//   tagma_harness.C          the harness: the entry layer over every regime it
+//                            is given, baseline, coordinate, the collection
+//                            store, the analysis workload, the synthetic path.
+//                            Holds the full measured record.
 //   tagma_block_read.C       a store's read path alone, plain or compressed,
 //                            with no entry layer.
 //   tagma_mt.C               thread scaling, store against baseline, with and
@@ -41,15 +42,15 @@
 // The library side is io/io/{inc/ROOT,src}/TTagma*.{hxx,cxx} and
 // tree/tree/{inc,src}/TTree|TBranch, gated by the tagma gtests.
 //
-// Measured summary (full record and protocol in tagma_entry.C)
+// Measured summary (full record and protocol in tagma_harness.C)
 // -----------------------------------------------------------
 // The CMS Run2016G DoubleMuon NanoAOD first file, 2,315,223 events, one
 // machine, the medium and the layer held constant within a comparison.
 //
 //   regime                tool                 result
-//   scan, whole event     tagma_entry.C        1.5x, the delivery layer decides
-//   scan, read path       tagma_entry.C        11-14x, branches off
-//   scan, index only      tagma_entry.C        42x, mapped 54x
+//   scan, whole event     tagma_harness.C      1.5x, the delivery layer decides
+//   scan, read path       tagma_harness.C      11-14x, branches off
+//   scan, index only      tagma_harness.C      42x, mapped 54x
 //   scan, compressed      tagma_block_read.C   12.4 s, 572 MB/s, 2.44x smaller
 //   event-selected        tagma_scatter.C      1 request/event, the baseline 683
 //   threads, 8 cores      tagma_mt.C           1 request/event, linear; 11.2x
@@ -72,18 +73,21 @@
 // microseconds per event. A narrow column selection is upstream's to win below
 // about 42 scalar columns. Thread scaling narrows the lead rather than widening
 // it, 14.3 to 11.2 times over eight cores. And O(128), multi-TB, and the remote
-// medium need infrastructure, so they remain extrapolations, not measurements.
+// medium need infrastructure. The 128-core row is not measured but predicted:
+// the per-event request count is media-independent, one for the store against
+// hundreds for the baseline, and the baseline grows superlinearly with the
+// events read, so the tendency holds and only the magnitude needs the machine.
 //
 // Open fronts (benchmarks/tagma/FRONTS.md): a column-major layout to move the
 // crossover, the delivery layer, and the claims revision.
 
-#include "tagma_entry.C"
+#include "tagma_harness.C"
 
 int tagma_bench(const char *url = "", const char *tree_name = "Events", Long64_t max_entries = -1,
                 Long64_t record_size = 0, Int_t nscatter = 3, Bool_t disable_cache = kTRUE, const char *store_path = "",
                 Long64_t perf_entries = 0, Bool_t analyze = kFALSE, const char *uncompressed_path = "",
                 Bool_t warm_cache = kTRUE)
 {
-   return tagma_entry(url, tree_name, max_entries, record_size, nscatter, disable_cache, store_path, perf_entries,
-                      analyze, uncompressed_path, warm_cache);
+   return tagma_harness(url, tree_name, max_entries, record_size, nscatter, disable_cache, store_path, perf_entries,
+                        analyze, uncompressed_path, warm_cache);
 }

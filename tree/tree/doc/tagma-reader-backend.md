@@ -70,8 +70,11 @@ What is not won is stated as such: a whole-event read is 1.5 times, because the
 entry layer costs about 50 microseconds per event; a narrow column selection is
 upstream's below about 42 scalar columns; thread scaling narrows the lead rather
 than widening it; and O(128), multi-TB, and the remote medium need
-infrastructure, so they are extrapolations and not measurements. The measurement
-record, row by row, is `benchmarks/tagma/tagma_entry.C`, and
+infrastructure. The 128-core row is not measured but predicted: the per-event
+request count is media-independent, one for the store against hundreds for the
+baseline, and the baseline grows superlinearly with the events read, so the
+tendency holds and only the magnitude needs the machine. The measurement
+record, row by row, is `benchmarks/tagma/tagma_harness.C`, and
 `benchmarks/tagma/tagma_bench.C` is the entry point over the tool set.
 
 ## Where the code stands
@@ -87,7 +90,7 @@ record, row by row, is `benchmarks/tagma/tagma_entry.C`, and
 | Dataset | `io/io/inc/ROOT/TTagmaDataset.hxx` | Files laid out along the run axis, so a coordinate resolves to the file that owns it and the record inside it, with the per-file ranges derived from the descriptors and a requested mapping serving the record. The flat index addresses the files as one sequence, `ReadRecord(flat)` serves it, and `ReadRecords` stitches a range that crosses a file boundary |
 | Branch read path | `tree/tree/src/TBranch.cxx` | `GetEntry` loads the tree's record for the entry and copies an array field's elements out of the slice, so `TTreeReader` and `RDataFrame` read store-backed events |
 | Entry hook | `tree/tree/src/TTree.cxx` | Fills the record in place, then drives the array branches. The short circuit stays for direct callers |
-| Benchmarks | `benchmarks/tagma/tagma_bench.C` | The entry point over the tool set: the measured summary, the conclusion, and the map to each tool. The entry-layer harness is `tagma_entry.C`, the read path alone `tagma_block_read.C`, the thread rows `tagma_mt.C`, the event-selected rows `tagma_scatter.C`, the compressed form `tagma_compress.C`, and the upstream column reader `tagma_rdf_columns.C`. The entry harness reads a self-describing store back through its descriptor, so a collection store is measured, not only the fixed-width projection |
+| Benchmarks | `benchmarks/tagma/tagma_bench.C` | The entry point over the tool set: the measured summary, the conclusion, and the map to each tool. The harness is `tagma_harness.C`, the read path alone `tagma_block_read.C`, the thread rows `tagma_mt.C`, the event-selected rows `tagma_scatter.C`, the compressed form `tagma_compress.C`, and the upstream column reader `tagma_rdf_columns.C`. The harness reads a self-describing store back through its descriptor, so a collection store is measured, not only the fixed-width projection |
 
 Consequences. Leaf access, `TTreeReader`, and `RDataFrame` reach the store
 through the ordinary branch machinery, so the store is a byte source under

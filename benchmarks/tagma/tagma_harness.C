@@ -1,6 +1,6 @@
-// tagma_entry.C
+// tagma_harness.C
 //
-// The entry-layer harness for the coordinate-indexed TTree read path. It is one
+// The benchmark harness for the coordinate-indexed TTree read path. It is one
 // of the benchmarks under benchmarks/tagma; the single entry point that names
 // them all, carries the summary, and states the conclusion is tagma_bench.C.
 //
@@ -817,7 +817,7 @@ void PrintAnalysis(const AnalysisResult &r)
 
 }  // namespace
 
-int tagma_entry(const char *url = "", const char *tree_name = "Events", Long64_t max_entries = -1,
+int tagma_harness(const char *url = "", const char *tree_name = "Events", Long64_t max_entries = -1,
                 Long64_t record_size = 0, Int_t nscatter = 3, Bool_t disable_cache = kTRUE, const char *store_path = "",
                 Long64_t perf_entries = 0, Bool_t analyze = kFALSE, const char *uncompressed_path = "",
                 Bool_t warm_cache = kTRUE)

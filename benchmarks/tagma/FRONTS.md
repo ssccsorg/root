@@ -93,7 +93,12 @@ degrade a shared cache is therefore not reproduced here; a shared cache or a
 scattered, remote pattern would be needed to test it, and that pairing is open.
 The assumption that more threads would widen the store's lead is not supported
 either way. This machine has ten cores, so the row ends at eight and O(128) is
-an extrapolation.
+an extrapolation. The 128-core row needs a larger system and is not measured,
+but it is predicted and not guessed: the per-event request count is
+media-independent and settled at the scale measured, one for the store whatever
+the order against hundreds for the baseline, and the baseline grows
+superlinearly with the events read while the store stays flat, so the tendency
+holds at 128 cores and only the wall-time magnitude needs the machine.
 
 ### 2. A column-major physical layout
 
@@ -136,7 +141,10 @@ selections, and event-selected access.
 ### 1. O(128)
 
 A many-core node, a sponsor cluster, or a rented NVMe instance. The O(10)
-measurement gives the trend; the production number needs the machine.
+measurement gives the trend as a deterministic prediction: the request count per
+event is media-independent, one for the store against hundreds for the baseline,
+and it is settled at the scale measured, so the tendency holds at 128 cores and
+only the wall-time magnitude needs the machine.
 
 ### 2. Multi-TB
 

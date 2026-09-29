@@ -52,12 +52,12 @@ The same run is registered in CTest when testing is enabled:
 ctest -R tagma-bench
 ```
 
-`tagma_bench.C` is the entry point: it forwards this run to `tagma_entry.C`,
+`tagma_bench.C` is the entry point: it forwards this run to `tagma_harness.C`,
 which holds the harness and the full measured record, and it names the rest of
 the set, `tagma_block_read.C`, `tagma_mt.C`, `tagma_scatter.C`,
 `tagma_compress.C`, `tagma_rdf_columns.C`, `tagma_make_store.C`, and
 `tagma_make_uncompressed.C`. The measured record, row by row, is the master
-block at the top of `tagma_entry.C`, and `FRONTS.md` holds the open fronts.
+block at the top of `tagma_harness.C`, and `FRONTS.md` holds the open fronts.
 
 Conclusion: the store's win is structural and it lives in event-selected
 access, one request per event whatever the order against the baseline's 683 when
