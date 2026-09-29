@@ -28,21 +28,31 @@ from the mapping or decompressing the block it falls in, the baseline driving
 | sequential | store block | 0.003 | 2,000 | 1.00 |
 | sequential | baseline | 0.601 | 7 | 0.004 |
 | scattered | store mapped | 0.000 | 2,000 | 1.00 |
-| scattered | store block | 0.447 | 2,000 | 1.00 |
-| scattered | baseline | 205.045 | 1,365,153 | 682.6 |
+| scattered | store block | 0.445 | 2,000 | 1.00 |
+| scattered | baseline | 206.139 | 1,365,153 | 682.6 |
+| scattered | baseline+cache | 199.311 | 16 | 0.008 |
 
 The store resolves every event in one request whatever the order, while the
 baseline pays 683 requests per event when the order is scattered against 0.004
 when it is a scan, which is the production signature the work started from. The
 win is therefore not in the scan, where the store is 11 to 14 times ahead, but in
 event-selected access, where it is about five orders of magnitude at a fixed one
-request. Three caveats: the store row carries the index record and not the
-collections' slices, which are read per selection; the baseline has no cache,
-and a cached baseline is the fairer production pairing and still open; and the
-count is 2,000 because the scattered baseline does not finish more on a
-workstation. The compressed store pays for scatter, 0.447 against 0.000 seconds,
-because a record read decompresses the whole 256 KB block it falls in, so small
-blocks or a decode cache are the fix there.
+request.
+
+The cache is not the answer under scatter. A 64 MB `TTreeCache` per file
+collapses the read calls to 16 and leaves the time where it was, 199.3 s against
+206.1, so the scattered cost is the traversal and the decode of every event, not
+the reads, and a cache cannot hold the working set. The store removes that cost
+by addressing, which is the thesis.
+
+Three caveats: the store row carries the index record and not the collections'
+slices, which are read per selection; the baseline has no branch addresses; and
+the count is 2,000 because the scattered baseline does not finish more on a
+workstation. The compressed store pays for scatter, 0.445 against 0.000 seconds,
+because a record read decompresses the whole 256 KB block it falls in, and the
+amplification is the block size over the record size, 205 here; small blocks or
+a decode cache are the fix, and the block size is a scan against scatter
+tradeoff to be a parameter rather than a constant.
 
 ## Measurable or fixable here
 

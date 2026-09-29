@@ -43,7 +43,7 @@ void Report(const char *order, const char *row, double seconds, std::uint64_t re
 } // namespace
 
 void tagma_scatter(const char *plainStore, const char *blockStore, const char *treePath, Long64_t count = 20000,
-                   UInt_t seed = 12345)
+                   UInt_t seed = 12345, Int_t cacheMB = 64)
 {
    ROOT::EnableThreadSafety();
 
@@ -122,21 +122,28 @@ void tagma_scatter(const char *plainStore, const char *blockStore, const char *t
          }
       }
 
-      // The baseline: one GetEntry per event, no branch addresses, cache off.
-      {
+      // The baseline: one GetEntry per event, no branch addresses, first with
+      // no cache and then with a per-file cache, the configuration a
+      // production job uses.
+      for (const int withCache : {0, static_cast<int>(cacheMB)}) {
          TFile *file = TFile::Open(treePath);
          if (file == nullptr || file->IsZombie()) {
             std::printf("tagma_scatter: cannot open %s\n", treePath);
             return;
          }
          TTree *t2 = dynamic_cast<TTree *>(file->Get("Events"));
+         if (withCache > 0) {
+            t2->SetCacheSize(static_cast<Long64_t>(withCache) * 1024 * 1024);
+            t2->AddBranchToCache("*", true);
+         }
          const Long64_t before = file->GetReadCalls();
          const auto start = std::chrono::steady_clock::now();
          for (Long64_t e : list)
             t2->GetEntry(e);
          const double seconds = Elapsed(start);
          const Long64_t reads = file->GetReadCalls() - before;
-         Report(order.first.c_str(), "baseline", seconds, static_cast<std::uint64_t>(reads), list.size());
+         Report(order.first.c_str(), withCache > 0 ? "baseline+cache" : "baseline", seconds,
+                static_cast<std::uint64_t>(reads), list.size());
          file->Close();
          delete file;
       }
