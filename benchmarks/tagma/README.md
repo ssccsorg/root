@@ -52,6 +52,21 @@ The same run is registered in CTest when testing is enabled:
 ctest -R tagma-bench
 ```
 
+`tagma_bench.C` is the entry point: it forwards this run to `tagma_entry.C`,
+which holds the harness and the full measured record, and it names the rest of
+the set, `tagma_block_read.C`, `tagma_mt.C`, `tagma_scatter.C`,
+`tagma_compress.C`, `tagma_rdf_columns.C`, `tagma_make_store.C`, and
+`tagma_make_uncompressed.C`. The measured record, row by row, is the master
+block at the top of `tagma_entry.C`, and `FRONTS.md` holds the open fronts.
+
+Conclusion: the store's win is structural and it lives in event-selected
+access, one request per event whatever the order against the baseline's 683 when
+the order is scattered, a superlinear cliff the baseline does not climb with
+scale. On a scan the read path is 11 to 14 times ahead, a whole-event read is
+1.5 times because the entry layer dominates, and a narrow column selection is
+upstream's below about 42 scalar columns. O(128), multi-TB, and the remote
+medium remain extrapolations, not measurements.
+
 Arguments: `tagma_bench(url, tree_name, max_entries, record_size,
 nscatter, disable_cache)`. An empty `url` selects the synthetic source;
 `record_size` defaults to 2560 bytes (the documented 2.6 KB average
