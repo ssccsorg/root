@@ -114,11 +114,88 @@
 // One-time conversion into the collection store: 1,963.3 s, against 226.3 s
 // for the mode-0 projection.
 //
-// Boundaries: the fixed-width rows cover phase 1 and hold a scalar
-// projection of the events; the collection-store rows above carry the whole
-// event, and their advantage is on the read path, not on delivery or narrow
-// selections; the documented 14-hour production workload is not reproduced
-// end to end.
+// The same payload as a block-compressed store (tagma_compress.C, 256 KB
+// blocks, zlib level 1): 7,082,290,985 to 2,897,372,833 bytes, 2.44 times, in
+// 75.4 s over 27,017 blocks. The read path on its own (tagma_block_read.C, the
+// whole payload through the byte source with no entry layer) is 12.4 s at
+// 572 MB/s, against the plain store's 14.6 s and the baseline's 177.4 s, so
+// compression keeps the read-path advantage and shrinks the file. The
+// whole-event row with the branches active, 197.6 s, is the delivery layer and
+// not the read path.
+//
+// Event-selected reads (tagma_scatter.C), the pattern the work is aimed at: the
+// same events read in list order rather than a scan, 2,000 events, same medium.
+//   order       row             seconds    requests  requests/event
+//   sequential  store mapped      0.010       2,000  1.00
+//   sequential  store block       0.003       2,000  1.00
+//   sequential  baseline          0.601           7  0.004
+//   scattered   store mapped      0.000       2,000  1.00
+//   scattered   store block       0.445       2,000  1.00
+//   scattered   baseline        206.139   1,365,153  682.6
+//   scattered   baseline+cache  199.311          16  0.008
+// The store answers each event in one request whatever the order; the baseline
+// pays 683 requests per event when the order is scattered against 0.004 when it
+// is a scan, the production signature the work started from. The cache is not
+// the answer under scatter: a 64 MB TTreeCache collapses the read calls to 16
+// and leaves the time where it was, 199.3 s against 206.1, so the scattered
+// cost is the traversal and the decode of every event, a cache cannot hold the
+// working set, and the store removes that cost by addressing. The scattered
+// baseline is superlinear besides, 0.210 s over 500 events against 206 s over
+// 2,000, while the store stays at one request and linear, the O(1) addressing
+// telling at scale.
+//
+// The compressed store paid for scatter until the block size became a parameter
+// of Compress, carried in the descriptor so a reader needs no setting and
+// tagma_compress.C writes a chosen size. A record read decompressed the whole
+// 256 KB block it fell in, 205 times the bytes wanted; at 8 KB the scattered
+// read falls to 16 microseconds per event against 222, and the file only grows
+// from 2.897 to 2.990 GB, 2.44 to 2.37 times, while the scan gives up a little,
+// 1.5 to 4 microseconds per event.
+//
+// Thread scaling (tagma_mt.C): every worker with its own file object and a
+// disjoint range, the store row through the byte source and the baseline row
+// through GetEntry with no branch addresses, on the same disk, one run.
+//   threads  store_s  store_MB/s  base_s  base+cache_s  base/store
+//   1         13.04       543      186.4     183.8        14.3
+//   2          9.86       718       93.7      92.7         9.5
+//   4          5.32      1331       50.3      53.7         9.4
+//   8          2.86      2481       31.9      32.2        11.2
+// Both scale, the store 4.6 times and the cache-less baseline 5.8 over eight
+// threads, so the store's lead narrows from 14.3 to 11.2 rather than widening:
+// the store is bandwidth bound and the baseline I/O bound. The cache neither
+// helps nor hurts, 183.8 s against 186.4 at one thread and 32.2 against 31.9 at
+// eight, because each worker reads a contiguous range and the cache is
+// redundant under sequential access. This machine has ten cores, so the row
+// ends at eight and O(128) is an extrapolation.
+//
+// Boundaries: the fixed-width rows cover phase 1 and hold a scalar projection
+// of the events; the collection-store rows carry the whole event and their
+// advantage is on the read path, not on delivery or narrow selections; the
+// scatter rows carry the index record and not the collections' slices, which
+// are read per selection, and their baseline has no branch addresses; the
+// scattered baseline count is bounded by what a workstation finishes; the
+// thread rows end at eight cores; and the documented 14-hour production
+// workload, the remote medium, and O(128) are not reproduced end to end.
+//
+// Tools (benchmarks/tagma)
+// -----------------------
+//   tagma_bench.C            this harness, the entry layer over every regime
+//                            it is given; the master record is above
+//   tagma_block_read.C       a store's read path on its own, plain or
+//                            block-compressed, no entry layer
+//   tagma_mt.C               thread scaling, store against baseline, with and
+//                            without a per-worker cache
+//   tagma_scatter.C          sequential against event-selected access, with
+//                            and without a baseline cache
+//   tagma_compress.C         writes a block-compressed store at a chosen
+//                            block size
+//   tagma_make_store.C       converts a tree into a store, mode 0 fixed width
+//                            or mode 1 collections
+//   tagma_make_uncompressed.C  the uncompressed control file
+//   tagma_rdf_columns.C      RDataFrame column selection, the upstream reader
+//                            the crossover is measured against
+// The library side is io/io/{inc/ROOT,src}/TTagma*.{hxx,cxx} and
+// tree/tree/{inc,src}/TTree|TBranch, gated by the tagma gtests.
 //
 // Usage:
 //   root -l -b -q 'tagma_bench.C()'
