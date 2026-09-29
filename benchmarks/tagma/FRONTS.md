@@ -14,6 +14,36 @@ if it were the production number.
 | Compression keeps the read path and shrinks the file | 7,082,290,985 to 2,897,372,833 bytes, 2.44x |
 | A read serves only the collections a selection enables | the scalar-only harness row, 4.2 s on the plain store |
 
+### Scattered, event-selected reads
+
+The regime the work was aimed at, and the one the earlier rows missed: reads in
+list order rather than a scan. Measured with `tagma_scatter.C`, 2,000 events in
+sequential and shuffled order on the same disk, the store row copying the record
+from the mapping or decompressing the block it falls in, the baseline driving
+`TTree::GetEntry` with no branch addresses.
+
+| order | row | seconds | requests | requests/event |
+| :--- | :--- | ---: | ---: | ---: |
+| sequential | store mapped | 0.010 | 2,000 | 1.00 |
+| sequential | store block | 0.003 | 2,000 | 1.00 |
+| sequential | baseline | 0.601 | 7 | 0.004 |
+| scattered | store mapped | 0.000 | 2,000 | 1.00 |
+| scattered | store block | 0.447 | 2,000 | 1.00 |
+| scattered | baseline | 205.045 | 1,365,153 | 682.6 |
+
+The store resolves every event in one request whatever the order, while the
+baseline pays 683 requests per event when the order is scattered against 0.004
+when it is a scan, which is the production signature the work started from. The
+win is therefore not in the scan, where the store is 11 to 14 times ahead, but in
+event-selected access, where it is about five orders of magnitude at a fixed one
+request. Three caveats: the store row carries the index record and not the
+collections' slices, which are read per selection; the baseline has no cache,
+and a cached baseline is the fairer production pairing and still open; and the
+count is 2,000 because the scattered baseline does not finish more on a
+workstation. The compressed store pays for scatter, 0.447 against 0.000 seconds,
+because a record read decompresses the whole 256 KB block it falls in, so small
+blocks or a decode cache are the fix there.
+
 ## Measurable or fixable here
 
 ### 1. Thread scaling at workstation width
