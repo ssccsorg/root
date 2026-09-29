@@ -48,11 +48,19 @@ by addressing, which is the thesis.
 Three caveats: the store row carries the index record and not the collections'
 slices, which are read per selection; the baseline has no branch addresses; and
 the count is 2,000 because the scattered baseline does not finish more on a
-workstation. The compressed store pays for scatter, 0.445 against 0.000 seconds,
-because a record read decompresses the whole 256 KB block it falls in, and the
-amplification is the block size over the record size, 205 here; small blocks or
-a decode cache are the fix, and the block size is a scan against scatter
-tradeoff to be a parameter rather than a constant.
+workstation. The scattered baseline is superlinear besides: 0.210 s over 500
+events against 206 s over 2,000, a cliff, while the store stays at one request
+and linear in the events, which is the O(1) addressing telling at scale.
+
+The compressed store paid for scatter because a record read decompressed the
+whole block it fell in, the block size over the record size, 205 for the default
+256 KB against 1,280 bytes. The block size is now a parameter of `Compress` and
+the store's descriptor records it, so a reader needs no setting and
+`tagma_compress.C` writes a store at a chosen size. At 8 KB the scattered read
+falls to 16 microseconds per event against 222, and the file only grows from
+2.897 to 2.990 GB, 2.44 to 2.37 times, while the scan gives up a little, 1.5 to
+4 microseconds per event. Small blocks are therefore nearly free in ratio and
+much better under scatter.
 
 ## Measurable or fixable here
 

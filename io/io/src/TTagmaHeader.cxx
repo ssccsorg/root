@@ -74,7 +74,7 @@ std::array<unsigned char, TTagmaHeader::kSize> TTagmaHeader::Serialize() const
    std::array<unsigned char, kSize> bytes{};
    std::memcpy(bytes.data(), kMagic.data(), kMagic.size());
    PutLE32(bytes.data() + 8, fVersion);
-   PutLE32(bytes.data() + 12, 0); // reserved
+   PutLE32(bytes.data() + 12, fBlockShift);
    PutLE64(bytes.data() + 16, fRunMax);
    PutLE64(bytes.data() + 24, fLumiMax);
    PutLE64(bytes.data() + 32, fEventMax);
@@ -102,6 +102,7 @@ bool TTagmaHeader::Parse(const unsigned char *bytes, std::size_t len, TTagmaHead
 
    TTagmaHeader header;
    header.fVersion = version;
+   header.fBlockShift = GetLE32(bytes + 12);
    header.fRunMax = GetLE64(bytes + 16);
    header.fLumiMax = GetLE64(bytes + 24);
    header.fEventMax = GetLE64(bytes + 32);

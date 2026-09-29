@@ -143,13 +143,18 @@ bool TTagmaBlockSource::Open(const std::string &path, std::string *why)
       std::fclose(in);
       return reject("the descriptor names an empty payload");
    }
+   fBlockShift = header.fBlockShift;
+   if (fBlockShift == 0 || fBlockShift > 30) {
+      std::fclose(in);
+      return reject("the descriptor names an unusable block size");
+   }
 
    const std::uint64_t trailer = fFileBytes - TTagmaHeader::kSize;
    if (header.fFieldTableBytes > trailer) {
       std::fclose(in);
       return reject("the field table runs past the start of the store");
    }
-   fBlockCount = (fPayloadBytes + kBlockBytes - 1) / kBlockBytes;
+   fBlockCount = (fPayloadBytes + BlockBytes() - 1) / BlockBytes();
    const std::uint64_t tableBytes = fBlockCount * kEntryBytes;
    if (header.fFieldTableBytes + tableBytes > trailer) {
       std::fclose(in);
@@ -209,7 +214,7 @@ const char *TTagmaBlockSource::Load(std::uint64_t index, const Block &block)
 {
    if (fLoadedBlock == index)
       return fBlockData.data();
-   if (block.fUncompressedBytes > kBlockBytes * 2)
+   if (block.fUncompressedBytes > BlockBytes() * 2)
       return nullptr;
    if (Seek(fFile, block.fOffset) != 0)
       return nullptr;
@@ -248,11 +253,11 @@ std::int64_t TTagmaBlockSource::Read(char *buf, std::uint64_t pos, std::uint64_t
    std::uint64_t left = len;
    char *out = buf;
    while (left > 0) {
-      const std::uint64_t index = at / kBlockBytes;
+      const std::uint64_t index = at / BlockBytes();
       if (index >= fBlocks.size())
          return -1;
       const Block &block = fBlocks[static_cast<std::size_t>(index)];
-      const std::uint64_t within = at - index * kBlockBytes;
+      const std::uint64_t within = at - index * BlockBytes();
       if (within >= block.fUncompressedBytes)
          return -1;
       const char *bytes = Load(index, block);
@@ -267,7 +272,8 @@ std::int64_t TTagmaBlockSource::Read(char *buf, std::uint64_t pos, std::uint64_t
    return static_cast<std::int64_t>(len);
 }
 
-bool TTagmaBlockSource::Compress(const std::string &inPath, const std::string &outPath, std::string *why)
+bool TTagmaBlockSource::Compress(const std::string &inPath, const std::string &outPath, std::string *why,
+                                 std::uint32_t blockShift)
 {
    const auto reject = [why](const std::string &reason) {
       if (why)
@@ -295,16 +301,17 @@ bool TTagmaBlockSource::Compress(const std::string &inPath, const std::string &o
       return reject("cannot create the compressed store");
    }
 
-   const std::uint64_t blockCount = (payload + kBlockBytes - 1) / kBlockBytes;
+   const std::uint64_t blockBytes = 1ull << blockShift;
+   const std::uint64_t blockCount = (payload + blockBytes - 1) / blockBytes;
    std::vector<unsigned char> entries(static_cast<std::size_t>(blockCount * kEntryBytes));
-   std::vector<char> source(static_cast<std::size_t>(kBlockBytes));
-   std::vector<char> target(static_cast<std::size_t>(kBlockBytes + kBlockBytes / 2 + 1024));
+   std::vector<char> source(static_cast<std::size_t>(blockBytes));
+   std::vector<char> target(static_cast<std::size_t>(blockBytes + blockBytes / 2 + 1024));
 
    bool ok = true;
    std::uint64_t offset = 0;
    for (std::uint64_t i = 0; ok && i < blockCount; ++i) {
-      const std::uint64_t start = i * kBlockBytes;
-      const std::uint64_t size = std::min(kBlockBytes, payload - start);
+      const std::uint64_t start = i * blockBytes;
+      const std::uint64_t size = std::min(blockBytes, payload - start);
       if (Seek(in, start) != 0 || std::fread(source.data(), 1, size, in) != size) {
          ok = false;
          break;
@@ -337,6 +344,7 @@ bool TTagmaBlockSource::Compress(const std::string &inPath, const std::string &o
    if (ok) {
       TTagmaHeader header;
       header.fVersion = TTagmaHeader::kCompressedVersion;
+      header.fBlockShift = blockShift;
       header.fRunMax = layout.fRunMax;
       header.fLumiMax = layout.fLumiMax;
       header.fEventMax = layout.fEventMax;

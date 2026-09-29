@@ -40,8 +40,12 @@ namespace ROOT {
 
 class TTagmaBlockSource final : public TTagmaSource {
 public:
-   // Bytes of the payload one block holds before compression.
-   static constexpr std::uint64_t kBlockBytes = 1u << 18;
+   // Bytes of the payload one block holds before compression, the default the
+   // writer uses. A caller trades the ratio against the decode amplification of
+   // a record read by passing a shift to Compress; the store records it, so a
+   // reader needs no setting.
+   static constexpr std::uint32_t kDefaultBlockShift = 18;
+   static constexpr std::uint64_t kBlockBytes = 1ull << kDefaultBlockShift;
 
    TTagmaBlockSource() = default;
    ~TTagmaBlockSource() override;
@@ -60,6 +64,8 @@ public:
 
    const TTagmaStore::Layout &GetLayout() const { return fLayout; }
    const TTagmaSchema &GetSchema() const { return fSchema; }
+   // Bytes of the payload one block holds, from the store's descriptor.
+   std::uint64_t BlockBytes() const { return 1ull << fBlockShift; }
    // Bytes of the payload the source serves, uncompressed.
    std::uint64_t PayloadBytes() const { return fPayloadBytes; }
    std::uint64_t BlockCount() const { return fBlockCount; }
@@ -71,7 +77,8 @@ public:
    // A block that does not shrink is stored whole, so the file is never larger
    // than the payload it carries plus the tables. Returns false, with the reason
    // in `why`, when the input cannot be read or the output cannot be written.
-   static bool Compress(const std::string &inPath, const std::string &outPath, std::string *why = nullptr);
+   static bool Compress(const std::string &inPath, const std::string &outPath, std::string *why = nullptr,
+                        std::uint32_t blockShift = kDefaultBlockShift);
 
 private:
    // One block: where its bytes are in the file, how many are stored there, and
@@ -94,6 +101,7 @@ private:
    std::uint64_t fFileBytes = 0;
    std::uint64_t fBlockCount = 0;
    std::vector<Block> fBlocks;
+   std::uint32_t fBlockShift = kDefaultBlockShift; // from the descriptor, log2 of the block size
    std::vector<char> fBlockData;           // the decoded block, retained
    std::uint64_t fLoadedBlock = kNoBlock;  // which block fBlockData holds
    std::vector<unsigned char> fCompressed; // the compressed bytes of a block, reused

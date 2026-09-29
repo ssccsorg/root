@@ -50,6 +50,7 @@ public:
    static constexpr std::size_t kSize = 72;
 
    std::uint32_t fVersion = kVersion;  // kVersion, or kCompressedVersion for a block-compressed store
+   std::uint32_t fBlockShift = 0;      // log2 of a block-compressed store's block size
    std::uint64_t fRunMax = 0;          // exclusive bound of the run axis
    std::uint64_t fLumiMax = 0;         // exclusive bound of the lumi axis
    std::uint64_t fEventMax = 0;        // exclusive bound of the event axis

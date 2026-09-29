@@ -381,8 +381,7 @@ StoreShape ReadStoreShape(const char *path)
       shape.described = kTRUE;
       shape.layout = block->GetLayout();
       shape.schema = block->GetSchema();
-      shape.source = std::make_shared<ROOT::TTagmaCachedSource>(block, ROOT::TTagmaBlockSource::kBlockBytes, 16,
-                                                                block->PayloadBytes());
+      shape.source = std::make_shared<ROOT::TTagmaCachedSource>(block, block->BlockBytes(), 16, block->PayloadBytes());
    }
    return shape;
 }
