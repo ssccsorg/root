@@ -1,10 +1,13 @@
-// tagma_mt: thread scaling of the store read path against the baseline.
+// tagma_mt: thread scaling of the store read path against the baseline, with
+// and without a per-thread read cache.
 //
 // Every worker owns its file object and reads a disjoint range, the model a
 // production job uses, and the medium and the layer are held constant: the
-// store row reads the whole payload through the byte source, the baseline row
-// drives TTree::GetEntry over the same events with no branch addresses, so both
-// move all the data with no field copy.
+// store row reads the whole payload through the byte source, the baseline rows
+// drive TTree::GetEntry over the same events with no branch addresses, so all
+// rows move the data with no field copy. The cached row sizes a TTreeCache per
+// worker, the configuration a production job uses, and answers whether the
+// cache degrades under threads as claimed.
 //
 //   root -l -b -q 'tagma_mt.C("/path/to/store.bin", "/path/to/open/data.root")'
 
@@ -19,7 +22,6 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
-#include <memory>
 #include <string>
 #include <thread>
 #include <utility>
@@ -49,7 +51,7 @@ std::vector<std::pair<std::uint64_t, std::uint64_t>> Ranges(std::uint64_t total,
 
 } // namespace
 
-void tagma_mt(const char *storePath, const char *treePath, Int_t maxThreads = 8)
+void tagma_mt(const char *storePath, const char *treePath, Int_t maxThreads = 8, Int_t cacheMB = 32)
 {
    ROOT::EnableThreadSafety();
 
@@ -78,9 +80,39 @@ void tagma_mt(const char *storePath, const char *treePath, Int_t maxThreads = 8)
    src->Close();
    delete src;
 
-   std::printf("tagma_mt: payload=%llu entries=%lld\n", static_cast<unsigned long long>(payload),
-               static_cast<long long>(entries));
-   std::printf("tagma_mt: %-8s %-10s %-11s %-10s %-6s\n", "threads", "store_s", "store_MB/s", "base_s", "base/store");
+   // One baseline pass over a worker's range, with a TTreeCache when cacheBytes
+   // is positive. Returns the seconds the pass took.
+   const auto baseline = [treePath](const std::vector<std::pair<std::uint64_t, std::uint64_t>> &ranges,
+                                    std::size_t cacheBytes) {
+      const auto start = std::chrono::steady_clock::now();
+      std::vector<std::thread> workers;
+      for (std::size_t t = 0; t < ranges.size(); ++t) {
+         workers.emplace_back([&ranges, t, treePath, cacheBytes]() {
+            TFile *file = TFile::Open(treePath, "READ");
+            if (file == nullptr || file->IsZombie())
+               return;
+            TTree *t2 = dynamic_cast<TTree *>(file->Get("Events"));
+            if (t2 != nullptr) {
+               if (cacheBytes > 0) {
+                  t2->SetCacheSize(static_cast<Long64_t>(cacheBytes));
+                  t2->AddBranchToCache("*", true);
+               }
+               for (std::uint64_t e = ranges[t].first; e < ranges[t].second; ++e)
+                  t2->GetEntry(static_cast<Long64_t>(e));
+            }
+            file->Close();
+            delete file;
+         });
+      }
+      for (auto &w : workers)
+         w.join();
+      return Elapsed(start);
+   };
+
+   std::printf("tagma_mt: payload=%llu entries=%lld cache=%d MB\n", static_cast<unsigned long long>(payload),
+               static_cast<long long>(entries), static_cast<int>(cacheMB));
+   std::printf("tagma_mt: %-8s %-9s %-11s %-9s %-9s %-8s %-8s\n", "threads", "store_s", "store_MB/s", "base_s",
+               "base+cache", "b/store", "bc/store");
 
    for (int threads = 1; threads <= maxThreads; threads *= 2) {
       const auto ranges = Ranges(payload, threads);
@@ -108,30 +140,12 @@ void tagma_mt(const char *storePath, const char *treePath, Int_t maxThreads = 8)
       const double storeSeconds = Elapsed(startStore);
 
       const auto entryRanges = Ranges(static_cast<std::uint64_t>(entries), threads);
-      const auto startBase = std::chrono::steady_clock::now();
-      {
-         std::vector<std::thread> workers;
-         for (int t = 0; t < threads; ++t) {
-            workers.emplace_back([&entryRanges, t, treePath]() {
-               TFile *file = TFile::Open(treePath, "READ");
-               if (file == nullptr || file->IsZombie())
-                  return;
-               TTree *t2 = dynamic_cast<TTree *>(file->Get("Events"));
-               if (t2 != nullptr) {
-                  for (std::uint64_t e = entryRanges[t].first; e < entryRanges[t].second; ++e)
-                     t2->GetEntry(static_cast<Long64_t>(e));
-               }
-               file->Close();
-               delete file;
-            });
-         }
-         for (auto &w : workers)
-            w.join();
-      }
-      const double baseSeconds = Elapsed(startBase);
+      const double baseSeconds = baseline(entryRanges, 0);
+      const double baseCacheSeconds = baseline(entryRanges, static_cast<std::size_t>(cacheMB) * 1024 * 1024);
 
-      std::printf("tagma_mt: %-8d %-10.3f %-11.1f %-10.3f %-6.2f\n", threads, storeSeconds,
-                  static_cast<double>(payload) / 1e6 / storeSeconds, baseSeconds,
-                  baseSeconds > 0 ? baseSeconds / storeSeconds : 0.0);
+      std::printf("tagma_mt: %-8d %-9.3f %-11.1f %-9.3f %-9.3f %-8.2f %-8.2f\n", threads, storeSeconds,
+                  static_cast<double>(payload) / 1e6 / storeSeconds, baseSeconds, baseCacheSeconds,
+                  storeSeconds > 0 ? baseSeconds / storeSeconds : 0.0,
+                  storeSeconds > 0 ? baseCacheSeconds / storeSeconds : 0.0);
    }
 }

@@ -20,33 +20,51 @@ if it were the production number.
 
 Measured with `tagma_mt.C`, which gives every worker its own file object and a
 disjoint range: the store row reads the whole payload through the byte source,
-the baseline row drives `TTree::GetEntry` over the same events with no branch
-addresses, so both move all the data with no field copy, on the same disk.
+the baseline rows drive `TTree::GetEntry` over the same events with no branch
+addresses, so all rows move the data with no field copy, on the same disk. The
+cached row sizes a 32 MB `TTreeCache` per worker, the configuration a production
+job uses.
 
-| threads | store_s | store_MB/s | baseline_s | baseline/store |
-| :--- | ---: | ---: | ---: | ---: |
-| 1 | 12.40 | 571 | 176.55 | 14.24 |
-| 2 | 9.50 | 745 | 90.99 | 9.57 |
-| 4 | 5.15 | 1377 | 49.14 | 9.55 |
-| 8 | 2.71 | 2613 | 28.38 | 10.47 |
+| threads | store_s | store_MB/s | base_s | base+cache_s | base/store |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 13.04 | 543 | 186.4 | 183.8 | 14.3 |
+| 2 | 9.86 | 718 | 93.7 | 92.7 | 9.5 |
+| 4 | 5.32 | 1331 | 50.3 | 53.7 | 9.4 |
+| 8 | 2.86 | 2481 | 31.9 | 32.2 | 11.2 |
 
 Both scale, and the store scales 4.6 times over eight threads against the
-baseline's 6.2, so the store's lead narrows from 14.2 to 10.5 times rather than
-widening. That is the expected shape: the store is bandwidth bound, 571 to
-2613 MB/s being sublinear on eight cores, while the cache-less baseline is I/O
-bound and parallelizes well. The assumption that more threads would widen the
-store's lead is not supported against a cache-less baseline. The report's
-concern is about a *cached* baseline, where threads contend on a shared cache,
-and that pairing is still open. This machine has ten cores, so the row ends at
-eight and O(128) is an extrapolation.
+baseline's 5.8, so the store's lead narrows from 14.3 to 11.2 times rather than
+widening. That is the expected shape: the store is bandwidth bound, 543 to
+2481 MB/s being sublinear on eight cores, while the cache-less baseline is I/O
+bound and parallelizes well.
+
+The cache neither helps nor hurts, 183.8 s against 186.4 at one thread and
+32.2 against 31.9 at eight, because each worker reads a contiguous range and
+the cache is redundant under sequential access. The concern that threads
+degrade a shared cache is therefore not reproduced here; a shared cache or a
+scattered, remote pattern would be needed to test it, and that pairing is open.
+The assumption that more threads would widen the store's lead is not supported
+either way. This machine has ten cores, so the row ends at eight and O(128) is
+an extrapolation.
 
 ### 2. A column-major physical layout
 
 Today a read decodes the blocks of the selected collections, and within a
 collection the whole slice, so the store is column independent: above the
-crossover (about 42 scalar columns) it wins, below it upstream leads. Blocks
-laid out by column, so a selection decodes only the columns it reads, move the
-crossover down. This is the structural front, and it is large.
+crossover (about 42 scalar columns) it wins, below it upstream leads. The
+layout is event major, one index record per event and its packed slice after
+it, so a block of the data region holds many events of one collection range and
+the selection cannot shrink it.
+
+The structural fix is to lay the data region out by column, so the events of one
+field are contiguous and a block holds one field, and a selection decodes only
+the columns it reads. That is a new store layout, not a flag: `TTagmaSchema`
+gains a region per field, `TTagmaStore` addresses a (field, event) offset
+instead of an event's chunk, `TTagmaWriter` writes the transposed region, and
+the field copy reads across the field's region. The addressing stays closed
+form, which is what makes the transposition affordable, and the gate is that
+the same values read back and that a two-column read touches only those
+columns' blocks. This is the largest open front.
 
 ### 3. The delivery layer
 
