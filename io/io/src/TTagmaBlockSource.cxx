@@ -96,6 +96,10 @@ void TTagmaBlockSource::Close()
       std::fclose(fFile);
       fFile = nullptr;
    }
+   fLoadedBlock = kNoBlock;
+   fBlocks.clear();
+   fBlockData.clear();
+   fCompressed.clear();
 }
 
 bool TTagmaBlockSource::Open(const std::string &path, std::string *why)
@@ -201,29 +205,38 @@ bool TTagmaBlockSource::Open(const std::string &path, std::string *why)
    return true;
 }
 
-const char *TTagmaBlockSource::Load(const Block &block)
+const char *TTagmaBlockSource::Load(std::uint64_t index, const Block &block)
 {
+   if (fLoadedBlock == index)
+      return fBlockData.data();
    if (block.fUncompressedBytes > kBlockBytes * 2)
       return nullptr;
    if (Seek(fFile, block.fOffset) != 0)
       return nullptr;
-   fScratch.assign(static_cast<std::size_t>(block.fUncompressedBytes), '\0');
+   fBlockData.resize(static_cast<std::size_t>(block.fUncompressedBytes));
    if (block.fStoredBytes == block.fUncompressedBytes) {
       // The block did not shrink and is stored whole.
-      if (std::fread(fScratch.data(), 1, fScratch.size(), fFile) != fScratch.size())
+      if (std::fread(fBlockData.data(), 1, fBlockData.size(), fFile) != fBlockData.size()) {
+         fLoadedBlock = kNoBlock;
          return nullptr;
-      return fScratch.data();
+      }
+   } else {
+      fCompressed.resize(static_cast<std::size_t>(block.fStoredBytes));
+      if (std::fread(fCompressed.data(), 1, fCompressed.size(), fFile) != fCompressed.size()) {
+         fLoadedBlock = kNoBlock;
+         return nullptr;
+      }
+      int srcsize = static_cast<int>(block.fStoredBytes);
+      int tgtsize = static_cast<int>(block.fUncompressedBytes);
+      int irep = 0;
+      R__unzip(&srcsize, fCompressed.data(), &tgtsize, reinterpret_cast<unsigned char *>(fBlockData.data()), &irep);
+      if (irep <= 0 || static_cast<std::uint64_t>(irep) != block.fUncompressedBytes) {
+         fLoadedBlock = kNoBlock;
+         return nullptr;
+      }
    }
-   std::vector<unsigned char> compressed(static_cast<std::size_t>(block.fStoredBytes));
-   if (std::fread(compressed.data(), 1, compressed.size(), fFile) != compressed.size())
-      return nullptr;
-   int srcsize = static_cast<int>(block.fStoredBytes);
-   int tgtsize = static_cast<int>(block.fUncompressedBytes);
-   int irep = 0;
-   R__unzip(&srcsize, compressed.data(), &tgtsize, reinterpret_cast<unsigned char *>(fScratch.data()), &irep);
-   if (irep <= 0 || static_cast<std::uint64_t>(irep) != block.fUncompressedBytes)
-      return nullptr;
-   return fScratch.data();
+   fLoadedBlock = index;
+   return fBlockData.data();
 }
 
 std::int64_t TTagmaBlockSource::Read(char *buf, std::uint64_t pos, std::uint64_t len)
@@ -242,7 +255,7 @@ std::int64_t TTagmaBlockSource::Read(char *buf, std::uint64_t pos, std::uint64_t
       const std::uint64_t within = at - index * kBlockBytes;
       if (within >= block.fUncompressedBytes)
          return -1;
-      const char *bytes = Load(block);
+      const char *bytes = Load(index, block);
       if (bytes == nullptr)
          return -1;
       const std::uint64_t take = std::min(left, block.fUncompressedBytes - within);

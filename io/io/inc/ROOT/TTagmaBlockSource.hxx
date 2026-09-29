@@ -82,9 +82,10 @@ private:
       std::uint64_t fUncompressedBytes = 0;
    };
 
-   // The uncompressed bytes of a block, decompressed into the scratch when it is
-   // stored compressed. Returns nullptr when the block cannot be read.
-   const char *Load(const Block &block);
+   // The uncompressed bytes of a block, decompressed into a retained buffer
+   // that is memoized, so reads that stay inside one block decode it once.
+   // Returns nullptr when the block cannot be read.
+   const char *Load(std::uint64_t index, const Block &block);
 
    std::FILE *fFile = nullptr;
    TTagmaStore::Layout fLayout;
@@ -93,7 +94,11 @@ private:
    std::uint64_t fFileBytes = 0;
    std::uint64_t fBlockCount = 0;
    std::vector<Block> fBlocks;
-   std::vector<char> fScratch;
+   std::vector<char> fBlockData;           // the decoded block, retained
+   std::uint64_t fLoadedBlock = kNoBlock;  // which block fBlockData holds
+   std::vector<unsigned char> fCompressed; // the compressed bytes of a block, reused
+
+   static constexpr std::uint64_t kNoBlock = ~0ull;
 };
 
 } // namespace ROOT
