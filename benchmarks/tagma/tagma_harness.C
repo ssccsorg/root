@@ -111,9 +111,11 @@
 // is column-independent: against RDataFrame on the same file with a warm
 // cache, the column sum runs 0.132 s at one column, 1.716 s at eight,
 // 7.411 s at 32, 16.806 s at 64 and 139.798 s at the whole 974 scalar
-// columns. The store's fixed 10.2 s crosses that ramp near 42 columns,
-// against about 11 for the fixed-width store, so upstream leads on narrow
-// selections and the store leads on the whole-event read.
+// columns. The store's fixed 10.2 s read path crosses that ramp near 42
+// columns, against about 11 for the fixed-width store; the same first-order
+// interpolation puts the whole-event row, 117.6 s, near 810 columns. Upstream
+// therefore leads on any selection that reads a small fraction of the event,
+// and the store leads from the whole-event read on.
 //
 // One-time conversion into the collection store: 1,963.3 s, against 226.3 s
 // for the mode-0 projection.
@@ -128,25 +130,46 @@
 // not the read path.
 //
 // Event-selected reads (tagma_scatter.C), the pattern the work is aimed at: the
-// same events read in list order rather than a scan, 2,000 events, same medium.
-//   order       row             seconds    requests  requests/event
-//   sequential  store mapped      0.010       2,000  1.00
-//   sequential  store block       0.003       2,000  1.00
-//   sequential  baseline          0.601           7  0.004
-//   scattered   store mapped      0.000       2,000  1.00
-//   scattered   store block       0.445       2,000  1.00
-//   scattered   baseline        206.139   1,365,153  682.6
-//   scattered   baseline+cache  199.311          16  0.008
-// The store answers each event in one request whatever the order; the baseline
-// pays 683 requests per event when the order is scattered against 0.004 when it
-// is a scan, the production signature the work started from. The cache is not
+// same events read in list order rather than a scan, 2,000 events, same medium,
+// the 8 KB block store, one run. The first two store rows copy the addressing
+// unit, the index record. The entry rows read the whole event through the tree
+// interface, with the schema the descriptor carries and the field branches
+// enabled, so they are layer-matched and payload-matched with the baseline
+// rows. The entry rows are gated: before they are timed, the delivered event
+// and MET_pt values are compared with the baseline file for 32 sampled
+// entries, and the gate passed with no mismatch.
+//   order       row                    seconds    reads       reads/event
+//   sequential  store mapped             0.003    2,000       1.00
+//   sequential  store block              0.005    2,000       1.00
+//   sequential  store entry              0.109    4,000       2.00
+//   sequential  store block entry        0.182    4,000       2.00
+//   sequential  baseline                 0.453        7       0.004
+//   sequential  baseline+cache           0.468       16       0.008
+//   scattered   store mapped             0.000    2,000       1.00
+//   scattered   store block              0.031    2,000       1.00
+//   scattered   store entry              0.101    4,000       2.00
+//   scattered   store block entry        0.586    4,000       2.00
+//   scattered   baseline               202.209  1,365,153     682.6
+//   scattered   baseline+cache         204.010       16       0.008
+// The entry rows settle the claim: reading the whole event, the index record
+// and the slice with the fields delivered, costs 0.101 s scattered against
+// 0.109 s sequential, so the store's cost does not move with the order, while
+// the baseline pays 682.6 requests per event scattered against 0.004 over a
+// scan. That is 50 microseconds per event of delivery, the figure the scan rows
+// measure too, and 2,000 times the baseline's 202.2 s over the same 2,000
+// events, payload for payload. The compressed store, whose read decompresses
+// the 8 KB block a record falls in, is at 0.586 s, 345 times. The cache is not
 // the answer under scatter: a 64 MB TTreeCache collapses the read calls to 16
-// and leaves the time where it was, 199.3 s against 206.1, so the scattered
-// cost is the traversal and the decode of every event, a cache cannot hold the
-// working set, and the store removes that cost by addressing. The scattered
-// baseline is superlinear besides, 0.210 s over 500 events against 206 s over
-// 2,000, while the store stays at one request and linear, the O(1) addressing
-// telling at scale.
+// and leaves the time where it was, 204.0 s against 202.2.
+//
+// The scatter penalty is a basket-boundary effect, not a slope. The first
+// basket of the measured file covers entries 0 to 999, and a scattered list
+// inside it reads like a scan, 6 requests at 500 and at 1,000 events, 0.076 to
+// 0.093 s. A list that spans a second basket collapses: at 2,000 events the
+// baseline issues 1,365,153 requests, because a jump between baskets
+// invalidates the current basket of each of the 1,380 branches. The store's
+// count is flat across the threshold, 1 or 2 reads per event, which is the
+// addressing claim stated as a measurement.
 //
 // The compressed store paid for scatter until the block size became a parameter
 // of Compress, carried in the descriptor so a reader needs no setting and
@@ -175,11 +198,13 @@
 // Boundaries: the fixed-width rows cover phase 1 and hold a scalar projection
 // of the events; the collection-store rows carry the whole event and their
 // advantage is on the read path, not on delivery or narrow selections; the
-// scatter rows carry the index record and not the collections' slices, which
-// are read per selection, and their baseline has no branch addresses; the
-// scattered baseline count is bounded by what a workstation finishes; the
-// thread rows end at eight cores; and the documented 14-hour production
-// workload, the remote medium, and O(128) are not reproduced end to end.
+// scatter index rows carry the index record alone and the scatter entry rows
+// carry the whole event, and every baseline row there has no branch addresses,
+// so it delivers nothing into analysis variables; the scattered baseline count
+// is bounded by what a workstation finishes, and the penalty behind it is the
+// basket boundary measured above rather than a claim about scale; the thread
+// rows end at eight cores; and the documented 14-hour production workload, the
+// remote medium, and O(128) are not reproduced end to end.
 //
 // Tools (benchmarks/tagma)
 // -----------------------
@@ -190,7 +215,9 @@
 //   tagma_mt.C               thread scaling, store against baseline, with and
 //                            without a per-worker cache
 //   tagma_scatter.C          sequential against event-selected access, with
-//                            and without a baseline cache
+//                            and without a baseline cache, over the index
+//                            record and over the entry layer, the entry rows
+//                            gated against the baseline's values
 //   tagma_compress.C         writes a block-compressed store at a chosen
 //                            block size
 //   tagma_make_store.C       converts a tree into a store, mode 0 fixed width

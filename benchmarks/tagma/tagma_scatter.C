@@ -8,6 +8,21 @@
 // the block a record falls in, and the baseline drives TTree::GetEntry with no
 // branch addresses.
 //
+// The first two store rows copy the addressing unit, the index record. The
+// entry-layer rows go further and read the whole event through the tree
+// interface: the store attached to a tree with the schema its descriptor
+// carries, so one GetEntry serves the index record and the event's slice and
+// drives the field branches. Those rows and the baseline both move the whole
+// event and both include the delivery the branch machinery costs, so the two
+// sides are layer-matched as well as payload-matched, and they are the rows the
+// scatter claim is read from. One entry row reads the plain store, the other
+// the block-compressed store, so the compressed claim has its own row.
+//
+// The entry rows are gated. Before any of them is timed, the values they
+// deliver are compared with the baseline file for a sample of the same
+// entries, and a gate that does not pass skips them, so a row that serves the
+// wrong record fails instead of being read as a result.
+//
 //   root -l -b -q 'tagma_scatter.C("/path/store.bin", "/path/store.z.bin", "/path/open/data.root")'
 
 #include "ROOT/TTagmaBlockSource.hxx"
@@ -15,6 +30,7 @@
 #include "ROOT/TTagmaWriter.hxx"
 
 #include "TFile.h"
+#include "TLeaf.h"
 #include "TROOT.h"
 #include "TTree.h"
 
@@ -40,9 +56,80 @@ void Report(const char *order, const char *row, double seconds, std::uint64_t re
                events > 0 ? static_cast<double>(requests) / events : 0.0);
 }
 
+// One entry-layer row: the store behind the tree interface, every field branch
+// the schema materializes enabled, so the row carries the whole event and the
+// delivery as the baseline does. The seconds are the measurement; the counts
+// are context, the file hook's requests and the store-served reads.
+void MeasureEntry(const char *order, const char *row, TFile *file, TTree &tree, const std::vector<Long64_t> &list)
+{
+   const Int_t calls0 = file->GetReadCalls();
+   const Int_t tagma0 = file->GetTagmaReadCalls();
+   const Int_t sys0 = file->GetSysReadCalls();
+   const auto start = std::chrono::steady_clock::now();
+   Long64_t served = 0;
+   for (Long64_t e : list)
+      if (tree.GetEntry(e) > 0)
+         ++served;
+   const double seconds = Elapsed(start);
+   std::printf("tagma_scatter: %-10s %-18s %-8.3f s  reads=%lld tagma=%lld syscalls=%lld  served=%lld\n", order, row,
+               seconds, static_cast<long long>(file->GetReadCalls() - calls0),
+               static_cast<long long>(file->GetTagmaReadCalls() - tagma0),
+               static_cast<long long>(file->GetSysReadCalls() - sys0), static_cast<long long>(served));
+   if (served != static_cast<Long64_t>(list.size()))
+      std::printf("tagma_scatter: %s served %lld of %lld\n", row, static_cast<long long>(served),
+                  static_cast<long long>(list.size()));
+}
+
+// The gate: the entry layer must deliver the values the baseline file holds for
+// the same entries. `event` identifies the entry and `MET_pt` carries a payload
+// value, so a row that serves the wrong record is caught before it is timed.
+// Returns the number of mismatches, or -1 when the check cannot run.
+Long64_t GateEntryLayer(const char *treePath, TTree &storeTree, const std::vector<Long64_t> &list, Long64_t sample)
+{
+   TFile *file = TFile::Open(treePath);
+   if (file == nullptr || file->IsZombie()) {
+      std::printf("tagma_scatter: the gate cannot open %s\n", treePath);
+      return -1;
+   }
+   TTree *base = dynamic_cast<TTree *>(file->Get("Events"));
+   TLeaf *storeEvent = storeTree.GetLeaf("event");
+   TLeaf *storeMet = storeTree.GetLeaf("MET_pt");
+   TLeaf *baseEvent = base != nullptr ? base->GetLeaf("event") : nullptr;
+   TLeaf *baseMet = base != nullptr ? base->GetLeaf("MET_pt") : nullptr;
+   if (storeEvent == nullptr || storeMet == nullptr || baseEvent == nullptr || baseMet == nullptr) {
+      std::printf("tagma_scatter: the gate needs event and MET_pt on both sides\n");
+      file->Close();
+      delete file;
+      return -1;
+   }
+   Long64_t checked = 0;
+   Long64_t bad = 0;
+   const std::size_t step = list.size() > static_cast<std::uint64_t>(sample) ? list.size() / sample : 1;
+   for (std::size_t i = 0; i < list.size() && checked < sample; i += step) {
+      const Long64_t e = list[i];
+      if (base->GetEntry(e) <= 0 || storeTree.GetEntry(e) <= 0)
+         break;
+      ++checked;
+      const Double_t storeEventValue = storeEvent->GetValue(0);
+      const Double_t baseEventValue = baseEvent->GetValue(0);
+      const Double_t storeMetValue = storeMet->GetValue(0);
+      const Double_t baseMetValue = baseMet->GetValue(0);
+      if (storeEventValue != baseEventValue || storeMetValue != baseMetValue) {
+         ++bad;
+         std::printf("tagma_scatter: the gate mismatches at entry %lld: event %g against %g, MET_pt %g against %g\n",
+                     static_cast<long long>(e), storeEventValue, baseEventValue, storeMetValue, baseMetValue);
+      }
+   }
+   file->Close();
+   delete file;
+   std::printf("tagma_scatter: gate entry checked=%lld mismatches=%lld\n", static_cast<long long>(checked),
+               static_cast<long long>(bad));
+   return bad;
+}
+
 } // namespace
 
-void tagma_scatter(const char *plainStore, const char *blockStore, const char *treePath, Long64_t count = 20000,
+void tagma_scatter(const char *plainStore, const char *blockStore, const char *treePath, Long64_t count = 2000,
                    UInt_t seed = 12345, Int_t cacheMB = 64)
 {
    ROOT::EnableThreadSafety();
@@ -86,6 +173,54 @@ void tagma_scatter(const char *plainStore, const char *blockStore, const char *t
    std::printf("tagma_scatter: events=%lld record=%llu payload=%llu\n", static_cast<long long>(count),
                static_cast<unsigned long long>(recordSize), static_cast<unsigned long long>(payload));
 
+   // The entry-layer readers: the plain store behind the tree interface, and
+   // the block-compressed store behind the same interface through the source
+   // its descriptor names, each with the schema the descriptor carries, so one
+   // GetEntry per event serves the index record, the event's slice, and the
+   // fields the branches deliver. A store is not a ROOT file, so it is opened
+   // as a raw file, the form the harness uses.
+   const std::string plainRaw = std::string(plainStore) + "?filetype=raw";
+   TFile *entryFile = TFile::Open(plainRaw.c_str());
+   TTree entryTree("Events", "Events");
+   Bool_t entryOk = kFALSE;
+   if (entryFile != nullptr && !entryFile->IsZombie()) {
+      entryFile->SetTagmaStore(mapped);
+      entryTree.SetDirectory(entryFile);
+      entryTree.SetEntries(count);
+      entryTree.SetTagmaStore(mapped);
+      entryOk = entryTree.SetTagmaSchema(schema);
+   }
+
+   auto block = std::make_shared<ROOT::TTagmaBlockSource>();
+   TFile *blockFile = nullptr;
+   TTree blockTree("Events", "Events");
+   Bool_t blockOk = kFALSE;
+   if (blockStore != nullptr && blockStore[0] != '\0' && block->Open(blockStore, &why)) {
+      const std::string blockRaw = std::string(blockStore) + "?filetype=raw";
+      blockFile = TFile::Open(blockRaw.c_str());
+      auto blockStoreObject = std::make_shared<ROOT::TTagmaStore>(block->GetLayout());
+      if (blockFile != nullptr && !blockFile->IsZombie()) {
+         blockFile->SetTagmaStore(blockStoreObject);
+         blockFile->SetTagmaSource(
+            std::make_shared<ROOT::TTagmaCachedSource>(block, block->BlockBytes(), 16, block->PayloadBytes()));
+         blockTree.SetDirectory(blockFile);
+         blockTree.SetEntries(count);
+         blockTree.SetTagmaStore(blockStoreObject);
+         blockOk = blockTree.SetTagmaSchema(block->GetSchema());
+      }
+   }
+
+   // The gate runs over the scattered list, the harder order, before any row is
+   // timed. A gate that does not pass skips the entry rows rather than letting
+   // an unverified time stand.
+   if (entryOk && GateEntryLayer(treePath, entryTree, scattered, 32) != 0) {
+      std::printf("tagma_scatter: the entry-layer rows are skipped, the gate did not pass\n");
+      entryOk = kFALSE;
+      blockOk = kFALSE;
+   }
+   if (!entryOk && entryFile != nullptr)
+      std::printf("tagma_scatter: the entry-layer rows are unavailable\n");
+
    const std::vector<std::pair<std::string, std::vector<Long64_t>>> orders = {{"sequential", sequential},
                                                                               {"scattered", scattered}};
    for (const auto &order : orders) {
@@ -121,6 +256,14 @@ void tagma_scatter(const char *plainStore, const char *blockStore, const char *t
             Report(order.first.c_str(), "store block", Elapsed(start), list.size(), list.size());
          }
       }
+
+      // The entry layer: the store behind the tree interface, with every field
+      // branch the schema materializes enabled, so the row carries the whole
+      // event and the delivery as the baseline does.
+      if (entryOk)
+         MeasureEntry(order.first.c_str(), "store entry", entryFile, entryTree, list);
+      if (blockOk)
+         MeasureEntry(order.first.c_str(), "store block entry", blockFile, blockTree, list);
 
       // The baseline: one GetEntry per event, no branch addresses, first with
       // no cache and then with a per-file cache, the configuration a

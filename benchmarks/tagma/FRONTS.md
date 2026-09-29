@@ -13,6 +13,7 @@ if it were the production number.
 | The read path beats the compressed baseline | `tagma_block_read.C`: compressed store 12.4 s, 572 MB/s, plain 14.6 s, against 177.4 s |
 | Compression keeps the read path and shrinks the file | 7,082,290,985 to 2,897,372,833 bytes, 2.44x |
 | A read serves only the collections a selection enables | the scalar-only harness row, 4.2 s on the plain store |
+| The whole state reads in one or two requests whatever the order | `tagma_scatter.C` entry rows: 0.101 s scattered against 0.109 s sequential over 2,000 events, the fields delivered, against the baseline's 202.2 s |
 
 ### Scattered, event-selected reads
 
@@ -32,25 +33,31 @@ from the mapping or decompressing the block it falls in, the baseline driving
 | scattered | baseline | 206.139 | 1,365,153 | 682.6 |
 | scattered | baseline+cache | 199.311 | 16 | 0.008 |
 
-The store resolves every event in one request whatever the order, while the
-baseline pays 683 requests per event when the order is scattered against 0.004
-when it is a scan, which is the production signature the work started from. The
-win is therefore not in the scan, where the store is 11 to 14 times ahead, but in
-event-selected access, where it is about five orders of magnitude at a fixed one
-request.
+The entry rows settle it at the layer the baseline reads at. Reading the whole
+event, the index record and the slice with the 1,380 field branches delivered,
+costs 0.101 s scattered against 0.109 s sequential over 2,000 events, so the
+store's cost does not move with the order. Against the baseline's 202.2 s over
+the same events that is 2,000 times, payload for payload and delivery for
+delivery, or 345 times for the compressed store, whose read decompresses the
+8 KB block a record falls in. The win is therefore not in the scan, where the
+store is 12 to 14 times ahead on the read path, but in event-selected access,
+where it is three orders of magnitude at a measured two reads per event.
 
 The cache is not the answer under scatter. A 64 MB `TTreeCache` per file
-collapses the read calls to 16 and leaves the time where it was, 199.3 s against
-206.1, so the scattered cost is the traversal and the decode of every event, not
+collapses the read calls to 16 and leaves the time where it was, 204.0 s against
+202.2, so the scattered cost is the traversal and the decode of every event, not
 the reads, and a cache cannot hold the working set. The store removes that cost
 by addressing, which is the thesis.
 
-Three caveats: the store row carries the index record and not the collections'
-slices, which are read per selection; the baseline has no branch addresses; and
-the count is 2,000 because the scattered baseline does not finish more on a
-workstation. The scattered baseline is superlinear besides: 0.210 s over 500
-events against 206 s over 2,000, a cliff, while the store stays at one request
-and linear in the events, which is the O(1) addressing telling at scale.
+The penalty is a basket boundary, not a slope. The first basket of the measured
+file covers entries 0 to 999, and a scattered list inside it reads like a scan, 6
+requests at 500 and at 1,000 events, 0.076 to 0.093 s; a list that spans a second
+basket collapses, 1,365,153 requests at 2,000 events, because a jump between
+baskets invalidates the current basket of each of the 1,380 branches. The
+store's count is flat across that threshold. Two caveats remain: the baseline
+has no branch addresses, so it delivers nothing into analysis variables, and the
+entry rows are the fair comparison; and the count is 2,000 because the scattered
+baseline does not finish more on a workstation.
 
 The compressed store paid for scatter because a record read decompressed the
 whole block it fell in, the block size over the record size, 205 for the default
@@ -95,16 +102,18 @@ The assumption that more threads would widen the store's lead is not supported
 either way. This machine has ten cores, so the row ends at eight and O(128) is
 an extrapolation. The 128-core row needs a larger system and is not measured,
 but it is predicted and not guessed: the per-event request count is
-media-independent and settled at the scale measured, one for the store whatever
-the order against hundreds for the baseline, and the baseline grows
-superlinearly with the events read while the store stays flat, so the tendency
-holds at 128 cores and only the wall-time magnitude needs the machine.
+media-independent and settled at the scale measured, one or two for the store
+whatever the order against hundreds for the baseline once its entries span a
+basket, so the tendency holds at 128 cores and only the wall-time magnitude
+needs the machine.
 
 ### 2. A column-major physical layout
 
 Today a read decodes the blocks of the selected collections, and within a
-collection the whole slice, so the store is column independent: above the
-crossover (about 42 scalar columns) it wins, below it upstream leads. The
+collection the whole slice, so the store is column independent: its read path
+crosses the RDataFrame ramp near 42 scalar columns and its whole-event row,
+delivery included, near 810, so upstream wins on any selection that reads a
+small fraction of the event, below those crossovers. The
 layout is event major, one index record per event and its packed slice after
 it, so a block of the data region holds many events of one collection range and
 the selection cannot shrink it.

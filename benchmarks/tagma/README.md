@@ -60,12 +60,16 @@ the set, `tagma_block_read.C`, `tagma_mt.C`, `tagma_scatter.C`,
 block at the top of `tagma_harness.C`, and `FRONTS.md` holds the open fronts.
 
 Conclusion: the store's win is structural and it lives in event-selected
-access, one request per event whatever the order against the baseline's 683 when
-the order is scattered, a superlinear cliff the baseline does not climb with
-scale. On a scan the read path is 11 to 14 times ahead, a whole-event read is
-1.5 times because the entry layer dominates, and a narrow column selection is
-upstream's below about 42 scalar columns. O(128), multi-TB, and the remote
-medium remain extrapolations, not measurements.
+access. The entry rows read the whole event, the fields delivered, in 0.101 s
+scattered against 0.109 s sequential over 2,000 events, while the cache-disabled
+baseline pays 683 requests per event in the scattered order, 202.2 s, which is
+2,000 times, or 345 times for the block-compressed store. The penalty behind the
+baseline's number is a basket boundary, measured, not a slope. On a scan the
+read path is 12 to 14 times ahead, a whole-event read is 1.5 times because the
+entry layer dominates, and a narrow column selection is upstream's below the
+column crossover, near 42 scalar columns for the read path and near 810 with
+delivery. O(128), multi-TB, and the remote medium remain extrapolations, not
+measurements.
 
 Arguments: `tagma_bench(url, tree_name, max_entries, record_size,
 nscatter, disable_cache)`. An empty `url` selects the synthetic source;
