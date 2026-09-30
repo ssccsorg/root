@@ -36,6 +36,10 @@
 //                            size.
 //   tagma_make_store.C       converts a tree into a store, mode 0 fixed width
 //                            or mode 1 collections.
+//   tagma_shard.C            splits a store into one shard per run, each
+//                            declaring its own lumi and event axes, so the
+//                            dataset layer has a multi-file dataset to address
+//                            and the padding a dense lattice pays is measured.
 //   tagma_make_uncompressed.C  the uncompressed control file.
 //   tagma_rdf_columns.C      RDataFrame column selection, the upstream reader
 //                            the crossover is measured against.
