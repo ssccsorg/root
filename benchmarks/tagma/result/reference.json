@@ -50,16 +50,16 @@
                   0.138
                ],
                "cpu_s": [
-                  0.120,
-                  0.140
+                  0.12,
+                  0.14
                ],
                "reads": 60000,
                "tagma": 0,
                "syscalls": 60000,
                "bytes_moved": 21720000,
-               "reads_per_event": 3.00,
+               "reads_per_event": 3.0,
                "bytes_per_read": 362.0,
-               "syscalls_per_event": 3.00
+               "syscalls_per_event": 3.0
             },
             "coordinate": {
                "wall_s": [
@@ -67,16 +67,16 @@
                   0.078
                ],
                "cpu_s": [
-                  0.030,
-                  0.030
+                  0.03,
+                  0.03
                ],
                "reads": 20000,
                "tagma": 20000,
                "syscalls": 20000,
                "bytes_moved": 51200000,
-               "reads_per_event": 1.00,
+               "reads_per_event": 1.0,
                "bytes_per_read": 2560.0,
-               "syscalls_per_event": 1.00
+               "syscalls_per_event": 1.0
             },
             "coordinate_map": {
                "wall_s": [
@@ -84,16 +84,16 @@
                   0.027
                ],
                "cpu_s": [
-                  0.010,
-                  0.010
+                  0.01,
+                  0.01
                ],
                "reads": 20000,
                "tagma": 20000,
                "syscalls": 0,
                "bytes_moved": 51200000,
-               "reads_per_event": 1.00,
+               "reads_per_event": 1.0,
                "bytes_per_read": 2560.0,
-               "syscalls_per_event": 0.00
+               "syscalls_per_event": 0.0
             }
          },
          "structural":
@@ -109,8 +109,8 @@
                   0.483
                ],
                "cpu_s": [
-                  0.470,
-                  0.490
+                  0.47,
+                  0.49
                ],
                "reads": 2737,
                "tagma": 0,
@@ -126,16 +126,16 @@
                   0.003
                ],
                "cpu_s": [
-                  0.000,
-                  0.000
+                  0.0,
+                  0.0
                ],
                "reads": 2000,
                "tagma": 2000,
                "syscalls": 2000,
                "bytes_moved": 5120000,
-               "reads_per_event": 1.00,
+               "reads_per_event": 1.0,
                "bytes_per_read": 2560.0,
-               "syscalls_per_event": 1.00
+               "syscalls_per_event": 1.0
             },
             "coordinate_map": {
                "wall_s": [
@@ -143,16 +143,16 @@
                   0.001
                ],
                "cpu_s": [
-                  0.000,
-                  0.000
+                  0.0,
+                  0.0
                ],
                "reads": 2000,
                "tagma": 2000,
                "syscalls": 0,
                "bytes_moved": 5120000,
-               "reads_per_event": 1.00,
+               "reads_per_event": 1.0,
                "bytes_per_read": 2560.0,
-               "syscalls_per_event": 0.00
+               "syscalls_per_event": 0.0
             }
          },
          "structural":
@@ -188,16 +188,16 @@
                   188.169
                ],
                "cpu_s": [
-                  183.560,
-                  185.850
+                  183.56,
+                  185.85
                ],
                "reads": 470131,
                "tagma": 0,
                "syscalls": 470131,
                "bytes_moved": 2149961076,
-               "reads_per_event": 0.20,
+               "reads_per_event": 0.2,
                "bytes_per_read": 4573.1,
-               "syscalls_per_event": 0.20
+               "syscalls_per_event": 0.2
             },
             "baseline_uncomp": {
                "wall_s": [
@@ -205,8 +205,8 @@
                   85.715
                ],
                "cpu_s": [
-                  74.140,
-                  74.680
+                  74.14,
+                  74.68
                ],
                "reads": 387007,
                "tagma": 0,
@@ -222,16 +222,16 @@
                   2.808
                ],
                "cpu_s": [
-                  2.690,
-                  2.730
+                  2.69,
+                  2.73
                ],
                "reads": 2315223,
                "tagma": 2315223,
                "syscalls": 2315223,
                "bytes_moved": 5926970880,
-               "reads_per_event": 1.00,
+               "reads_per_event": 1.0,
                "bytes_per_read": 2560.0,
-               "syscalls_per_event": 1.00
+               "syscalls_per_event": 1.0
             },
             "coordinate_map": {
                "wall_s": [
@@ -239,16 +239,16 @@
                   1.613
                ],
                "cpu_s": [
-                  1.540,
-                  1.580
+                  1.54,
+                  1.58
                ],
                "reads": 2315223,
                "tagma": 2315223,
                "syscalls": 0,
                "bytes_moved": 5926970880,
-               "reads_per_event": 1.00,
+               "reads_per_event": 1.0,
                "bytes_per_read": 2560.0,
-               "syscalls_per_event": 0.00
+               "syscalls_per_event": 0.0
             }
          }
       },
@@ -264,7 +264,7 @@
       "rows": {
          "compressed all": {
             "wall_s": 194.813,
-            "cpu_s": 186.500,
+            "cpu_s": 186.5,
             "reads": 470131,
             "syscalls": 470131,
             "bytes_moved": 2149961076,
@@ -272,7 +272,7 @@
          },
          "compressed store-cols": {
             "wall_s": 110.231,
-            "cpu_s": 105.240,
+            "cpu_s": 105.24,
             "reads": 158177,
             "syscalls": 158177,
             "bytes_moved": 1404068431,
@@ -280,7 +280,7 @@
          },
          "compressed store-cols cache": {
             "wall_s": 111.111,
-            "cpu_s": 107.200,
+            "cpu_s": 107.2,
             "reads": 1985,
             "syscalls": 1985,
             "bytes_moved": 1404068431,
@@ -289,7 +289,7 @@
          },
          "compressed 2-cols": {
             "wall_s": 10.583,
-            "cpu_s": 10.170,
+            "cpu_s": 10.17,
             "reads": 528,
             "syscalls": 528,
             "bytes_moved": 8949452,
@@ -297,7 +297,7 @@
          },
          "compressed 2-cols cache": {
             "wall_s": 10.037,
-            "cpu_s": 9.860,
+            "cpu_s": 9.86,
             "reads": 264,
             "syscalls": 264,
             "bytes_moved": 8949452,
@@ -306,7 +306,7 @@
          },
          "uncompressed store-cols": {
             "wall_s": 35.935,
-            "cpu_s": 29.150,
+            "cpu_s": 29.15,
             "reads": 118680,
             "syscalls": 118680,
             "bytes_moved": 6127346663,
@@ -319,21 +319,21 @@
          "tagma_rdf_columns.C, ROOT 6.41.01, one warmed run, the second run of each query reported so JIT compilation is outside the timing. The layout sidecar reports 320 store columns, of which 276 are variable-length arrays and 44 are scalar leaves.",
       "rows": {
          "entries only": {
-            "wall_s": 0.030,
-            "cpu_s": 0.030
+            "wall_s": 0.03,
+            "cpu_s": 0.03
          },
          "one column": {
             "wall_s": 0.488,
-            "cpu_s": 0.490
+            "cpu_s": 0.49
          },
          "two columns": {
             "wall_s": 0.558,
-            "cpu_s": 0.550,
+            "cpu_s": 0.55,
             "selected": 20861
          },
          "store columns": {
             "wall_s": 10.849,
-            "cpu_s": 10.830,
+            "cpu_s": 10.83,
             "reads": 1315,
             "syscalls": 1315,
             "bytes_moved": 154862520,
@@ -360,36 +360,148 @@
       "reads_store":
          "the store's cost on the two selected columns is 2.715 s against 2.698 s for the whole record in the same session, which is the column independence the store claims: the record is the addressing unit"
    },
-   "derived_ratios": {
-      "baseline_vs_coordinate": [
-         66.96,
-         69.13
-      ],
-      "baseline_vs_coordinate_map": [
-         116.57,
-         120.49
-      ],
-      "baseline_vs_baseline_uncomp": [
-         2.20,
-         2.31
-      ],
-      "analysis_baseline_vs_analysis_coordinate": 69.2,
-      "payload_equal_vs_coordinate": 13.09,
-      "payload_equal_vs_coordinate_map": 22.79,
-      "payload_equal_basis":
-         "the uncompressed row with the store's columns active, 35.935 s, which moves 6,127,346,663 bytes against the store's 5,926,970,880, so it moves 3.4 percent more bytes than the store; the coordinate rows are the mean of the three steady-state runs, 2.745 and 1.577",
-      "best_config_vs_coordinate": 40.48,
-      "best_config_vs_coordinate_map": 70.45,
-      "best_config_basis":
-         "the same columns on the compressed file with the 32 MB cache, 111.111 s, ROOT's best configuration for the store's payload",
-      "rdf_two_columns_vs_store": 4.87,
-      "rdf_two_columns_basis":
-         "RDataFrame reads the two columns of the analysis workload in 0.558 s; the store reads the same two columns in 2.715 s, and that is also what it spends on the whole record, so its cost does not depend on the columns selected",
-      "crossover_columns": 11.2,
-      "crossover_columns_mapped": 6.4,
-      "crossover_basis":
-         "the store's full-record cost divided by RDataFrame's marginal cost per column, (10.849 - 0.558) / 42 = 0.245 s, against 2.745 s and 1.577 s. First order from the measured points, not a fitted model."
+   "phases_2_6": {
+      "note":
+         "Measured after the phase-1 rows above, on the same machine and the same dataset. The rows live in the harness record at the top of benchmarks/tagma/tagma_harness.C, the master document; this section carries them into the tracked artifact. Each entry names the tool that produced it and the layer the row reads at, because the phase-1 rows, the index rows, and the entry rows are not layer-matched and the difference decides what each row supports.",
+      "collection_store": {
+         "tool": "tagma_make_store.C mode 1 and tagma_harness.C",
+         "fields":
+            "974 scalar fields and 406 array fields in 19 collections, every one of the tree's 1,380 leaves, with the leaf types preserved instead of widened to double; index record 1,280 bytes, data region 4,118,805,545 bytes, payload 7,082,290,985 bytes, 2,315,223 events, conversion 1,963.3 s",
+         "layer":
+            "the read path reads the index record and the event's slice, 2.00 reads per event, with no field delivery",
+         "rows": {
+            "baseline": 176.7,
+            "baseline_uncomp": 77.2,
+            "coordinate": 10.2,
+            "coordinate_map": 8.3,
+            "coordinate_scalar_only": 4.2,
+            "coordinate_scalar_only_map": 3.3,
+            "coordinate_whole_event_with_branches": 117.6,
+            "analysis_coordinate": 123.4,
+            "analysis_baseline": 180.3
+         },
+         "note":
+            "the delivery the branches cost is about 50 microseconds per event, which is the whole difference between the 10.2 s read path and the 117.6 s whole-event row; the scalar-only rows leave the collection branches disabled and are served from the index record alone, 42 to 54 times the baseline",
+         "crossover":
+            "against RDataFrame on the same file with a warm cache the column sum runs 0.132 s at one column, 1.716 s at eight, 7.411 s at 32, 16.806 s at 64 and 139.798 s at the whole 974 scalar columns; the 10.2 s read path crosses that ramp near 42 columns and the 117.6 s whole-event row near 810, both by first-order interpolation between the measured points"
+      },
+      "compression": {
+         "tool": "tagma_compress.C, tagma_block_read.C",
+         "blocks": "256 KB blocks, zlib level 1, 27,017 blocks, written in 75.4 s",
+         "payload": "7,082,290,985 to 2,897,372,833 bytes, 2.44 times",
+         "rows": {
+            "read_path_compressed": 12.4,
+            "read_path_plain": 14.6,
+            "read_path_baseline": 177.4,
+            "whole_event_with_branches_compressed": 197.6
+         },
+         "note":
+            "the read path on its own is the whole payload through the byte source with no entry layer, 572 MB/s; compression keeps that advantage and shrinks the file. The compressed whole-event row with the branches active, 197.6 s, is the delivery layer and not the read path. A block size of 8 KB, carried in the descriptor, moves the index-record scattered read from 222 to 16 microseconds per event and the file from 2.897 to 2.990 GB, 2.44 to 2.37 times"
+      },
+      "scatter": {
+         "tool": "tagma_scatter.C",
+         "protocol":
+            "2,000 events in list order, same medium, the 8 KB block store, one run; the baseline drives TTree::GetEntry with no branch addresses, so it delivers nothing into analysis variables, and the entry rows deliver all 1,380 field branches, so they are payload-matched and layer-matched with the baseline",
+         "gate":
+            "before they are timed the entry rows are compared with the baseline file over 32 sampled entries on the delivered event and MET_pt values; the gate passed with no mismatch",
+         "rows": {
+            "sequential_store_mapped": 0.003,
+            "sequential_store_block": 0.005,
+            "sequential_store_entry": 0.109,
+            "sequential_store_block_entry": 0.182,
+            "sequential_baseline": 0.453,
+            "sequential_baseline_cache": 0.468,
+            "scattered_store_mapped": 0.0,
+            "scattered_store_block": 0.031,
+            "scattered_store_entry": 0.101,
+            "scattered_store_block_entry": 0.586,
+            "scattered_baseline": 202.209,
+            "scattered_baseline_cache": 204.01
+         },
+         "requests": {
+            "scattered_baseline": 1365153,
+            "scattered_baseline_per_event": 682.6,
+            "scattered_baseline_cache": 16,
+            "store_entry_per_event": 2.0,
+            "sequential_baseline": 7
+         },
+         "ratios": {
+            "baseline_vs_entry": 2002.1,
+            "baseline_vs_block_entry": 345.1
+         },
+         "basket_boundary":
+            "the first basket of the measured file covers entries 0 to 999, and a scattered list inside it reads like a scan, 6 requests at 500 and at 1,000 events, 0.076 to 0.093 s; a list that spans a second basket collapses, 1,365,153 requests at 2,000 events, because a jump between baskets invalidates the current basket of each of the 1,380 branches. The penalty is a boundary, not a slope, and the store's count is flat across it",
+         "note":
+            "the store's whole-event per-event cost is 50 microseconds, the figure the collection-store scan rows measure, which places the store's remaining cost in the delivery layer rather than in the read path"
+      },
+      "threads": {
+         "tool": "tagma_mt.C",
+         "layer":
+            "every worker with its own file object and a disjoint range; the store row reads the whole payload through the block source, the baseline rows drive GetEntry with no branch addresses, so all rows move the data with no field copy",
+         "rows": {
+            "1": {
+               "store_s": 13.04,
+               "store_mb_s": 543,
+               "baseline_s": 186.4,
+               "baseline_cache_s": 183.8,
+               "lead": 14.3
+            },
+            "2": {
+               "store_s": 9.86,
+               "store_mb_s": 718,
+               "baseline_s": 93.7,
+               "baseline_cache_s": 92.7,
+               "lead": 9.5
+            },
+            "4": {
+               "store_s": 5.32,
+               "store_mb_s": 1331,
+               "baseline_s": 50.3,
+               "baseline_cache_s": 53.7,
+               "lead": 9.4
+            },
+            "8": {
+               "store_s": 2.86,
+               "store_mb_s": 2481,
+               "baseline_s": 31.9,
+               "baseline_cache_s": 32.2,
+               "lead": 11.2
+            }
+         },
+         "note":
+            "the store scales 4.6 times and the cache-less baseline 5.8 over eight threads, so the lead narrows from 14.3 to 11.2 rather than widening: the store is bandwidth bound and the baseline I/O bound. The per-worker cache neither helps nor hurts, because each worker reads a contiguous range. This machine has ten cores, so the row ends at eight and O(128) is an extrapolation, not a measurement"
+      }
    },
+   "derived_ratios":
+      {
+         "baseline_vs_coordinate": [
+            66.96,
+            69.13
+         ],
+         "baseline_vs_coordinate_map": [
+            116.57,
+            120.49
+         ],
+         "baseline_vs_baseline_uncomp": [
+            2.2,
+            2.31
+         ],
+         "analysis_baseline_vs_analysis_coordinate": 69.2,
+         "payload_equal_vs_coordinate": 13.09,
+         "payload_equal_vs_coordinate_map": 22.79,
+         "payload_equal_basis":
+            "the uncompressed row with the store's columns active, 35.935 s, which moves 6,127,346,663 bytes against the store's 5,926,970,880, so it moves 3.4 percent more bytes than the store; the coordinate rows are the mean of the three steady-state runs, 2.745 and 1.577",
+         "best_config_vs_coordinate": 40.48,
+         "best_config_vs_coordinate_map": 70.45,
+         "best_config_basis":
+            "the same columns on the compressed file with the 32 MB cache, 111.111 s, ROOT's best configuration for the store's payload",
+         "rdf_two_columns_vs_store": 4.87,
+         "rdf_two_columns_basis": "RDataFrame reads the two columns of the analysis workload in 0.558 s; the store reads the same two columns in 2.715 s, and that is also what it spends on the whole record, so its cost does not depend on the columns selected",
+         "crossover_columns": 11.2,
+         "crossover_columns_mapped": 6.4,
+         "crossover_basis":
+            "the store's full-record cost divided by RDataFrame's marginal cost per column, (10.849 - 0.558) / 42 = 0.245 s, against 2.745 s and 1.577 s. First order from the measured points, not a fitted model."
+      },
    "notes": [
       "The baseline is stable across the three steady-state runs, 187.0 to 188.2 s wall and 183.6 to 185.9 s cpu. The first three runs after the page cache had been disturbed measured 248.979, 202.469 and 182.609 s, so a settling cache moves the baseline by up to a third.",
       "Warming the sources is what makes the coordinate rows reproducible: 2.706, 2.722 and 2.808 s warmed against 2.793, 3.56 and 4.047 s across the unwarmed runs of the superseded artifact and the later control set.",
@@ -399,6 +511,7 @@
       "The two-column row is the store's weakest case and is stated as such: RDataFrame is 4.92x faster there.",
       "The synthetic and 2,000-event rows are microbenchmark scale. Their coordinate walls are 0.03 to 0.08 s and 0.001 to 0.003 s, where per-syscall cost and timer resolution dominate, so their ratios are not stable claims. What is stable there is the request and system call count per event.",
       "No end-to-end reproduction of the documented 14-hour production workload; these are full-dataset local measurements on one machine, single core, and the remote row was not re-measured.",
-      "The store's columns are the first 320 scalar leaves as doubles. Of the tree's 1,380 leaves, 276 of those 320 columns are variable-length arrays stored through their leading element, so the store's payload is a scalar projection rather than the full event. Carrying the collections is the work the reader backend now supports; this artifact predates a store written that way."
+      "The store's columns are the first 320 scalar leaves as doubles. Of the tree's 1,380 leaves, 276 of those 320 columns are variable-length arrays stored through their leading element, so the store's payload is a scalar projection rather than the full event. Carrying the collections is the work the reader backend now supports; this artifact predates a store written that way.",
+      "The section phases_2_6 records the measurements made after this artifact: the collection store, its compression, the event-selected rows, and the thread scaling. The phase-1 rows above are unchanged and remain the record of the projection. The scatter section is the one that decides the claim, and it states its layer: the entry rows read the whole event with the fields delivered, and the ratio they support is 2,000 times, not the five orders an index-record row against a whole-event baseline would suggest."
    ]
 }
