@@ -21,6 +21,12 @@ namespace ROOT {
 
 std::size_t TTagmaDataset::AddFile(const std::string &path, bool map)
 {
+   const std::uint64_t runBase = fFiles.empty() ? 0 : fFiles.back().fRunBase + fFiles.back().fLayout.fRunMax;
+   return AddFile(path, runBase, 0, map);
+}
+
+std::size_t TTagmaDataset::AddFile(const std::string &path, std::uint64_t runBase, std::uint64_t lumiBase, bool map)
+{
    TTagmaStore::Layout layout;
    TTagmaSchema schema;
    std::string why;
@@ -35,7 +41,8 @@ std::size_t TTagmaDataset::AddFile(const std::string &path, bool map)
    file.fPath = path;
    file.fLayout = layout;
    file.fStore = store;
-   file.fRunBase = fFiles.empty() ? 0 : fFiles.back().fRunBase + fFiles.back().fLayout.fRunMax;
+   file.fRunBase = runBase;
+   file.fLumiBase = lumiBase;
    file.fRecordBase = fRecordCount;
    fRecordCount += store->RecordCount();
    fFiles.push_back(std::move(file));
@@ -44,9 +51,10 @@ std::size_t TTagmaDataset::AddFile(const std::string &path, bool map)
 
 std::uint64_t TTagmaDataset::RunMax() const
 {
-   if (fFiles.empty())
-      return 0;
-   return fFiles.back().fRunBase + fFiles.back().fLayout.fRunMax;
+   std::uint64_t runMax = 0;
+   for (const File &f : fFiles)
+      runMax = std::max(runMax, f.fRunBase + f.fLayout.fRunMax);
+   return runMax;
 }
 
 bool TTagmaDataset::Resolve(std::uint64_t run, std::uint64_t lumi, std::uint64_t event, std::size_t *file,
@@ -56,13 +64,16 @@ bool TTagmaDataset::Resolve(std::uint64_t run, std::uint64_t lumi, std::uint64_t
       const File &f = fFiles[i];
       if (run < f.fRunBase || run >= f.fRunBase + f.fLayout.fRunMax)
          continue;
+      if (lumi < f.fLumiBase || lumi >= f.fLumiBase + f.fLayout.fLumiMax)
+         continue;
       const std::uint64_t localRun = run - f.fRunBase;
-      if (!f.fStore->Contains(localRun, lumi, event))
+      const std::uint64_t localLumi = lumi - f.fLumiBase;
+      if (!f.fStore->Contains(localRun, localLumi, event))
          return false;
       if (file != nullptr)
          *file = i;
       if (index != nullptr)
-         *index = f.fStore->Compose(localRun, lumi, event);
+         *index = f.fStore->Compose(localRun, localLumi, event);
       return true;
    }
    return false;
@@ -90,7 +101,7 @@ bool TTagmaDataset::DecomposeFlat(std::uint64_t flat, std::uint64_t *run, std::u
       if (run != nullptr)
          *run = f.fRunBase + std::get<0>(decomposed);
       if (lumi != nullptr)
-         *lumi = std::get<1>(decomposed);
+         *lumi = f.fLumiBase + std::get<1>(decomposed);
       if (event != nullptr)
          *event = std::get<2>(decomposed);
       return true;

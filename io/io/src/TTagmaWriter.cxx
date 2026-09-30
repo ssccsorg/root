@@ -60,15 +60,23 @@ std::uint64_t FileSize(const char *path)
 
 } // namespace
 
-TTagmaWriter::TTagmaWriter(const TTagmaSchema &schema, std::uint64_t entries) : fSchema(schema), fEntries(entries)
+TTagmaWriter::TTagmaWriter(const TTagmaSchema &schema, std::uint64_t entries) : TTagmaWriter(schema, 1, 1, entries) {}
+
+TTagmaWriter::TTagmaWriter(const TTagmaSchema &schema, std::uint64_t runMax, std::uint64_t lumiMax,
+                           std::uint64_t eventMax)
+   : fSchema(schema), fRunMax(runMax), fLumiMax(lumiMax)
 {
-   if (entries == 0)
-      throw std::invalid_argument("TTagmaWriter: the entry count must be nonzero");
+   if (runMax == 0 || lumiMax == 0 || eventMax == 0)
+      throw std::invalid_argument("TTagmaWriter: every axis maximum must be nonzero");
+   constexpr std::uint64_t kMax = std::numeric_limits<std::uint64_t>::max();
+   if (runMax > kMax / lumiMax || runMax * lumiMax > kMax / eventMax)
+      throw std::invalid_argument("TTagmaWriter: the record count overflows");
+   fEntries = runMax * lumiMax * eventMax;
    fIndexRecordSize = fSchema.IndexRecordSize();
    std::string why;
    if (!fSchema.Validate(fIndexRecordSize, &why))
       throw std::invalid_argument("TTagmaWriter: " + why);
-   if (entries > std::numeric_limits<std::uint64_t>::max() / fIndexRecordSize)
+   if (fEntries > kMax / fIndexRecordSize)
       throw std::invalid_argument("TTagmaWriter: the index region overflows");
 }
 
@@ -260,9 +268,9 @@ bool TTagmaWriter::ReadStore(const char *path, TTagmaStore::Layout *layout, TTag
 TTagmaStore::Layout TTagmaWriter::GetLayout() const
 {
    TTagmaStore::Layout layout;
-   layout.fRunMax = 1;
-   layout.fLumiMax = 1;
-   layout.fEventMax = fEntries;
+   layout.fRunMax = fRunMax;
+   layout.fLumiMax = fLumiMax;
+   layout.fEventMax = fEntries / (fRunMax * fLumiMax);
    layout.fRecordSize = fIndexRecordSize;
    layout.fDataSize = fDataSize;
    return layout;

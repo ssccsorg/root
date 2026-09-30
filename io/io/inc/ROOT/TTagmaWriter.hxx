@@ -60,6 +60,15 @@ public:
    // std::invalid_argument when the count is zero, the schema is invalid, or
    // the index region would overflow.
    TTagmaWriter(const TTagmaSchema &schema, std::uint64_t entries);
+
+   // A store that declares its axes: `runMax` runs, `lumiMax` luminosity blocks
+   // each, `eventMax` events each, so the store carries runMax times lumiMax
+   // times eventMax records and AddEvent consumes them in that flat order, run
+   // major. A shard of a dataset uses this form to declare the axis range it
+   // owns, which is what TTagmaDataset resolves a coordinate against. Throws
+   // under the same conditions as the entry-count form, and when an axis is
+   // zero or the record count overflows.
+   TTagmaWriter(const TTagmaSchema &schema, std::uint64_t runMax, std::uint64_t lumiMax, std::uint64_t eventMax);
    ~TTagmaWriter();
 
    TTagmaWriter(const TTagmaWriter &) = delete;
@@ -99,9 +108,9 @@ public:
    ReadStore(const char *path, TTagmaStore::Layout *layout, TTagmaSchema *schema, std::string *why = nullptr);
 
    // The layout the written store carries, for a TTagmaStore and the read
-   // path. The record size is the schema's index record size and the data
-   // size accumulates as events are added, so call it after the last
-   // AddEvent.
+   // path: the axes the writer was built with, the record size as the schema's
+   // index record size, and the data size as it accumulates, so call it after
+   // the last AddEvent.
    TTagmaStore::Layout GetLayout() const;
 
 private:
@@ -109,6 +118,8 @@ private:
 
    TTagmaSchema fSchema;
    std::uint64_t fEntries = 0;
+   std::uint64_t fRunMax = 1;
+   std::uint64_t fLumiMax = 1;
    std::uint64_t fIndexRecordSize = 0;
    std::uint64_t fDataSize = 0;
    std::uint64_t fAdded = 0;

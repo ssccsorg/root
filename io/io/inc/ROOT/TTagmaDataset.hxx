@@ -18,13 +18,18 @@
 // file that owns it and the record index inside that file, so the caller does
 // not stitch the files itself.
 //
-// The files are laid out along the run axis, in the order they are added: the
-// first file owns the runs [0, runMax[0]), the next file the runs after it, and
-// so on, so the dataset's run maximum is the sum of the per-file run maxima.
-// The lumi and event axes are each file's own, from its descriptor. The
-// per-file ranges are therefore derived from the data: every file is a
-// self-describing store, and its descriptor names the axes and the record size
-// the dataset lays out.
+// The files are laid out along the run and luminosity block axes. The two
+// argument AddFile gives each file the next run range, in the order the files
+// are added: the first file owns the runs [0, runMax[0]), the next file the
+// runs after it, and so on, so the dataset's run maximum is the sum of the
+// per-file run maxima, and each file's luminosity blocks start at zero. The
+// four argument AddFile declares the axes instead, which is what a run split
+// across several files needs: shards of one run take the same run base and
+// consecutive luminosity block bases, so a coordinate resolves to the shard
+// that owns the block and to the record inside it, which is how a production
+// dataset shards one run. The per-file maxima come from the data: every file is
+// a self-describing store, and its descriptor names the axes and the record
+// size the dataset lays out.
 //
 //   TTagmaDataset dataset;
 //   dataset.AddFile("file0.tagma", true);
@@ -49,6 +54,7 @@ public:
       std::string fPath;                   // the store file
       TTagmaStore::Layout fLayout;         // the file's own axis maxima and sizes
       std::uint64_t fRunBase = 0;          // first run this file owns
+      std::uint64_t fLumiBase = 0;         // first luminosity block this file owns, within its runs
       std::uint64_t fRecordBase = 0;       // first record of this file in the dataset's flat index
       std::shared_ptr<TTagmaStore> fStore; // the file's store, holding the mapping when one is attached
    };
@@ -63,6 +69,13 @@ public:
    // reason, when the descriptor cannot be read or a requested mapping fails.
    std::size_t AddFile(const std::string &path, bool map = false);
 
+   // Adds a store file that owns the declared axes: the runs [runBase, runBase
+   // + the file's run maximum) and, within them, the luminosity blocks
+   // [lumiBase, lumiBase + the file's lumi maximum). The caller declares the
+   // partition, so shards of one run take the same run base and consecutive
+   // lumi bases. Throws under the same conditions as the two argument form.
+   std::size_t AddFile(const std::string &path, std::uint64_t runBase, std::uint64_t lumiBase, bool map = false);
+
    std::size_t Size() const { return fFiles.size(); }
    bool Empty() const { return fFiles.empty(); }
    const File &GetFile(std::size_t index) const { return fFiles.at(index); }
@@ -75,7 +88,9 @@ public:
 
    // Resolves (run, lumi, event) to the file that owns it and the file's local
    // record index, whose byte offset is the index times the file's record size.
-   // Returns false when the coordinate is outside the dataset.
+   // The run and the luminosity block are compared against the axes the files
+   // declare, and the event against the owning file's own event axis. Returns
+   // false when the coordinate is outside the dataset.
    bool
    Resolve(std::uint64_t run, std::uint64_t lumi, std::uint64_t event, std::size_t *file, std::uint64_t *index) const;
 

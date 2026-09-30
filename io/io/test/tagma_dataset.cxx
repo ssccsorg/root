@@ -74,6 +74,29 @@ std::uint32_t RecordMuonCount(const char *record)
    return nMuon;
 }
 
+// Writes a store that declares its axes and fills every record with a value
+// that identifies the coordinate it belongs to, run major, so a record read
+// back identifies both the shard and the (run, lumi, event) inside it.
+void WriteShard(const char *path, std::uint64_t runMax, std::uint64_t lumiMax, std::uint64_t eventMax,
+                std::uint32_t valueBase)
+{
+   ROOT::TTagmaWriter writer(MakeSchema(), runMax, lumiMax, eventMax);
+   ASSERT_TRUE(writer.Open(path));
+   std::uint32_t next = valueBase;
+   for (std::uint64_t run = 0; run < runMax; ++run) {
+      for (std::uint64_t lumi = 0; lumi < lumiMax; ++lumi) {
+         for (std::uint64_t event = 0; event < eventMax; ++event) {
+            const std::uint32_t nMuon = next++;
+            char scalars[4];
+            std::memcpy(scalars, &nMuon, sizeof(nMuon));
+            std::vector<char> slice(nMuon * sizeof(float), 0);
+            ASSERT_TRUE(writer.AddEvent(scalars, slice.data())) << "record " << next;
+         }
+      }
+   }
+   ASSERT_TRUE(writer.Close());
+}
+
 } // namespace
 
 TEST(TTagmaDataset, ResolvesCoordinatesAcrossFiles)
@@ -122,6 +145,58 @@ TEST(TTagmaDataset, ResolvesCoordinatesAcrossFiles)
    EXPECT_EQ(run, 0u);
    EXPECT_EQ(event, 3u);
    EXPECT_FALSE(dataset.DecomposeFlat(7, &run, &lumi, &event));
+
+   std::remove(kFile0);
+   std::remove(kFile1);
+}
+
+TEST(TTagmaDataset, PartitionsOneRunByLuminosityBlock)
+{
+   // One run split across two shards by luminosity block, the sharding a
+   // production dataset uses: both shards declare the same run base and
+   // consecutive lumi bases, so the lumi axis selects the shard.
+   WriteShard(kFile0, 1, 3, 2, 10);  // run 0, lumis 0..2, values 10..15
+   WriteShard(kFile1, 1, 3, 2, 110); // run 0, lumis 3..5, values 110..115
+
+   ROOT::TTagmaDataset dataset;
+   EXPECT_EQ(dataset.AddFile(kFile0, 0, 0, true), 0u);
+   EXPECT_EQ(dataset.AddFile(kFile1, 0, 3, true), 1u);
+   EXPECT_EQ(dataset.RunMax(), 1u);
+   EXPECT_EQ(dataset.RecordCount(), 12u);
+
+   // The lumi axis selects the shard; the event axis resolves inside it.
+   std::size_t file = 0;
+   std::uint64_t index = 0;
+   ASSERT_TRUE(dataset.Resolve(0, 1, 1, &file, &index));
+   EXPECT_EQ(file, 0u);
+   EXPECT_EQ(index, 3u);
+   ASSERT_TRUE(dataset.Resolve(0, 4, 0, &file, &index));
+   EXPECT_EQ(file, 1u);
+   EXPECT_EQ(index, 2u);
+
+   const std::uint64_t recordSize = dataset.GetFile(0).fLayout.fRecordSize;
+   std::vector<char> record(recordSize);
+   ASSERT_TRUE(dataset.ReadRecord(0, 4, 1, record.data(), recordSize));
+   EXPECT_EQ(RecordMuonCount(record.data()), 113u);
+   ASSERT_TRUE(dataset.ReadRecord(0, 2, 1, record.data(), recordSize));
+   EXPECT_EQ(RecordMuonCount(record.data()), 15u);
+
+   // The flat index is contiguous across the shards, and the decomposition
+   // carries the dataset's lumi axis rather than the shard's local one.
+   std::uint64_t flat = 0;
+   ASSERT_TRUE(dataset.ResolveFlat(0, 4, 0, &flat));
+   EXPECT_EQ(flat, 8u);
+   std::uint64_t run = 0;
+   std::uint64_t lumi = 0;
+   std::uint64_t event = 0;
+   ASSERT_TRUE(dataset.DecomposeFlat(8, &run, &lumi, &event));
+   EXPECT_EQ(run, 0u);
+   EXPECT_EQ(lumi, 4u);
+   EXPECT_EQ(event, 0u);
+
+   // Past the last shard's lumi axis and past a shard's event axis.
+   EXPECT_FALSE(dataset.Resolve(0, 6, 0, &file, &index));
+   EXPECT_FALSE(dataset.Resolve(0, 4, 2, &file, &index));
 
    std::remove(kFile0);
    std::remove(kFile1);
