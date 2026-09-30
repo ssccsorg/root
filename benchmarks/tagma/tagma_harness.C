@@ -195,6 +195,36 @@
 // redundant under sequential access. This machine has ten cores, so the row
 // ends at eight and O(128) is an extrapolation.
 //
+// Dataset level (tagma_shard.C, tagma_root_shard.C, tagma_dataset_bench.C),
+// ssccs #121 step 2: whether a coordinate can address a dataset rather than one
+// file. The collection store is sharded one file per run, and the same
+// partition is held as ROOT files with the manifest both sides share. Measured
+// on the M1 file, 38 runs, the largest run 281,515 events, sources warmed:
+//   attach, store          0.687 s   18.1 ms per file (descriptor read, parse, map)
+//   attach, chain          0.002 s    0.05 ms per file (names; headers deferred)
+//   chain headers          0.355 s    9.3 ms per file when forced
+//   select by run, chain    11.1 s   the chain has no run index, so the range is
+//                                    found by scanning the run branch
+//   read, manifest          10.3 s   36 microseconds per event, one file, all branches
+//   read path, store         1.6 s   942,333,903 bytes at 600 MB/s
+//   entry layer, store      29.0 s   78.9 microseconds per grid cell over 368,008
+//                                    cells, 54.5 over the first 2,000
+// The coordinate resolves a run to its shard with no scan, which is the dataset
+// level claim. Two costs are recorded rather than argued: the descriptor is
+// parsed per file and repeats the field table the shards share, 18.1 ms against
+// the chain's forced 9.3 ms, and the dense grid carries 2,862,780 cells for
+// 2,315,223 events, 1.24 times, the largest run 368,008 for 281,515, 1.31. The
+// entry layer is 2.8 times the chain's per-event read over the same run, 29.0 s
+// against 10.3 s over 281,515 events, and its per-cell cost rises with the
+// scale of the walk, 54.5 microseconds over the first 2,000 cells against 78.9
+// over 368,008, a rise this run does not attribute; the 50 microsecond delivery
+// figure in this record is therefore a single-file figure, and that scale
+// condition attaches to it. The dataset's run and lumi axes are slots while the
+// record carries the physical values: over the physical luminosity block values
+// a dense axis would carry 14,710,139 cells, 84.3 percent padding, 5.14 times
+// the slot grid, and the alternative is a block table of 2,348 entries, so
+// where the slot-to-physical mapping lives is open.
+//
 // Boundaries: the fixed-width rows cover phase 1 and hold a scalar projection
 // of the events; the collection-store rows carry the whole event and their
 // advantage is on the read path, not on delivery or narrow selections; the
@@ -202,9 +232,11 @@
 // carry the whole event, and every baseline row there has no branch addresses,
 // so it delivers nothing into analysis variables; the scattered baseline count
 // is bounded by what a workstation finishes, and the penalty behind it is the
-// basket boundary measured above rather than a claim about scale; the thread
-// rows end at eight cores; and the documented 14-hour production workload, the
-// remote medium, and O(128) are not reproduced end to end.
+// basket boundary measured above rather than a claim about scale; the dataset
+// rows cover one partition of 38 runs, with the physical values carried in the
+// record and the axes holding slots; the thread rows end at eight cores; and
+// the documented 14-hour production workload, the remote medium, and O(128) are
+// not reproduced end to end.
 //
 // Tools (benchmarks/tagma)
 // -----------------------
@@ -219,7 +251,13 @@
 //                            record and over the entry layer, the entry rows
 //                            gated against the baseline's values
 //   tagma_compress.C         writes a block-compressed store at a chosen
-//                            block size
+//                            block size.
+//   tagma_shard.C            splits the collection store into one shard per run,
+//                            each declaring its lumi and event axes.
+//   tagma_root_shard.C       splits the ROOT tree into one file per run and
+//                            writes the manifest both sides share.
+//   tagma_dataset_bench.C    the dataset rows: the stores, a chain, and the
+//                            manifest over the same partition.
 //   tagma_make_store.C       converts a tree into a store, mode 0 fixed width
 //                            or mode 1 collections
 //   tagma_make_uncompressed.C  the uncompressed control file

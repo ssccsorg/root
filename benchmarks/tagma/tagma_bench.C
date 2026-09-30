@@ -16,6 +16,9 @@
 //   root -l -b -q 'tagma_mt.C("store.z.bin","open.root")'  thread scaling
 //   root -l -b -q 'tagma_scatter.C("plain.bin","store.z.bin","open.root",2000)'
 //   root -l -b -q 'tagma_compress.C("plain.bin","plain.z.bin",13)'
+//   root -l -b -q 'tagma_shard.C("plain.bin","shard")'
+//   root -l -b -q 'tagma_root_shard.C("open.root","Events","shard")'
+//   root -l -b -q 'tagma_dataset_bench.C("shard","shard","shard.manifest")'
 //   root -l -b -q 'tagma_make_store.C("open.root","Events","plain.bin",2560,-1,1)'
 //   root -l -b -q 'tagma_make_uncompressed.C("open.root","uncompressed.root")'
 //   root -l -b -q 'tagma_rdf_columns.C("open.root","Events",-1,"plain.bin.layout")'
@@ -40,6 +43,10 @@
 //                            declaring its own lumi and event axes, so the
 //                            dataset layer has a multi-file dataset to address
 //                            and the padding a dense lattice pays is measured.
+//   tagma_root_shard.C       splits the ROOT tree into one file per run and
+//                            writes the manifest both sides share.
+//   tagma_dataset_bench.C    the dataset rows: the stores, a chain, and the
+//                            manifest over the same partition.
 //   tagma_make_uncompressed.C  the uncompressed control file.
 //   tagma_rdf_columns.C      RDataFrame column selection, the upstream reader
 //                            the crossover is measured against.
@@ -60,6 +67,7 @@
 //   threads, 8 cores      tagma_mt.C           1 request/event, linear; 11.2x
 //   block size            tagma_compress.C     8 KB blocks: scatter 222 to 16 us
 //   crossover             tagma_rdf_columns.C  about 42 scalar columns
+//   dataset resolve       tagma_dataset_bench.C  no scan; the chain 11.1 s
 //
 // Conclusion
 // ----------
@@ -74,7 +82,9 @@
 // What is not won, and is stated as such. A sequential scan reads 11 to 14
 // times faster, not the 69 times of the scalar projection, because the
 // whole-event read carries the collections and the entry layer costs about 50
-// microseconds per event. A narrow column selection is upstream's to win below
+// microseconds per event at single-file scale; over a shard at dataset scale it
+// costs 2.8 times the chain's per-event read and its per-cell cost rises with
+// the walk. A narrow column selection is upstream's to win below
 // about 42 scalar columns. Thread scaling narrows the lead rather than widening
 // it, 14.3 to 11.2 times over eight cores. And O(128), multi-TB, and the remote
 // medium need infrastructure. The 128-core row is not measured but predicted:

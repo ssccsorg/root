@@ -14,6 +14,7 @@ if it were the production number.
 | Compression keeps the read path and shrinks the file | 7,082,290,985 to 2,897,372,833 bytes, 2.44x |
 | A read serves only the collections a selection enables | the scalar-only harness row, 4.2 s on the plain store |
 | The whole state reads in one or two requests whatever the order | `tagma_scatter.C` entry rows: 0.101 s scattered against 0.109 s sequential over 2,000 events, the fields delivered, against the baseline's 202.2 s |
+| A coordinate resolves a dataset without a scan | `tagma_dataset_bench.C`: a run resolves to its shard while the chain scans the run branch, 11.1 s over 38 files |
 
 ### Scattered, event-selected reads
 
@@ -68,6 +69,42 @@ falls to 16 microseconds per event against 222, and the file only grows from
 2.897 to 2.990 GB, 2.44 to 2.37 times, while the scan gives up a little, 1.5 to
 4 microseconds per event. Small blocks are therefore nearly free in ratio and
 much better under scatter.
+
+### The dataset level
+
+Step two of ssccs #121: whether a coordinate addresses a dataset rather than a
+file. `tagma_shard.C` splits the collection store into one shard per run, each
+shard declaring its own lumi and event axes, `tagma_root_shard.C` splits the
+ROOT tree into one file per run, and `tagma_dataset_bench.C` holds the same
+partition as stores, as a `TChain`, and as the manifest both sides share.
+Measured on the M1 file, 38 runs, the largest run 281,515 events, sources
+warmed:
+
+| row | seconds | note |
+| :--- | ---: | :--- |
+| attach, store | 0.687 | 18.1 ms per file, descriptor read, parse, map |
+| attach, chain | 0.002 | 0.05 ms per file, names only |
+| chain headers | 0.355 | 9.3 ms per file when forced |
+| select by run, chain | 11.1 | no run index, the range comes from a scan of the run branch |
+| read, manifest | 10.3 | 36 microseconds per event, one file, all branches |
+| read path, store | 1.6 | 942,333,903 bytes at 600 MB/s |
+| entry layer, store | 29.0 | 78.9 microseconds per grid cell over 368,008 cells, 54.5 over the first 2,000 |
+
+The coordinate resolves a run to its shard with no scan, which is the dataset
+level claim. Two costs are on the store side and are recorded rather than
+argued: the descriptor is parsed per file and repeats the field table the
+shards share, 18.1 ms against the chain's forced 9.3 ms, and the dense grid
+carries 2,862,780 cells for 2,315,223 events, 1.24 times, the largest run
+368,008 for 281,515, 1.31, which the walk pays as well as the bytes. The entry
+layer is 2.8 times the chain's per-event read over the same run, and its
+per-cell cost rises with the scale of the walk, 54.5 microseconds over the
+first 2,000 cells against 78.9 over 368,008.
+
+The dataset's run and lumi axes are slots while the record carries the physical
+run, luminosity block, and event number. Over the physical luminosity block
+values a dense axis would carry 14,710,139 cells, 84.3 percent padding, 5.14
+times the slot grid, and the alternative is a block table of 2,348 entries, so
+where the slot-to-physical mapping lives is open.
 
 ## Measurable or fixable here
 
@@ -134,16 +171,26 @@ The whole-event row costs about 50 microseconds per event in the branch
 machinery, against 12.4 s of read path in a 120 s row on the plain store. The
 read path is won; the delivery is not. Fewer fields copied and a cheaper copy
 per field are straight wins, and they matter for an analysis that reads most of
-the event.
+the event. The figure is a single-file figure: over a shard at dataset scale
+the same layer costs 2.8 times the chain's per-event read, and its per-cell
+cost rises with the walk's scale, 54.5 microseconds over the first 2,000 cells
+against 78.9 over 368,008; front 5 is what would settle that rise.
 
 ### 4. The claims
 
-The report and the forum thread still carry the projection numbers, the
-`Legacy` label, and the read rows that were paired across layers. The corrected
-read-path result, the compressed store, and the crossover belong in both, and
-the forum thread should hear them: the compressed comparison that was asked for
-favours the store on the read path, and the honest scope is the read path, wide
-selections, and event-selected access.
+The forum thread still carries the projection numbers, the `Legacy` label, and
+the read rows that were paired across layers. The corrected read-path result,
+the compressed store, the crossover, and the dataset level belong in it, and it
+should hear them: the compressed comparison that was asked for favours the
+store on the read path, and the honest scope is the read path, wide selections,
+and event-selected access.
+
+### 5. The walk's per-cell cost
+
+The entry layer over one shard costs 54.5 microseconds per grid cell over the
+first 2,000 cells and 78.9 over 368,008, same shard, same warmed state, and the
+rise is not attributed. It is what gives the single-file 50 microsecond
+delivery figure its scale condition.
 
 ## Needs infrastructure
 

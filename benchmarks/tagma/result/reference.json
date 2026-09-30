@@ -472,36 +472,113 @@
             "the store scales 4.6 times and the cache-less baseline 5.8 over eight threads, so the lead narrows from 14.3 to 11.2 rather than widening: the store is bandwidth bound and the baseline I/O bound. The per-worker cache neither helps nor hurts, because each worker reads a contiguous range. This machine has ten cores, so the row ends at eight and O(128) is an extrapolation, not a measurement"
       }
    },
-   "derived_ratios":
-      {
-         "baseline_vs_coordinate": [
-            66.96,
-            69.13
-         ],
-         "baseline_vs_coordinate_map": [
-            116.57,
-            120.49
-         ],
-         "baseline_vs_baseline_uncomp": [
-            2.2,
-            2.31
-         ],
-         "analysis_baseline_vs_analysis_coordinate": 69.2,
-         "payload_equal_vs_coordinate": 13.09,
-         "payload_equal_vs_coordinate_map": 22.79,
-         "payload_equal_basis":
-            "the uncompressed row with the store's columns active, 35.935 s, which moves 6,127,346,663 bytes against the store's 5,926,970,880, so it moves 3.4 percent more bytes than the store; the coordinate rows are the mean of the three steady-state runs, 2.745 and 1.577",
-         "best_config_vs_coordinate": 40.48,
-         "best_config_vs_coordinate_map": 70.45,
-         "best_config_basis":
-            "the same columns on the compressed file with the 32 MB cache, 111.111 s, ROOT's best configuration for the store's payload",
-         "rdf_two_columns_vs_store": 4.87,
-         "rdf_two_columns_basis": "RDataFrame reads the two columns of the analysis workload in 0.558 s; the store reads the same two columns in 2.715 s, and that is also what it spends on the whole record, so its cost does not depend on the columns selected",
-         "crossover_columns": 11.2,
-         "crossover_columns_mapped": 6.4,
-         "crossover_basis":
-            "the store's full-record cost divided by RDataFrame's marginal cost per column, (10.849 - 0.558) / 42 = 0.245 s, against 2.745 s and 1.577 s. First order from the measured points, not a fitted model."
+   "step_2_dataset": {
+      "note":
+         "Step two of ssccs #121: whether a coordinate can address a dataset rather than one file. tagma_shard.C splits the collection store into one shard per run, each shard declaring its own lumi and event axes, tagma_root_shard.C splits the ROOT tree into one file per run, and tagma_dataset_bench.C holds the same partition as coordinate stores, as a TChain, and as the manifest both sides share and asks each the same questions. Measured on the M1 file, 38 runs, the largest run 281,515 events, sources warmed. The rows are the record of commit c60bfc3f5fb; the harness record at the top of benchmarks/tagma/tagma_harness.C carries the same rows.",
+      "partition": {
+         "runs": 38,
+         "run_lumi_blocks": 2348,
+         "events": 2315223,
+         "run_span": 1373,
+         "runs_with_contiguous_lumi": 8,
+         "slot_grid_cells": 2862780,
+         "slot_grid_padding_cells": 547557,
+         "slot_grid_padding_percent": 19.1,
+         "slot_grid_cells_per_event": 1.237,
+         "physical_lumi_grid_cells": 14710139,
+         "physical_lumi_grid_padding_percent": 84.3,
+         "physical_lumi_grid_ratio_to_slot": 5.14,
+         "payload_source_bytes": 7082290985,
+         "payload_shards_bytes": 7783163945,
+         "payload_ratio": 1.1,
+         "largest_run": {
+            "run": 279716,
+            "events": 281515,
+            "grid_cells": 368008,
+            "cells_per_event": 1.31
+         },
+         "note":
+            "The figures are read from the source store's run and luminosity block fields; the shard tool's self-check resolves 2,348 slot coordinates, one per block, and reads each record back with no mismatch. The shard coordinate is a slot while the record carries the physical run, luminosity block, and event number, and the run axis spans 1,373 values for the 38 runs."
       },
+      "rows": {
+         "tool": "tagma_dataset_bench.C, the largest run's shard against the chain and against the manifest file",
+         "attach_store": {
+            "seconds": 0.687,
+            "ms_per_file": 18.1,
+            "note": "descriptor read, parse, and map"
+         },
+         "attach_chain": {
+            "seconds": 0.002,
+            "ms_per_file": 0.05,
+            "note": "names only; the headers are deferred"
+         },
+         "chain_headers": {
+            "seconds": 0.355,
+            "ms_per_file": 9.3,
+            "note": "forced; this is the cost the store's attach pays up front"
+         },
+         "select_by_run_chain": {
+            "seconds": 11.1,
+            "note": "the chain has no run index, so the range is found by scanning the run branch"
+         },
+         "manifest_read": {
+            "seconds": 10.3,
+            "us_per_event": 36.0,
+            "note": "one file, all branches, no branch addresses"
+         },
+         "store_mapped": {
+            "seconds": 1.6,
+            "bytes": 942333903,
+            "mb_per_s": 600.0,
+            "note": "the read path alone, no delivery"
+         },
+         "store_entry": {
+            "seconds": 29.0,
+            "grid_cells": 368008,
+            "us_per_grid_cell": 78.9,
+            "us_per_grid_cell_first_2000": 54.5,
+            "note": "the whole event with the schema attached and the branches delivered"
+         }
+      },
+      "costs": [
+         "the descriptor is parsed per file and repeats the field table the shards share, 18.1 ms per file against the chain's forced 9.3 ms",
+         "the dense grid carries 2,862,780 cells for 2,315,223 events, 1.24 times, and the largest run 368,008 for 281,515, 1.31 times, which the walk pays as well as the bytes",
+         "the entry layer is 2.8 times the chain's per-event read over a whole run, and its per-cell cost rises with the scale of the walk, 54.5 microseconds over the first 2,000 cells against 78.9 over 368,008, a rise this run does not attribute"
+      ],
+      "open": [
+         "the dataset's run and lumi axes are slots; over the physical luminosity block values a dense axis would carry 14,710,139 cells, 84.3 percent padding, 5.14 times the slot grid, while the alternative is a block table of 2,348 entries, so where the slot-to-physical mapping lives is open"
+      ]
+   },
+   "derived_ratios": {
+      "baseline_vs_coordinate": [
+         66.96,
+         69.13
+      ],
+      "baseline_vs_coordinate_map": [
+         116.57,
+         120.49
+      ],
+      "baseline_vs_baseline_uncomp": [
+         2.2,
+         2.31
+      ],
+      "analysis_baseline_vs_analysis_coordinate": 69.2,
+      "payload_equal_vs_coordinate": 13.09,
+      "payload_equal_vs_coordinate_map": 22.79,
+      "payload_equal_basis":
+         "the uncompressed row with the store's columns active, 35.935 s, which moves 6,127,346,663 bytes against the store's 5,926,970,880, so it moves 3.4 percent more bytes than the store; the coordinate rows are the mean of the three steady-state runs, 2.745 and 1.577",
+      "best_config_vs_coordinate": 40.48,
+      "best_config_vs_coordinate_map": 70.45,
+      "best_config_basis":
+         "the same columns on the compressed file with the 32 MB cache, 111.111 s, ROOT's best configuration for the store's payload",
+      "rdf_two_columns_vs_store": 4.87,
+      "rdf_two_columns_basis":
+         "RDataFrame reads the two columns of the analysis workload in 0.558 s; the store reads the same two columns in 2.715 s, and that is also what it spends on the whole record, so its cost does not depend on the columns selected",
+      "crossover_columns": 11.2,
+      "crossover_columns_mapped": 6.4,
+      "crossover_basis":
+         "the store's full-record cost divided by RDataFrame's marginal cost per column, (10.849 - 0.558) / 42 = 0.245 s, against 2.745 s and 1.577 s. First order from the measured points, not a fitted model."
+   },
    "notes": [
       "The baseline is stable across the three steady-state runs, 187.0 to 188.2 s wall and 183.6 to 185.9 s cpu. The first three runs after the page cache had been disturbed measured 248.979, 202.469 and 182.609 s, so a settling cache moves the baseline by up to a third.",
       "Warming the sources is what makes the coordinate rows reproducible: 2.706, 2.722 and 2.808 s warmed against 2.793, 3.56 and 4.047 s across the unwarmed runs of the superseded artifact and the later control set.",
