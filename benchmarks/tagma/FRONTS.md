@@ -80,31 +80,32 @@ partition as stores, as a `TChain`, and as the manifest both sides share.
 Measured on the M1 file, 38 runs, the largest run 281,515 events, sources
 warmed:
 
-| row | seconds | note |
-| :--- | ---: | :--- |
-| attach, store | 0.687 | 18.1 ms per file, descriptor read, parse, map |
-| attach, chain | 0.002 | 0.05 ms per file, names only |
-| chain headers | 0.355 | 9.3 ms per file when forced |
-| select by run, chain | 11.1 | no run index, the range comes from a scan of the run branch |
-| read, manifest | 10.3 | 36 microseconds per event, one file, all branches |
-| read path, store | 1.6 | 942,333,903 bytes at 600 MB/s |
-| entry layer, store | 29.0 | 78.9 microseconds per grid cell over 368,008 cells, 54.5 over the first 2,000 |
+| subject | operation | seconds | note |
+| :--- | :--- | ---: | :--- |
+| store | attach | 0.687 | 18.1 ms per file, descriptor read, parse, map |
+| chain | attach | 0.002 | 0.05 ms per file, names only |
+| chain | headers forced | 0.355 | 9.3 ms per file, the cost the store's attach pays up front |
+| chain | select by run | 11.1 | no run index, the range comes from a scan of the run branch |
+| manifest | read | 10.3 | one file, all branches, no branch addresses, 36 microseconds per event |
+| store | read path | 1.6 | 942,333,903 bytes at 600 MB/s, no delivery |
+| store | entry layer | 29.0 | 78.9 microseconds per grid cell over 368,008 cells, 54.5 over the first 2,000 |
 
 The coordinate resolves a run to its shard with no scan, which is the dataset
-level claim. Two costs are on the store side and are recorded rather than
-argued: the descriptor is parsed per file and repeats the field table the
-shards share, 18.1 ms against the chain's forced 9.3 ms, and the dense grid
-carries 2,862,780 cells for 2,315,223 events, 1.24 times, the largest run
-368,008 for 281,515, 1.31, which the walk pays as well as the bytes. The entry
-layer is 2.8 times the chain's per-event read over the same run, and its
-per-cell cost rises with the scale of the walk, 54.5 microseconds over the
-first 2,000 cells against 78.9 over 368,008.
+level claim. Two costs on the store side are recorded rather than argued. The
+descriptor is parsed per file and repeats the field table the shards share:
+18.1 ms per file against the chain's forced 9.3 ms. The dense grid the partition
+lays out carries 2,862,780 cells for 2,315,223 events, 1.24 times, and the
+largest run 368,008 for 281,515, 1.31 times; the cells the events do not occupy,
+the padding, are 19.1 percent of the grid, and the walk pays them as well as
+the bytes. The entry layer is 2.8 times the chain's per-event read over the same
+run, and its per-cell cost rises with the scale of the walk: 54.5 microseconds
+over the first 2,000 cells against 78.9 over 368,008.
 
 The dataset's run and lumi axes are slots while the record carries the physical
 run, luminosity block, and event number. Over the physical luminosity block
-values a dense axis would carry 14,710,139 cells, 84.3 percent padding, 5.14
-times the slot grid, and the alternative is a block table of 2,348 entries, so
-where the slot-to-physical mapping lives is open.
+values a dense axis would carry 14,710,139 cells, 84.3 percent of them padding,
+5.14 times the grid the slot axes lay out; the alternative is a block table of
+2,348 entries, so where the slot-to-physical mapping lives is open.
 
 ## Measurable or fixable here
 
