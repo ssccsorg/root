@@ -1,4 +1,4 @@
-// Author: SSCCS Foundation 2026
+// Author: SSCCS Initiative 2026
 
 /*************************************************************************
  * Copyright (C) 1995-2026, Rene Brun and Fons Rademakers.               *
