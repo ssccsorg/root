@@ -92,6 +92,7 @@ protected:
    Char_t           fMainTransparency{0};      //  Main-transparency variable.
    Color_t          fDefaultColor{kPink};  //  Default color for sub-classes that enable it.
    Color_t         *fMainColorPtr{nullptr};//  Pointer to main-color variable.
+
    std::unique_ptr<REveTrans> fMainTrans;   //  Pointer to main transformation matrix.
 
    void            *fUserData{nullptr};     ///<! Externally assigned and controlled user data.
@@ -255,8 +256,11 @@ public:
    virtual void SetTransMatrix(Double_t *carr);
    virtual void SetTransMatrix(const TGeoMatrix &mat);
 
+   // clang-format off
    virtual Int_t WriteCoreJson(nlohmann::json &cj, Int_t rnr_offset);
+   virtual void  WriteTransJson(nlohmann::json &cj);
    virtual void  BuildRenderData();
+   // clang-format on
 
    void* GetUserData() const   { return fUserData; }
    void  SetUserData(void* ud) { fUserData = ud;   }
@@ -323,11 +327,15 @@ public:
 
    // Change-stamping and change bits
    //---------------------------------
+   // kCBTransBBox streams the transformation as JSON only, and the client
+   // applies it to the object it already has. A change that invalidates
+   // geometry must stamp kCBObjProps. No bounding box is sent despite the name.
 
+   // clang-format off
    enum EChangeBits
    {
       kCBColorSelection =  BIT(0), // Main color or select/hilite state changed.
-      kCBTransBBox      =  BIT(1), // Transformation matrix or bounding-box changed.
+      kCBTransBBox      =  BIT(1), // Transformation changed; cheap update, no rebuild.
       kCBObjProps       =  BIT(2), // Object changed, requires dropping its display-lists.
       kCBVisibility     =  BIT(3), // Rendering of self/children changed.
       kCBElementAdded   =  BIT(4)  // Element was added to a new parent.
@@ -335,6 +343,7 @@ public:
 
       // Deletions are handled in a special way in REveManager::PreDeleteElement().
    };
+   // clang-format on
 
 protected:
    UChar_t      fChangeBits{0};  ///<!

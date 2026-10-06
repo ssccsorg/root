@@ -38,12 +38,15 @@ The following people have contributed to this new version:
 
 ## Deprecation and Removal
 
+* The `rmkdepend` executable is deprecated and will be removed from the public executables shipped with the installation of ROOT 6.44. Use instead `CMake` for dependency tracking, or `makedepend` from system packages. If you need manual inspection, on `g++` or `clang`, a similar result can be achieved by using e.g. `-std=c++17 -MM -MF file.d -MT -I incs defines -x c++-header`; on Windows with  `/std:c++17 /nologo /E /showIncludes /I incs defines /TP`.
+* The outdated Windows scripts `misc/win/ld.sh`, `misc/win/makelib.sh` and `roottest/scripts/winmakelib.sh` are removed in ROOT 6.42.
 * The `rootql` and `rootsl` (QuickLook and Spotlight) plugins for visualizing ROOT files in MacOS, that were developed for ROOT 5.24 are no longer supported in ROOT 6 and are thus removed from the codebase.
 * The build options `vc`, `veccore`, `builtin_vc`, `builtin_veccore` and `rpath` that were deprecated are now removed and will result in configuration errors if used.
 * The option `fail-on-missing=OFF` is no longer honored for opt-in (ie OFF by default) build options requiring external dependencies such as `arrow`, `cocoa`, `daos`, `daos_mock`, `dcache`, `experimental_adaptivecpp`, `fcgi`, `fortran`, `gviz`, `mpi`, `pythia8`, `qt6web`, `tmva-cudnn`, `tmva-pymva`, `tmva-sofie`, `uring` or `vecgeom`. If the respective associated package dependency is not installed, ROOT will always raise a configuration error independent of the value of `fail-on-missing`. The user has to take action by either providing the dependency or manually disabling that option via `-Darrow=OFF`.
   Note that `all=ON` enables several of these options, so building with `-Dall=ON` now requires all of their dependencies to be installed, or the unwanted ones to be disabled explicitly.
   Build options that are enabled by default, such as `pyroot`, `opengl`, `xml`, `sqlite`, `davix`, `curl`, `tmva-cpu` or `tpython` are not affected: they are still disabled automatically when their dependencies are missing.
 * The option `fail-on-missing=OFF` will no longer be honored for CMake ROOT build options that have easy-to-install dependencies (e.g. via homebrew or apt-get), such as those required by options `cfitsio`, `civetweb`, `fftw3`, `imt`, `mathmore`, `nlohmann_json`, `tmva-cpu`, `unuran`, `vdt` or `xrootd`. Before, associated `builtin_option` was automatically turned ON (or the opt-in feature turned to OFF), now, user has to install system package or manually set `builtin_option` to `ON` or opt-in feature to `OFF`.
+* The use of `CINT`-like implicit declarations such as `i = 0` is deprecated since [ROOT 6.32](https://root.cern/doc/v632/release-notes.html#deprecation-and-removal) and emits warnings `declaration without the 'auto' keyword is deprecated`. ROOT 6.44 will be the last release to support this syntax, after ROOT 6.44, the warning will turn into an error. Update those declarations by explicitly using the `auto` keyword: `auto i = 0`.
 * The legacy evaluation backend of RooFit and the related `RooFit::BatchMode()` command argument are deprecated and will be removed in ROOT 6.44. See the RooFit section below for details.
 * The method `RooRealVar::removeRange()` and the corresponding method in `RooErrorVar` that were deprecated in ROOT 6.40 are now removed.
 * The overloads of `RooAbsReal::createChi2()` and `RooAbsReal::chi2FitTo()` that take unbinned **RooDataSet** data objects were deprecated in ROOT 6.40 and are now removed.
@@ -54,10 +57,11 @@ The following people have contributed to this new version:
 * The `TSSLSocket` class is now removed following deprecation in ROOT 6.40.
 * The bindings to the R programming language that are enabled with the `r=ON` or `tmva-rmva=ON` build options (`TRInterface`, RMVA, and friends) are removed, following deprecation in ROOT 6.40. Their maintenance is no longer justified, given the broader adoption of the scientific Python ecosystem. Users who still rely on R from C++ are encouraged to call R directly via https://cran.r-project.org/package=RInside, which is what the ROOT bindings were using internally.
 * Several enums that are redundant with `ROOT::ESTLType` are deprecated and will be removed in ROOT 6.44: `TClassEdit::ESTLType`, `TDictionary::ESTLType`, `TStreamerElement::ESTLType`. Please use `ROOT::ESTLType` instead.
-* The inclusion by external projects of Makefile templates contained within ROOT is deprecated in 6.42, a warning will be raised if you use them. These files will be removed in ROOT 7.
+* The Makefile templates for external projects (`etc/Makefile.arch` and the files generated from `config/Makefile-comp.in` and `config/Makefile.in`) are removed. External projects should migrate to CMake (for example with `find_package(ROOT)`), or obtain compilation and linker flags from `root-config --cflags --libs`.
 * The conversion from Python set to **RooArgSet** is deprecated and won't work anymore in ROOT 6.44. The problem is that Python sets are unordered while RooArgSets are ordered, and this mismatch can lead to subtle problems later on. Prefer conversion from Python lists or tuples, which are ordered too.
 * The **TMPIFile** class and the `mpi` build option (not to be confused with `minuit2_mpi`, which is unaffected) are deprecated and will be removed in ROOT 6.44.
 * The ROOT IO capability for the `TMVA::Experimental::SOFIE::RModel` has been removed. Users should not be encouraged to serialize models in experimental classes. For the serialization of ONNX models one can already use ONNX directly, and even serialize the ONNX bytes to a ROOT file if required.
+* The ROOT binary weight file format of SOFIE (`TMVA::Experimental::SOFIE::Options::kRootBinaryWeightFile`, `WeightFileType::RootBinary`) is removed. In its place, weights can now be written in the binary [safetensors](https://huggingface.co/docs/safetensors) format with `TMVA::Experimental::SOFIE::Options::kSafetensorsWeightFile`: the payload is stored as raw little-endian data behind a small JSON header, loads faster, round-trips the values bit-exactly, and can be inspected with the standard Python and Rust safetensors tooling. Sessions of models generated with this option can also be constructed directly from an in-memory safetensors blob. The default text weight format (`*.dat`) is unchanged.
 * The Keras and PyTorch parsers for SOFIE (`TMVA::Experimental::SOFIE::PyKeras` and `PyTorch`) are now removed, so `RSofieReader` only accepts ONNX files.
 These parsers relied on private implementation details of Keras and PyTorch, which change faster than is appropriate for ROOT's stability standards.
 Users are encouraged to export their models to ONNX and use the retained ONNX parser instead.
@@ -99,6 +103,13 @@ The `TMVA_SOFIE_GNN` tutorials have been migrated to this workflow and produce i
 
 ## Build System
 
+### CMake version
+
+CMake versions below 3.26 will emit a warning during configure, since they will become obsolete soon: CMake 3.26 will be the minimum required in ROOT 6.44. It is the version shipped with RHEL 8.10, which is the oldest Linux distribution supported by that release.
+
+After ROOT 6.44, the minimum may rise to 3.31 if an upgrade to LLVM 24 or later is performed, see the [minimum version of CMake required by LLVM](https://discourse.llvm.org/t/rfc-raising-minimum-required-cmake-version-to-3-31/91086).
+
+
 ### Optimization of ROOT header files
 
 In ROOT 6.22, many (but not all) unused includes were removed from ROOT header files. The remaining unused includes will be removed after ROOT 6.44.
@@ -106,7 +117,7 @@ For instance, `#include "TBuffer.h"` will be removed from `TKey.h`. This change 
 To fix it well in advance on your side in downstream code, since no warnings are emitted in the meantime, we recommend getting a `preview` of those to-be errors by adding in your code `#define R__LESS_INCLUDES`, adding this at the very top before including any ROOT header. An alternative is to define this on CMake side via `target_compile_definitions`.
 This may also improve compile time and reduce code inter-dependency; see https://github.com/include-what-you-use/include-what-you-use/blob/master/docs/WhyIWYU.md for a good overview of the motivation.
 The macro `R__LESS_INCLUDES` will no longer have an effect after ROOT 6.44 since it will be the new default behavior.
-Note: if you build ROOT with option `dev=ON`, the header `RConfigure.h` will already contain that definition, so in that case consider just including `RConfigure.h` at the very top, rather than redefining `R__LESS_INCLUDES` in downstream code, or alternatively guard the definition with `#ifndef`. 
+Note: if you build ROOT with option `dev=ON`, the header `RConfigure.h` will already contain that definition, so in that case consider just including `RConfigure.h` at the very top, rather than redefining `R__LESS_INCLUDES` in downstream code, or alternatively guard the definition with `#ifndef`.
 
 ### Moving from builtin dependencies to system-provided packages
 
@@ -312,6 +323,11 @@ To store several canvases in single HTML file one can use:
 ```
 Produced HTML file will include canvas JSON data and JavaScript code to load and display canvas.
 Such file can be loaded locally in any web browser or send as attachment in email to colleagues.
+
+### Other graphics improvements
+
+* Both vertical and horizontal `TPaletteAxis` provide now interactive zooming with mouse cursor
+
 
 ## Geometry
 

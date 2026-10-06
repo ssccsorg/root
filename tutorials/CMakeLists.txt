@@ -363,6 +363,10 @@ else()
     list(APPEND tmva_veto machine_learning/TMVA_SOFIE_RDataFrame.C)
     list(APPEND tmva_veto machine_learning/TMVA_SOFIE_RSofieReader.C)
   endif()
+  # The safetensors weight files used by this tutorial are little-endian only
+  if (CMAKE_CXX_BYTE_ORDER STREQUAL "BIG_ENDIAN")
+    list(APPEND tmva_veto machine_learning/TMVA_SOFIE_Models.py)
+  endif()
   # These SOFIE tutorials take the ONNX HiggsModel trained with PyTorch as input
   if (NOT ROOT_TORCH_FOUND OR NOT ROOT_ONNX_FOUND)
     list(APPEND tmva_veto machine_learning/TMVA_SOFIE_ONNX.py)
@@ -484,6 +488,15 @@ if(MSVC)
   # which is corrupting the data on Windows
   list(APPEND extra_veto analysis/tree/run_h1analysis.C)
   list(APPEND extra_veto legacy/hist040_TH2Poly_europe.C) # needs to download from the web
+endif()
+
+if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 4 AND NOT win_broken_tests)
+  # These fits JIT-compile their formulas through cling on top of an already
+  # large Python + ROOT process and exhaust the 32-bit address space
+  # ("LLVM ERROR: out of memory", "Buffer allocation failed").
+  list(APPEND extra_veto
+       math/fit/fitConvolution.py
+       math/fit/fitNormSum.py)
 endif()
 
 if(MSVC AND NOT llvm13_broken_tests)
