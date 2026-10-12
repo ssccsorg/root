@@ -916,7 +916,9 @@ void ROOT::RFieldBase::RemoveReadCallback(size_t idx)
 
 void ROOT::RFieldBase::AutoAdjustColumnTypes(const ROOT::RNTupleWriteOptions &options)
 {
-   if ((options.GetCompression() == 0) && HasDefaultColumnRepresentative()) {
+   // Sampled upfront: the block below sets representatives, which would clear the "default" state.
+   const bool hadDefaultRepresentative = HasDefaultColumnRepresentative();
+   if ((options.GetCompression() == 0) && hadDefaultRepresentative) {
       ColumnRepresentation_t rep = GetColumnRepresentations().GetSerializationDefault();
       for (auto &colType : rep) {
          switch (colType) {
@@ -936,11 +938,35 @@ void ROOT::RFieldBase::AutoAdjustColumnTypes(const ROOT::RNTupleWriteOptions &op
       SetColumnRepresentatives({rep});
    }
 
-   if (fTypeAlias == "Double32_t") {
+   // Only adjust Double32_t when the user did not pin a representation: an explicit representative must
+   // survive (see RNTupleMerger::ExtendDestinationModel), otherwise merging would silently reinterpret the
+   // raw copies of the source pages under a different encoding.
+   if ((fTypeAlias == "Double32_t") && hadDefaultRepresentative) {
       if (options.GetCompression() != 0)
          SetColumnRepresentatives({{ROOT::ENTupleColumnType::kSplitReal32}});
       else
          SetColumnRepresentatives({{ROOT::ENTupleColumnType::kReal32}});
+   }
+
+   // An explicit representation pinned on a Double32_t field must contain a reduced-precision encoding:
+   // a 64-bit-only selection would store full doubles while the field promises Double32_t precision.
+   // A multi-column selection that also includes a reduced-precision representative stays legal.
+   if ((fTypeAlias == "Double32_t") && !hadDefaultRepresentative) {
+      bool hasSubDoubleRep = false;
+      for (const auto &rep : GetColumnRepresentatives()) {
+         for (const auto colType : rep) {
+            if ((colType != ROOT::ENTupleColumnType::kReal64) && (colType != ROOT::ENTupleColumnType::kSplitReal64)) {
+               hasSubDoubleRep = true;
+               break;
+            }
+         }
+         if (hasSubDoubleRep)
+            break;
+      }
+      if (!hasSubDoubleRep) {
+         throw RException(R__FAIL("explicit column representations of Double32_t field `" + GetFieldName() +
+                                  "` must include a reduced-precision representation"));
+      }
    }
 }
 

@@ -1778,6 +1778,11 @@ TEST(RNTuple, Double32)
    EXPECT_EQ("Double32_t", reader->GetModel().GetConstField("d2").GetTypeAlias());
    auto d1 = reader->GetModel().GetDefaultEntry().GetPtr<double>("d1");
    auto d2 = reader->GetModel().GetDefaultEntry().GetPtr<double>("d2");
+   // Packing converts the double to a float, which yields zero for a float denormal if the floating-point unit
+   // flushes denormals, e.g. because a library compiled with -ffast-math is loaded into the process. Do the same
+   // conversion at runtime to get the expected value.
+   volatile double denormMinDouble = std::numeric_limits<float>::denorm_min();
+   const float denormMin = denormMinDouble;
    reader->LoadEntry(0);
    EXPECT_DOUBLE_EQ(0.0, *d1);
    EXPECT_DOUBLE_EQ(*d1, *d2);
@@ -1794,7 +1799,7 @@ TEST(RNTuple, Double32)
    EXPECT_DOUBLE_EQ(std::numeric_limits<float>::infinity(), *d1);
    EXPECT_DOUBLE_EQ(*d1, *d2);
    reader->LoadEntry(5);
-   EXPECT_DOUBLE_EQ(std::numeric_limits<float>::denorm_min(), *d1);
+   EXPECT_DOUBLE_EQ(denormMin, *d1);
    EXPECT_DOUBLE_EQ(*d1, *d2);
 
    auto modelFloat = RNTupleModel::Create();
@@ -1811,7 +1816,7 @@ TEST(RNTuple, Double32)
    readerFloat->LoadEntry(4);
    EXPECT_DOUBLE_EQ(std::numeric_limits<float>::infinity(), *d2Float);
    readerFloat->LoadEntry(5);
-   EXPECT_DOUBLE_EQ(std::numeric_limits<float>::denorm_min(), *d2Float);
+   EXPECT_DOUBLE_EQ(denormMin, *d2Float);
 }
 
 TEST(RNTuple, Double32Uncompressed)
@@ -1835,6 +1840,48 @@ TEST(RNTuple, Double32Uncompressed)
    EXPECT_EQ("Double32_t", reader->GetModel().GetConstField("d").GetTypeAlias());
    reader->LoadEntry(0);
    EXPECT_DOUBLE_EQ(1.25, *reader->GetModel().GetDefaultEntry().GetPtr<double>("d"));
+}
+
+TEST(RNTuple, Double32Explicit64BitRejected)
+{
+   // An explicit 64-bit-only representation on a Double32_t field must be rejected: the field promises
+   // Double32_t (32-bit) precision, so storing full doubles would silently break that contract.
+   // A multi-column selection that also includes a reduced-precision representative stays legal.
+   {
+      FileRaii fileGuard("test_ntuple_double32_explicit64_split_rejected.root");
+      auto model = RNTupleModel::Create();
+      auto fld = RFieldBase::Create("d", "Double32_t").Unwrap();
+      fld->SetColumnRepresentatives({{ROOT::ENTupleColumnType::kSplitReal64}});
+      model->AddField(std::move(fld));
+      EXPECT_THROW(RNTupleWriter::Recreate(std::move(model), "ntuple", fileGuard.GetPath()), ROOT::RException);
+   }
+   {
+      FileRaii fileGuard("test_ntuple_double32_explicit64_rejected.root");
+      auto model = RNTupleModel::Create();
+      auto fld = RFieldBase::Create("d", "Double32_t").Unwrap();
+      fld->SetColumnRepresentatives({{ROOT::ENTupleColumnType::kReal64}});
+      model->AddField(std::move(fld));
+      EXPECT_THROW(RNTupleWriter::Recreate(std::move(model), "ntuple", fileGuard.GetPath()), ROOT::RException);
+   }
+
+   {
+      FileRaii fileGuard("test_ntuple_double32_explicit64_multi.root");
+      auto model = RNTupleModel::Create();
+      auto fld = RFieldBase::Create("d", "Double32_t").Unwrap();
+      fld->SetColumnRepresentatives(
+         {{ROOT::ENTupleColumnType::kSplitReal64}, {ROOT::ENTupleColumnType::kSplitReal32}});
+      model->AddField(std::move(fld));
+      {
+         auto writer = RNTupleWriter::Recreate(std::move(model), "ntuple", fileGuard.GetPath());
+         auto d = writer->GetModel().GetDefaultEntry().GetPtr<double>("d");
+         *d = 1.25;
+         writer->Fill();
+      }
+
+      auto reader = RNTupleReader::Open("ntuple", fileGuard.GetPath());
+      reader->LoadEntry(0);
+      EXPECT_DOUBLE_EQ(1.25, *reader->GetModel().GetDefaultEntry().GetPtr<double>("d"));
+   }
 }
 
 TEST(RNTuple, Double32Extended)

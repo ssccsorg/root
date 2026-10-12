@@ -304,14 +304,6 @@ void codegenImpl(RooSimultaneous &arg, CodegenContext &ctx)
    // component selected by the current category state, like for RooMultiPdf.
    // With an observable index category, the likelihood is decomposed into
    // per-channel terms and the RooSimultaneous itself is never translated.
-   if (arg.canBeExtended()) {
-      std::stringstream errorMsg;
-      errorMsg << "RooSimultaneous \"" << arg.GetName()
-               << "\" with extendable components and a non-observable index category can't be translated, because the "
-                  "scalar evaluation applies a relative yield weight that code generation does not implement yet.";
-      oocoutE(&arg, Minimization) << errorMsg.str() << std::endl;
-      throw std::runtime_error(errorMsg.str());
-   }
    if (!arg.indexCat().isFundamental()) {
       std::stringstream errorMsg;
       errorMsg << "RooSimultaneous \"" << arg.GetName()
@@ -590,7 +582,7 @@ void codegenImpl(RooLandau &arg, CodegenContext &ctx)
 
 void codegenImpl(RooLognormal &arg, CodegenContext &ctx)
 {
-   std::string funcName = arg.useStandardParametrization() ? "logNormalEvaluateStandard" : "logNormal";
+   std::string funcName = arg.useStandardParametrization() ? "logNormalStandard" : "logNormal";
    ctx.addResult(&arg, ctx.buildCall(mathFunc(funcName), arg.getX(), arg.getShapeK(), arg.getMedian()));
 }
 

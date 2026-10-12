@@ -76,6 +76,7 @@ The `TMVA_SOFIE_GNN` tutorials have been migrated to this workflow and produce i
 * The `TMVA::Experimental::Classification` and `TMVA::Experimental::ClassificationResult` classes are removed. They were the two-class front-end of the 2016–2017 `TMVA::Envelope` modernization campaign that never graduated out of the experimental namespace and saw no adoption. The parts of that effort that did find adoption remain available: `TMVA::Envelope`, `TMVA::CrossValidation`, `TMVA::VariableImportance`, `TMVA::HyperParameterOptimisation` and `TMVA::ROCCurve`, the latter providing the ROC curves that were previously obtained via `ClassificationResult`.
 * The `TMVA::Experimental::RTensor` class was removed, since it was not much adopted by ROOTs own interfaces and is also getting redundant with `std::mdspan` in C++23.
 * The **RooStats::DebuggingSampler** and **RooStats::DebuggingTestStat** classes are removed. They were mock implementations of the `TestStatSampler` and `TestStatistic` interfaces that returned uniform random numbers independent of the data, only meant for debugging the RooStats framework itself during its initial development.
+* Flattening nested **RooSimultaneous** in the constructor is deprecated and will be removed in ROOT 6.44. It double counts extended components that don't depend on all index categories ([GitHub issue #23342](https://github.com/root-project/root/issues/23342)) and breaks nested RooSimultaneous whose index category is a parameter ("switch mode"). From ROOT 6.44, nested RooSimultaneous are only supported in switch mode. To combine channels, use one RooSimultaneous over a **RooCategory** with one state per channel. Workspaces read from files are not affected.
 * The `RooTrace` class is deprecated and will be removed in ROOT 6.44. It was a RooFit-specific memory tracer whose instrumentation hooks are compiled out by default, so it has been inert and untested for years. For memory debugging, please use general-purpose tools such as AddressSanitizer or Valgrind instead.
 * Support for the AIX operating system has been removed from the codebase. This support has not been tested since the late v5 releases and the LLVM JIT is not yet supporting AIX.
 * The target `RCsg` (a library mixture of CSGLib and [SOLID](https://github.com/dtecta/solid3)) is now deprecated and will be fully private after ROOT 6.44, meaning the header `CsgOps.h` with the class `RootCsg::TBaseMesh` will no longer be public. Use instead `TGeoTessellated` public interface. If that public interface doesn't provide what you need, contact the ROOT team to request its extension.
@@ -85,6 +86,7 @@ The `TMVA_SOFIE_GNN` tutorials have been migrated to this workflow and produce i
 * The header `Rpair.h` is deprecated and will be removed after ROOT 6.44, use `<utility>` instead.
 * The header `Hparam.h` and `Hoption.h` are now deprecated and will be removed in ROOT 6.44, use instead `THistPainter`, `TGraph2DPainter` public interfaces.
 * The headers `Htypes.h` and `Gtypes.h` that were deprecated in ROOT 6.20 will now emit warnings and will be fully removed in ROOT 6.44. Use instead `Rtypes.h`.
+* The headers of the `bvh` library in `Geom` are no longer public in ROOT 6.42.
 * The header `GLConstants.h` is no longer part of ROOT installed headers.
 * The header `Bswapcpy.h` is deprecated and will be removed from the public interface after ROOT 6.44, it's an implementation detail for Unix i386 GNUC used by TBufferFile.
 * The header `VectorizedTMath.h` is deprecated and will be removed in ROOT 6.44. Use instead `TMathVectorized.h`.
@@ -100,6 +102,7 @@ The `TMVA_SOFIE_GNN` tutorials have been migrated to this workflow and produce i
 * The header `Riostream.h` is deprecated and will be removed after ROOT 6.44, use `<iostream>` or `<fstream>` or `<iomanip>` instead.
 * The header `Rstrstream.h` is deprecated and will be removed after ROOT 6.44, use instead `<sstream>`.
 * The headers `ZipLZMA.h`, `ZipLZ4.h` and `ZipZSTD.h` are deprecated and will be removed in ROOT 6.46, use instead the public methods in the `RZip.h` interface.
+* Remove outdated `TSQLFile` class, was not tested for very long time, not working with only supported sqlite DB
 
 ## Build System
 
@@ -208,6 +211,10 @@ For implementers of custom `RooFit::MultiProcess::Job` subclasses, the message t
 ### Small changes
 
 * The `RooMinimizer::Strategy` enum has been removed. It named the Minuit strategies that are usually referred to just by integers, but caused confusion because it didn't include the unnamed "Strategy 3". Since people usually set the strategy with integer values anyway, it was decided that the simplest solution to avoid the confusion was simply to remove the `RooMinimizer::Strategy` enum
+
+* `RooSimultaneous::expectedEvents()` with a **RooSuperCategory** index now sums over all components if its input categories are in the normalization set, as for dataset variables. Before, it returned the selected component's yield, which also gave the wrong total in extended toy generation.
+
+* An extended **RooSimultaneous** whose index category is a parameter ("switch mode", like **RooMultiPdf**) now evaluates to the selected component and uses its expected events in the extended term, also with code generation. Before, the value was weighted by the component's relative yield, and the new backends dropped the extended term. Consequently, `RooSimultaneous::getVal(normSet)` only includes the relative channel yields if the index category is in `normSet`.
 
 ### Faster Hesse for likelihoods with many independent parameters
 
