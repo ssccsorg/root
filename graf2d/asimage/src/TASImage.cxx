@@ -1076,10 +1076,27 @@ void TASImage::SetImage(const TVectorD &imageData, UInt_t width, TImagePalette *
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+/// Create an image from the given X11 window
+/// Can only be used on platforms where X11 is supported
+
+void TASImage::FromX11Window(Window_t win, Int_t x, Int_t y, Int_t width, Int_t height)
+{
+   DestroyImage();
+   DestroyScaledImage();
+
+   if (!InitVisual()) {
+      Warning("FromX11Window", "Visual not initiated");
+      return;
+   }
+
+   fImage = pixmap2asimage(fgVisual, win, x, y, width, height, kAllPlanes, 0, 0);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 /// Create an image from the given pad, afterwards this image can be
 /// saved in any of the supported image formats.
 
-void TASImage::FromPad(TVirtualPad *pad, Int_t x, Int_t y, UInt_t w, UInt_t h)
+void TASImage::FromPad(TVirtualPad *pad, Int_t /* x */, Int_t /* y */, UInt_t /* w */, UInt_t  /* h */)
 {
    if (!pad) {
       Error("FromPad", "pad cannot be 0");
@@ -1096,7 +1113,7 @@ void TASImage::FromPad(TVirtualPad *pad, Int_t x, Int_t y, UInt_t w, UInt_t h)
    DestroyImage();
    DestroyScaledImage();
 
-   if (gROOT->IsBatch()) { // in batch mode
+   if (gROOT->IsBatch() || pad->IsBatch() || pad->IsWeb()) { // in batch mode
       TVirtualPS *psave = gVirtualPS;
       gVirtualPS = new TImageDump();
       gVirtualPS->Open(pad->GetName(), 114); // in memory
@@ -1126,39 +1143,9 @@ void TASImage::FromPad(TVirtualPad *pad, Int_t x, Int_t y, UInt_t w, UInt_t h)
       return;
    }
 
-   // X11 Synchronization
-   gVirtualX->Update(1);
-   if (!gThreadXAR) {
-      gSystem->Sleep(100);
-      gSystem->ProcessEvents();
-      gSystem->Sleep(10);
-      gSystem->ProcessEvents();
-   }
-
-   TVirtualPad *canvas = (TVirtualPad*)pad->GetCanvas();
-   Int_t wid = (pad == canvas) ? pad->GetCanvasID() : pad->GetPixmapID();
-   gVirtualX->SelectWindow(wid);
-
-   Window_t wd = (Window_t)gVirtualX->GetCurrentWindow();
-   if (!wd) return;
-
-   if (w == 0) w = TMath::Abs(pad->UtoPixel(1.));
-   if (h == 0) h = pad->VtoPixel(0.);
-
-   static int x11 = -1;
-   if (x11 < 0) x11 = gVirtualX->InheritsFrom("TGX11");
-
-   if (x11) { //use built-in optimized version
-      fImage = pixmap2asimage(fgVisual, wd, x, y, w, h, kAllPlanes, 0, 0);
-   } else {
-      unsigned char *bits = gVirtualX->GetColorBits(wd, 0, 0, w, h);
-
-      if (!bits) { // error
-         return;
-      }
-      fImage = bitmap2asimage(bits, w, h, 0, nullptr);
-      delete [] bits;
-   }
+   auto pp = pad->GetPainter();
+   if (pp)
+      pp->FillImageFromPad(this, pad);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1652,17 +1639,14 @@ void TASImage::ExecuteEvent(Int_t event, Int_t px, Int_t py)
    if (!IsValid())
       return;
 
-   auto inter = dynamic_cast<TASImageInteractive *> (parent.Interactive(this));
-
    switch (event) {
 
       case kButton1Down:
-         inter = new TASImageInteractive(parent, px, py);
-         parent.Interactive(this, inter);
+         parent.MakeInteractive<TASImageInteractive>(this, parent, px, py);
          break;
 
       case kButton1Motion:
-         if (inter) {
+         if (auto inter = parent.GetInteractive<TASImageInteractive>(this)) {
             inter->PerformMove(px, py);
             inter->PaintBox(parent);
          }
@@ -1674,15 +1658,16 @@ void TASImage::ExecuteEvent(Int_t event, Int_t px, Int_t py)
 
          ASImage *image = fScaledImage ? fScaledImage->fImage : fImage;
 
-         if (inter && image) {
+         if (auto inter = parent.GetInteractive<TASImageInteractive>(this)) {
             inter->PerformMove(px, py);
-            imgX1 = inter->zx1 - parent.XtoAbsPixel(0);
-            imgY1 = image->height - 1 - inter->zy1 + parent.YtoAbsPixel(1);
-            imgW = inter->zx2 - inter->zx1;
-            imgH = inter->zy1 - inter->zy2;
+            if (image) {
+               imgX1 = inter->zx1 - parent.XtoAbsPixel(0);
+               imgY1 = image->height - 1 - inter->zy1 + parent.YtoAbsPixel(1);
+               imgW = inter->zx2 - inter->zx1;
+               imgH = inter->zy1 - inter->zy2;
+            }
+            parent.FreeInteractive(this);
          }
-
-         parent.Interactive(); // delete interactive
 
          if ((imgW >= 5) && (imgH >= 5)) {
             // do somthing if zoom area big enough
@@ -2174,75 +2159,81 @@ void TASImage::StartPaletteEditor()
    TAttImage::StartPaletteEditor();
 }
 
+
 ////////////////////////////////////////////////////////////////////////////////
+/// Returns image X11 pixmap.
+/// Workrs only on the platforms with support of X11
+/// The pixmap must deleted by user.
+
+Pixmap_t TASImage::GetX11Pixmap(Window_t root_window)
+{
+   if (!InitVisual()) {
+      Warning("GetX11Pixmap", "Visual not initiated");
+      return 0;
+   }
+
+   ASImage *img = fScaledImage ? fScaledImage->fImage : fImage;
+
+   return (Pixmap_t)asimage2pixmap(fgVisual, root_window, img, nullptr, kTRUE);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// DEPRECATED. Method left for backward compatibility and will be removed in ROOT7!
 /// Returns image pixmap.
 /// The pixmap must deleted by user.
 
 Pixmap_t TASImage::GetPixmap()
 {
-   if (!InitVisual()) {
-      Warning("GetPixmap", "Visual not initiated");
+   static Bool_t x11 = gVirtualX->InheritsFrom("TGX11");
+
+   if (x11)
+      return GetX11Pixmap(gVirtualX->GetDefaultRootWindow());
+
+   auto argb = GetArgbArray();
+   if (!argb) {
+      Error("GetPixmap", "ARGB array is not exists");
       return 0;
    }
 
-   Pixmap_t ret;
-
-   ASImage *img = fScaledImage ? fScaledImage->fImage : fImage;
-
-   static int x11 = -1;
-   if (x11 < 0) x11 = gVirtualX->InheritsFrom("TGX11");
-
-   if (x11) {   // use builtin version
-      ret = (Pixmap_t)asimage2pixmap(fgVisual, gVirtualX->GetDefaultRootWindow(),
-                                       img, nullptr, kTRUE);
-   } else {
-      if (!fImage->alt.argb32) {
-         BeginPaint();
-      }
-      ret = gVirtualX->CreatePixmapFromData((unsigned char*)fImage->alt.argb32,
-                                             fImage->width, fImage->height);
-   }
-
-   return ret;
+   return gVirtualX->CreatePixmapFromData((unsigned char*) argb, GetScaledWidth(), GetScaledHeight());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// Returns image mask pixmap (alpha channel).
-/// The pixmap must deleted by user.
+/// Returns image mask bits - only alpha channel of the image.
+/// Also provides width and height which is aligned to 8 bits
+/// Returns kTRUE if operation was successful
 
-Pixmap_t TASImage::GetMask()
+Bool_t TASImage::GetMaskBits(UInt_t &width, UInt_t &height, std::vector<char> &bits)
 {
-   Pixmap_t pxmap = 0;
-
    if (!InitVisual()) {
-      Warning("GetMask", "Visual not initiated");
-      return pxmap;
+      Warning("GetMaskBits", "Visual not initiated");
+      return kFALSE;
    }
 
    ASImage *img = fScaledImage ? fScaledImage->fImage : fImage;
 
    if (!img) {
-      Warning("GetMask", "No image");
-      return pxmap;
+      Warning("GetMaskBits", "No image");
+      return kFALSE;
    }
 
-   UInt_t hh = img->height;
-   UInt_t ow = img->width%8;
-   UInt_t ww = img->width - ow + (ow ? 8 : 0);
+   height = img->height;
+   UInt_t ow = img->width % 8;
+   width = img->width - ow + (ow ? 8 : 0);
 
    ASImageDecoder *imdec = start_image_decoding(fgVisual, img, SCL_DO_ALPHA,
-                                                0, 0, ww, 0, nullptr);
+                                                0, 0, width, 0, nullptr);
    if (!imdec)
-      return pxmap;
+      return kFALSE;
 
-   std::vector<char> bits(ww * hh / 8); //an array of bits
+   bits.resize(height * width / 8); //an array of bits
 
    UInt_t bit = 0, i = 0;
-   for (UInt_t y = 0; y < hh; y++) {
+   for (UInt_t y = 0; y < height; y++) {
       imdec->decode_image_scanline(imdec);
       CARD32 *a = imdec->buffer.alpha;
 
-      for (UInt_t x = 0; x < ww; x++) {
+      for (UInt_t x = 0; x < width; x++) {
          if (a[x]) {
             SETBIT(bits[i], bit);
          } else {
@@ -2256,8 +2247,25 @@ Pixmap_t TASImage::GetMask()
    }
 
    stop_image_decoding(&imdec);
-   pxmap = gVirtualX->CreateBitmap(gVirtualX->GetDefaultRootWindow(), bits.data(), ww, hh);
-   return pxmap;
+
+   return kTRUE;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// DEPRECATED! Method left for backward compatibility and will be removed in ROOT7!
+/// Returns image mask pixmap (alpha channel).
+/// The pixmap must deleted by user.
+
+Pixmap_t TASImage::GetMask()
+{
+   Pixmap_t pixmap = 0;
+
+   UInt_t ww = 0, hh = 0;
+   std::vector<char> bits;
+   if (GetMaskBits(ww, hh, bits))
+      pixmap = gVirtualX->CreateBitmap(gVirtualX->GetDefaultRootWindow(), bits.data(), ww, hh);
+
+   return pixmap;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -6362,22 +6370,30 @@ void TASImage::FromWindow(Drawable_t wid, Int_t x, Int_t y, UInt_t w, UInt_t h)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// Creates an image (screenshot) from a RGBA buffer.
+/// Creates an image (screenshot) from a RGBA buffer provided by GL.
 
 void TASImage::FromGLBuffer(UChar_t* buf, UInt_t w, UInt_t h)
+{
+   // swap lines in the buffer provided by GL
+   std::vector<UChar_t> xx(4 * w);
+   for (UInt_t i = 0; i < h / 2; ++i) {
+      memcpy(xx.data(), buf + 4*w*i, 4*w);
+      memcpy(buf + 4*w*i, buf + 4*w*(h-i-1), 4*w);
+      memcpy(buf + 4*w*(h-i-1), xx.data(), 4*w);
+   }
+
+   FromBitmap(buf, w, h);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Creates an image from a RGBA buffer
+
+void TASImage::FromBitmap(const UChar_t *buf, UInt_t width, UInt_t height)
 {
    DestroyImage();
    DestroyScaledImage();
 
-   UChar_t* xx = new UChar_t[4*w];
-   for (UInt_t i = 0; i < h/2; ++i) {
-      memcpy(xx, buf + 4*w*i, 4*w);
-      memcpy(buf + 4*w*i, buf + 4*w*(h-i-1), 4*w);
-      memcpy(buf + 4*w*(h-i-1), xx, 4*w);
-   }
-   delete [] xx;
-
-   fImage = bitmap2asimage(buf, w, h, 0, nullptr);
+   fImage = bitmap2asimage(const_cast<unsigned char *>(buf), width, height, 0, nullptr);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
