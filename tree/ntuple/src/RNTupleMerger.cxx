@@ -765,7 +765,9 @@ ExtendDestinationModel(RDescriptorsComparison &descCmp, ROOT::RNTupleModel &dstM
       if (fieldDesc->IsProjectedField())
          continue;
 
-      auto field = fieldDesc->CreateField(srcDesc);
+      ROOT::RCreateFieldOptions cfOpts;
+      cfOpts.SetEmulateUnknownTypes(true);
+      auto field = fieldDesc->CreateField(srcDesc, cfOpts);
       // Explicitly set the field representatives. This prevents UpdateSchema() from changing our column
       // representations via AutoAdjustColumnTypes.
       ROOT::RFieldBase::ColumnRepresentation_t representatives;
@@ -787,7 +789,9 @@ ExtendDestinationModel(RDescriptorsComparison &descCmp, ROOT::RNTupleModel &dstM
          continue;
 
       ROOT::Internal::RProjectedFields::FieldMap_t fieldMap;
-      auto field = fieldDesc->CreateField(srcDesc);
+      ROOT::RCreateFieldOptions cfOpts;
+      cfOpts.SetEmulateUnknownTypes(true);
+      auto field = fieldDesc->CreateField(srcDesc, cfOpts);
       const auto sourceId = fieldDesc->GetProjectionSourceId();
       const auto &sourceField = dstModel.GetConstField(srcDesc.GetQualifiedFieldName(sourceId));
       fieldMap[field.get()] = &sourceField;
@@ -1184,7 +1188,7 @@ ROOT::RResult<void> RNTupleMergeStrategyDefault::GenerateZeroPagesForColumns(siz
                 structure == ROOT::ENTupleStructure::kPlain);
 
       const auto &columnDesc = fDstDescriptor.GetColumnDescriptor(column.fOutputId);
-      const auto colElement = RColumnElementBase::Generate(columnDesc.GetType());
+      const auto colElement = RColumnElementBase::Generate(columnDesc);
       const auto nElements = nEntriesToGenerate * nRepetitions;
       const auto nBytesOnStorage = colElement->GetPackedSize(nElements);
       // TODO(gparolini): make this configurable
@@ -1246,8 +1250,8 @@ ROOT::RResult<void> RNTupleMergeStrategyDefault::MergeCommonColumns(ROOT::Intern
 
       const auto &columnDesc = fSrcDescriptor->GetColumnDescriptor(columnId);
       const auto srcColElement = column.fInMemoryType
-                                    ? ROOT::Internal::GenerateColumnElement(*column.fInMemoryType, columnDesc.GetType())
-                                    : RColumnElementBase::Generate(columnDesc.GetType());
+                                    ? ROOT::Internal::GenerateColumnElement(*column.fInMemoryType, columnDesc)
+                                    : RColumnElementBase::Generate(columnDesc);
 
       // Now get the pages for this column in this cluster
       const auto &pages = clusterDesc.GetPageRange(columnId);

@@ -70,8 +70,8 @@ ROOT::Internal::RPageSinkFile::RPageSinkFile(std::string_view ntupleName, TDirec
    fWriter = RNTupleFileWriter::Append(ntupleName, fileOrDirectory, options.GetMaxKeySize(), /*isHidden=*/false);
 }
 
-ROOT::Internal::RPageSinkFile::RPageSinkFile(std::string_view ntupleName, ROOT::Experimental::RFile &file,
-                                             std::string_view ntupleDir, const ROOT::RNTupleWriteOptions &options)
+ROOT::Internal::RPageSinkFile::RPageSinkFile(std::string_view ntupleName, ROOT::RFile &file, std::string_view ntupleDir,
+                                             const ROOT::RNTupleWriteOptions &options)
    : RPageSinkFile(ntupleName, options)
 {
    fWriter = RNTupleFileWriter::Append(ntupleName, file, ntupleDir, options.GetMaxKeySize());
@@ -105,7 +105,7 @@ void ROOT::Internal::RPageSinkFile::UpdateSchema(const ROOT::Internal::RNTupleMo
          cl = classField->GetClass();
       } else if (auto streamerField = dynamic_cast<const RStreamerField *>(field)) {
          cl = streamerField->GetClass();
-      } else if (auto soaField = dynamic_cast<const ROOT::Experimental::RSoAField *>(field)) {
+      } else if (auto soaField = dynamic_cast<const RSoAField *>(field)) {
          cl = soaField->GetSoAClass();
       }
       if (!cl)
