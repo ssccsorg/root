@@ -6,6 +6,8 @@
 #include <ROOT/RField.hxx>
 #include <ROOT/RFieldVisitor.hxx>
 #include <ROOT/RMiniFile.hxx>
+#include <ROOT/RNTupleAttrReading.hxx>
+#include <ROOT/RNTupleAttrWriting.hxx>
 #include <ROOT/RNTupleDescriptor.hxx>
 #include <ROOT/RNTupleFillStatus.hxx>
 #include <ROOT/RNTupleJoinTable.hxx>
@@ -90,9 +92,9 @@ using RNTupleWriter = ROOT::RNTupleWriter;
 using RNTupleWriteOptions = ROOT::RNTupleWriteOptions;
 using RNTupleWriteOptionsDaos = ROOT::Experimental::RNTupleWriteOptionsDaos;
 using RNTupleMetrics = ROOT::Experimental::Detail::RNTupleMetrics;
-using RNTupleMerger = ROOT::Experimental::Internal::RNTupleMerger;
-using RNTupleMergeOptions = ROOT::Experimental::Internal::RNTupleMergeOptions;
-using ENTupleMergingMode = ROOT::Experimental::Internal::ENTupleMergingMode;
+using RNTupleMerger = ROOT::Internal::RNTupleMerger;
+using RNTupleMergeOptions = ROOT::Internal::RNTupleMergeOptions;
+using ENTupleMergingMode = ROOT::Internal::ENTupleMergingMode;
 using RNTupleModel = ROOT::RNTupleModel;
 using RNTupleInputSpec = ROOT::RNTupleInputSpec;
 using RNTuplePlainCounter = ROOT::Experimental::Detail::RNTuplePlainCounter;

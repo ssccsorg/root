@@ -27,13 +27,14 @@
 
 namespace ROOT {
 
+class REntry;
 class RNTuple;
 
 namespace Internal {
-class RPageSource;
-} // namespace Internal
 
-namespace Experimental::Internal {
+class RPageSource;
+class RNTupleMergeStrategySlow;
+struct RNTupleSlowMergeData;
 
 enum class ENTupleMergingMode {
    /// The merger will discard all columns that aren't present in the prototype model (i.e. the model of the first
@@ -95,9 +96,63 @@ struct RNTupleMergeOptions {
    bool fExtraVerbose = false;
 };
 
+/// Information regarding the current slow merge process that gets passed to the RNTupleMergeActions
+struct RNTupleMergeActionContext {
+   ROOT::NTupleSize_t fSourceEntryIndex = 0;
+   ROOT::NTupleSize_t fDestinationEntryIndex = 0;
+};
+
+enum class ENTupleMergeActionResult {
+   // Don't emit this entry
+   kDrop,
+   // Emit this entry, then continue
+   kEmit,
+   // Emit this entry, then call the function again
+   kEmitMulti,
+};
+
 // clang-format off
 /**
- * \class ROOT::Experimental::Internal::RNTupleMerger
+ * \class ROOT::Experimental::Internal::RNTupleMergeActions
+ * \ingroup NTuple
+ * \brief Container for callbacks that are invoked during the "slow merge" process.
+ *        This allows customizing how the merging happens entry-by-entry, enabling things like dropping individual
+ *        entries from the destination RNTuple, modifying their values on the fly or creating new entries artificially.
+ */
+// clang-format on
+class RNTupleMergeActions {
+public:
+   RNTupleMergeActions() = default;
+   virtual ~RNTupleMergeActions() = default;
+
+   RNTupleMergeActions(const RNTupleMergeActions &) = delete;
+   RNTupleMergeActions &operator=(const RNTupleMergeActions &) = delete;
+   RNTupleMergeActions(RNTupleMergeActions &&) = default;
+   RNTupleMergeActions &operator=(RNTupleMergeActions &&) = default;
+
+   /// Invoked every time an entry is merged from a source RNTuple to the destination RNTuple.
+   virtual ENTupleMergeActionResult OnFill(ROOT::REntry &, const RNTupleMergeActionContext &)
+   {
+      return ENTupleMergeActionResult::kEmit;
+   }
+
+   // Invoked at the end of each source's merging process.
+   virtual ENTupleMergeActionResult OnSourceEnd(ROOT::REntry &, const RNTupleMergeActionContext &)
+   {
+      return ENTupleMergeActionResult::kDrop;
+   }
+
+   /// Invoked at the end of the merge process, right before committing the dataset.
+   /// This allows appending more entries at the end of the merge.
+   virtual ENTupleMergeActionResult BeforeCommit(ROOT::REntry &, const RNTupleMergeActionContext &)
+   {
+      return ENTupleMergeActionResult::kDrop;
+   }
+};
+
+// clang-format off
+/**
+ * \class ROOT::Internal::RNTupleMerger
  * \ingroup NTuple
  * \brief Given a set of RPageSources merge them into an RPagePersistentSink, optionally changing their compression.
  *        This can also be used to change the compression of a single RNTuple by just passing a single source.
@@ -127,7 +182,7 @@ public:
 
 }; // end of class RNTupleMerger
 
-} // namespace Experimental::Internal
+} // namespace Internal
 } // namespace ROOT
 
 #endif

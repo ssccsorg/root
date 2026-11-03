@@ -56,12 +56,14 @@ else()
   set(CMAKE_Fortran_COMPILER CMAKE_Fortran_COMPILER-NOTFOUND)
 endif()
 
-#---Enable CUDA if found on the system---
-check_language(CUDA)
-if (CMAKE_CUDA_COMPILER)
-  enable_language(CUDA)
-  if(NOT DEFINED CMAKE_CUDA_STANDARD)
-    set(CMAKE_CUDA_STANDARD ${CMAKE_CXX_STANDARD})
+#---Check CUDA only for requested features ----------------
+if(cuda OR tmva-gpu)
+  check_language(CUDA)
+  if(CMAKE_CUDA_COMPILER)
+    enable_language(CUDA)
+    if(NOT DEFINED CMAKE_CUDA_STANDARD)
+      set(CMAKE_CUDA_STANDARD ${CMAKE_CXX_STANDARD})
+    endif()
   endif()
 endif()
 

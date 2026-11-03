@@ -11,11 +11,56 @@
 
 #include "TASUtils.h"
 #include "RConfigure.h"
-#include "TASImage.h"
 #include "TVirtualX.h"
 #include "TSystem.h"
 #include "TVirtualPad.h"
 #include "TError.h"
+
+
+#ifdef NO_ASIMAGE
+
+#include "TImage.h"
+
+
+Pixmap_t TASUtils::GetPixmap(TImage *)
+{
+   ::Error("TASUtils::GetPixmap", "Not implemented, ASImage is not compiled");
+   return 0;
+}
+
+Pixmap_t TASUtils::GetMask(TImage *)
+{
+   ::Error("TASUtils::GetMask", "Not implemented, ASImage is not compiled");
+   return 0;
+}
+
+Bool_t TASUtils::PaintImage(TImage *, Drawable_t, Int_t, Int_t, Bool_t)
+{
+   ::Error("TASUtils::PaintImage", "Not implemented, ASImage is not compiled");
+   return kFALSE;
+}
+
+Bool_t TASUtils::FillImageFromWindow(TImage *, Window_t, Int_t, Int_t)
+{
+   ::Error("TASUtils::FillImageFromWindow", "Not implemented, ASImage is not compiled");
+   return kFALSE;
+}
+
+std::unique_ptr<TImage> TASUtils::FromWindow(Window_t)
+{
+   ::Error("TASUtils::FromWindow", "Not implemented, ASImage is not compiled");
+   return nullptr;
+}
+
+std::unique_ptr<TImage> TASUtils::FromPixmap(Pixmap_t, Pixmap_t)
+{
+   ::Error("TASUtils::FromPixmap", "Not implemented, ASImage is not compiled");
+   return nullptr;
+}
+
+#else // NO_ASIMAGE
+
+#include "TASImage.h"
 
 #ifdef WIN32
 #define X_DISPLAY_MISSING 1
@@ -75,8 +120,11 @@ public:
    }
 };
 
+namespace {
+
 thread_local ASVisualHolder holder;
 
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Returns image pixmap.
@@ -250,7 +298,7 @@ std::unique_ptr<TImage> TASUtils::FromPixmap(Pixmap_t pxm, Pixmap_t mask)
 
       unsigned char *mask_bits = mask ? gVirtualX->GetColorBits(mask, 0, 0, w, h) : nullptr;
 
-      asimg->fImage = bitmap2asimage(bits, w, h, 0, mask_bits);
+      asimg->FromBitmap(bits, w, h, mask_bits);
 
       if (mask_bits)
          delete [] mask_bits;
@@ -341,3 +389,5 @@ Bool_t TASUtils::PaintImage(TImage *timg, Drawable_t wid, Int_t x, Int_t y, Bool
 
    return res;
 }
+
+#endif // NO_ASIMAGE

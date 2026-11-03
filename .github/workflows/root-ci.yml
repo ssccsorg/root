@@ -399,17 +399,13 @@ jobs:
         # Common configs: {Release,Debug,RelWithDebInfo)
         # Build options: https://root.cern/install/build_from_source/#all-build-options
         include:
-          - image: fedora43
           - image: fedora44
           - image: alma8
           - image: alma9
             overrides: ["CMAKE_BUILD_TYPE=Debug"]
           - image: alma10
-          - image: ubuntu22
-            python_venv: "/py-venv-3.12/ROOT-CI"
-            overrides: ["imt=Off", "CMAKE_BUILD_TYPE=Debug"]
           - image: ubuntu2404
-            overrides: ["CMAKE_BUILD_TYPE=Debug"]
+            overrides: ["imt=OFF", "CMAKE_BUILD_TYPE=Debug"]
           - image: ubuntu2604
           - image: ubuntu2610
           - image: debian13

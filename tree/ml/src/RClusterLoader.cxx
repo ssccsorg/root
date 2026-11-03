@@ -69,8 +69,9 @@ void RClusterLoader::SplitDataset()
       for (const RClusterRange &c : fAllClusters) {
          const std::size_t sz = c.GetNumEntries();
          cumulativeEntries += sz;
+         // the validation entries are rounded down, as in the unshuffled split and the eager loading
          const std::size_t targetCumulativeTrain =
-            static_cast<std::size_t>(cumulativeEntries * (1.0f - fValidationSplit));
+            cumulativeEntries - static_cast<std::size_t>(fValidationSplit * cumulativeEntries);
          const std::size_t trainSz = targetCumulativeTrain - currentCumulativeTrain;
          currentCumulativeTrain = targetCumulativeTrain;
          const std::size_t valSz = sz - trainSz;
@@ -200,8 +201,9 @@ std::size_t RClusterLoader::LoadTrainingClusterInto(RFlat2DMatrix &dest, std::si
          for (auto &c : counts) {
             totalFiltered += c.GetValue();
          }
-         fNumTrainingEntries = static_cast<std::size_t>(totalFiltered * (1.0f - fValidationSplit));
-         fNumValidationEntries = totalFiltered - fNumTrainingEntries;
+         // the validation entries are rounded down, as in SplitDataset() and the eager loading
+         fNumValidationEntries = static_cast<std::size_t>(fValidationSplit * totalFiltered);
+         fNumTrainingEntries = totalFiltered - fNumValidationEntries;
       }
 
       ROOT::RDF::RNode &rdf = fRdfs[rdfIdx];
@@ -220,9 +222,17 @@ std::size_t RClusterLoader::LoadTrainingClusterInto(RFlat2DMatrix &dest, std::si
       }
       std::sort(rdfEntries.begin(), rdfEntries.end());
 
+      // same logic as SplitDataset():
+      // if shuffled, every cluster is split proportionally
+      // if unshuffled, the training target follows the cumulative count until it reaches fNumTrainingEntries,
+      // the clusters before go entirely to training, the cluster reaching it is the only one split at the boundary
+      // computed below, and the clusters after go entirely to validation
+      // the counts here are used to compute the train/val cluster ranges below
       const std::size_t cumulativeFiltered = fAccumulatedFilteredForTrain + fAccumulatedFilteredForVal + totalFiltered;
       const std::size_t targetCumulativeTrain =
-         std::min(static_cast<std::size_t>(cumulativeFiltered * (1.0f - fValidationSplit)), fNumTrainingEntries);
+         std::min(fShuffle ? cumulativeFiltered - static_cast<std::size_t>(fValidationSplit * cumulativeFiltered)
+                           : cumulativeFiltered,
+                  fNumTrainingEntries);
       const std::size_t trainCount = targetCumulativeTrain - fAccumulatedFilteredForTrain;
       const std::size_t valCount = totalFiltered - trainCount;
 

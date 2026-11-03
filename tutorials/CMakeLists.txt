@@ -156,6 +156,7 @@ if (NOT dataframe)
     list(APPEND dataframe_veto io/ntuple/ntpl008_import.C)
     # RFile tutorials depending on RDataFrame
     list(APPEND dataframe_veto io/rfile/rfile003_ttree.C)
+    list(APPEND dataframe_veto io/rfile/rfile003_ttree.py)
 endif()
 
 if(NOT sqlite)
@@ -498,15 +499,6 @@ if(MSVC)
   list(APPEND extra_veto legacy/hist040_TH2Poly_europe.C) # needs to download from the web
 endif()
 
-if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 4 AND NOT win_broken_tests)
-  # These fits JIT-compile their formulas through cling on top of an already
-  # large Python + ROOT process and exhaust the 32-bit address space
-  # ("LLVM ERROR: out of memory", "Buffer allocation failed").
-  list(APPEND extra_veto
-       math/fit/fitConvolution.py
-       math/fit/fitNormSum.py)
-endif()
-
 if(MSVC AND NOT llvm13_broken_tests)
   list(APPEND extra_veto
        math/exampleFunction.py
@@ -828,15 +820,6 @@ if(pyroot)
   # Disable tutorial showing connection to the HTCondor service at CERN
   list(APPEND pyveto analysis/dataframe/distrdf004_dask_lxbatch.py)
 
-  if(NOT tmva-pymva)
-    file(GLOB tmva_veto_py RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} machine_learning/keras/*.py)
-    list(APPEND pyveto ${tmva_veto_py})
-  endif()
-
-  if(NOT tmva-pymva)
-    file(GLOB tmva_veto_py RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} machine_learning/pytorch/*.py)
-    list(APPEND pyveto ${tmva_veto_py})
-  endif()
   # disable PyTorch model file used by TMVA_CNN_Classification.C
   list(APPEND pyveto machine_learning/PyTorch_Generate_CNN_Model.py)
 
@@ -911,6 +894,7 @@ if(pyroot)
       hist/hist007_TH1_liveupdate_uhi.py
       hist/hist010_TH1_two_scales_uhi.py
       hist/hist015_TH1_read_and_draw_uhi.py
+      machine_learning/ml_dataloader_Higgs_Classification.py
   )
 
   file(GLOB requires_numba   RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
@@ -958,6 +942,7 @@ if(pyroot)
       hist/hist007_TH1_liveupdate_uhi.py
       hist/hist010_TH1_two_scales_uhi.py
       hist/hist015_TH1_read_and_draw_uhi.py
+      machine_learning/ml_dataloader_Higgs_Classification.py
   )
 
   file(GLOB requires_mplhep RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}

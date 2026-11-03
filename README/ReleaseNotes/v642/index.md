@@ -83,26 +83,26 @@ The `TMVA_SOFIE_GNN` tutorials have been migrated to this workflow and produce i
 * The `ROOT::Math::ParamFunctionBase`, `ROOT::Math::ParamFunctorHandler` and `ROOT::Math::ParamMemFunHandler` classes in `Math/ParamFunctor.h` are removed, together with the `ParamFunctor::GetImpl()` and `ParamFunctor::SetFunction()` methods that exposed them. They implemented the type erasure that `ParamFunctor` now gets from `std::function`, mirroring what was already done for `ROOT::Math::Functor`. Constructing and calling a `ParamFunctor` is unchanged, except that the constructor from an object and one of its member functions now takes a plain pointer to the object instead of anything dereferenceable, so smart pointers are no longer accepted there.
 * The header `compiledata.h` will be renamed in ROOT 6.44. It did not have header guards and is not meant to be used directly. It is solely used by ROOT internally to setup `ACLiC`, consider using `gSystem` instead to access its content.
 * Including `RConfig.h` and `RVersion.h` is now deprecated and will be removed after ROOT 6.44, use instead `ROOT/RConfig.hxx` and `ROOT/RVersion.hxx`.
-* The header `Rpair.h` is deprecated and will be removed after ROOT 6.44, use `<utility>` instead.
-* The header `Hparam.h` and `Hoption.h` are now deprecated and will be removed in ROOT 6.44, use instead `THistPainter`, `TGraph2DPainter` public interfaces.
-* The headers `Htypes.h` and `Gtypes.h` that were deprecated in ROOT 6.20 will now emit warnings and will be fully removed in ROOT 6.44. Use instead `Rtypes.h`.
 * The headers of the `bvh` library in `Geom` are no longer public in ROOT 6.42.
-* The header `GLConstants.h` is no longer part of ROOT installed headers.
-* The header `Bswapcpy.h` is deprecated and will be removed from the public interface after ROOT 6.44, it's an implementation detail for Unix i386 GNUC used by TBufferFile.
-* The header `VectorizedTMath.h` is deprecated and will be removed in ROOT 6.44. Use instead `TMathVectorized.h`.
-* The header `PosixThreadInc.h` is deprecated and will be removed after ROOT 6.44. Use instead `<ctime>` and `<cstdlib>`.
-* The header `RStringView.h` deprecated in ROOT 6.14  will now emit warnings and will be fully removed after ROOT 6.44. Use `ROOT/RStringView.hxx` instead.
-* The header `NetErrors.h` is an implementation detail, is deprecated and will be removed in ROOT 6.44. Use instead `TSocket` public interface.
-* The headers `strlcpy.h` and `strtok.h` are deprecated (but will not emit warnings) and will no longer be part of ROOT installed headers in ROOT 6.44.
-* The header `snprintf.h` is deprecated (will emit warnings) and will be removed in ROOT 6.44. Use instead `<cstdio>`.
-* The header `Strlen.h` is deprecated and will be removed in ROOT 6.44. Use `<cstring>` directly as a replacement. `NEED_STRING` macro should not be defined or an error will be raised.
-* The header `HelpTextTV.h` is deprecated and will be removed in ROOT 6.44.
-* The header `Varargs.h` and the macro `R__VA_COPY` are deprecated and will be removed in ROOT 6.46, use `<cstdarg>` instead.
-* The header `TreeUtils.h` is deprecated and will be removed in ROOT 6.44, use instead `TNtuple::ReadStream` or `TNtupleD::ReadStream`.
-* The header `Riostream.h` is deprecated and will be removed after ROOT 6.44, use `<iostream>` or `<fstream>` or `<iomanip>` instead.
-* The header `Rstrstream.h` is deprecated and will be removed after ROOT 6.44, use instead `<sstream>`.
-* The headers `ZipLZMA.h`, `ZipLZ4.h` and `ZipZSTD.h` are deprecated and will be removed in ROOT 6.46, use instead the public methods in the `RZip.h` interface.
-* The headers `Hepevt.h` and `cfortran.h` are deprecated and will be moved to  `ROOT/Hepevt.h` and `ROOT/cfortran.h` in ROOT 6.44. At a later time point they may be fully removed from ROOT public headers, consider using instead the `TGenerator.h` public interface or the `cfortran.h` header of the `cfitsio` library, respectively.
+* Usage of the following headers is now deprecated. These will be removed during the lifetime of ROOT 7:
+  * `Rpair.h`: use `<utility>` instead.
+  * `Hparam.h` and `Hoption.h`: use instead `THistPainter`, `TGraph2DPainter` public interfaces.
+  * `Htypes.h` and `Gtypes.h`: Use instead `Rtypes.h`.
+  * `Bswapcpy.h`: no replacement.
+  * `VectorizedTMath.h`: use instead `TMathVectorized.h`.
+  * `PosixThreadInc.h`: use instead `<ctime>` and `<cstdlib>`.
+  * `RStringView.h`: use `<string_view>` or `ROOT/RStringView.hxx` instead.
+  * `NetErrors.h`: Use instead `TSocket` public interface.
+  * `strlcpy.h` and `strtok.h`: are deprecated (but will not emit warnings) and will no longer be part of ROOT installed headers in ROOT 6.44.
+  * `snprintf.h`: use instead `<cstdio>`.
+  * `Strlen.h`: use `<cstring>` directly as a replacement. `NEED_STRING` macro should not be defined or an error will be raised.
+  * `HelpTextTV.h`: no replacement.
+  * `Varargs.h` and the macro `R__VA_COPY`: use `<cstdarg>` instead.
+  * `TreeUtils.h`: use instead `TNtuple::ReadStream` or `TNtupleD::ReadStream`.
+  * `Riostream.h`: use `<iostream>`, `<fstream>` or `<iomanip>` instead.
+  * `Rstrstream.h`: use instead `<sstream>`.
+  * `ZipLZMA.h`, `ZipLZ4.h` and `ZipZSTD.h`: use instead the public methods in the `RZip.h` interface.
+  * `Hepevt.h` and `cfortran.h`: these will be moved to `ROOT/Hepevt.h` and `ROOT/cfortran.h` in ROOT 6.44. At a later time point they may be fully removed from ROOT public headers, consider using instead the `TGenerator.h` public interface or the `cfortran.h` header of the `cfitsio` library, respectively.
 * Remove outdated `TSQLFile` class, was not tested for very long time, not working with only supported sqlite DB
 
 ## Build System
@@ -152,6 +152,9 @@ Replace `obj.Connect(signal, "TPyDispatcher", disp, "Dispatch()")` with
 ## I/O
 
 * Reading a collection without its dictionary no longer crashes when the elements hold a `std::string` or a `TString`. The emulated collection proxy relocated its elements with a raw memory copy when its buffer had to grow, which corrupts an object that points into itself, such as a `std::string` using the small string optimization; the invalid pointer was then freed when the object was destroyed. Such elements are now destroyed and reconstructed at the new location instead. This affected for instance a `std::vector<std::pair<std::string,double>>` read back without a dictionary.
+* The LZ4 compression levels now follow those of the `lz4` command line tool. Level 1 uses the fast compressor as before. Level 2 uses the faster high-compression mode introduced in LZ4 1.10.0, or the fast compressor with older LZ4 versions. Level 3 now uses the high-compression (HC) compressor, like levels 4 to 9. Previously, levels 1 to 3 all used the fast compressor and produced identical output. Files written with levels 2 and 3 can be read by older ROOT versions, since the on-disk format is unchanged.
+
+* An `RNTupleReader` will now by default not load all metadata on open. Metadata related to the on-disk location of data pages will instead be loaded during iteration. To restore the old behavior, set the metadata mode in the `RNTupleReadOptions` to `kEager`.
 
 ### RFile
 
@@ -169,6 +172,11 @@ Processing joined RNTuples will remain available in the experimental namespace f
 Creating an RNTupleProcessor for joins can (for now) be done by calling `ROOT::Experimental::CreateRNTupleJoinProcessor`.
 * An experimental RDataFrame datasource using the RNTupleProcessor has been added.
 RDataFrames can be created from an existing RNTupleProcessor by calling `ROOT::Experimental::RDF::FromRNTupleProcessor()`.
+
+### RNTuple SoA I/O
+
+The RNTuple SoA I/O classes moved out of experimental. These classes and the related dictionary options provide a mechanism to read and write a collection of a class, i.e. an "array of struct" (AoS),
+as "struct of array" (SoA) in memory. This is useful, e.g., for efficient consumption of data structures by GPUs. This new feature comes with a technical documentation (`SoA.md`) and a tutorial (`ntpl020_SoA.C`).
 
 ## Core
 
@@ -189,6 +197,15 @@ more than one dimension.
 The behavior for one-dimensional histograms is unchanged. Code that relied on
 the previous 2D/3D output (for example to build per-axis selection efficiency
 maps) will now obtain different, mathematically consistent values.
+
+### New histogram package
+
+The new histogram package continues development in the `ROOT::Experimental` namespace.
+This release introduces `RHistEngine::SnapshotAtomic` to obtain a consistent copy during concurrent filling.
+There is now a class [`ROOT::Experimental::RProfile`](https://root.cern/doc/v642/classROOT_1_1Experimental_1_1RProfile.html)
+for (multidimensional) profile histograms.
+`RHist` and `RHistEngine` with two or three dimensions can be converted to `TH2` or `TH3`.
+More conversion functions will continue to be added in the future (`THn`, `TProfile`).
 
 ## Math
 
@@ -397,8 +414,25 @@ installation it was configured against, which is where RooFit looks for it. See
 ROOT build: `-Dcuda=ON` still builds the CUDA backend together with everything
 else.
 
-## Versions of built-in packages
+## Built-in packages
 
+**It is strongly recommended to rely on sytem packages, and not built-in ones.**
+All the built-in packages are now collected in the builtins directory.
 The version of the following packages has been updated:
 
- - xrootd: 5.9.5
+ - CDT: 2.0.0
+ - civetweb: 1.16.git588860
+ - bvh: 2.0.gitad9f7e
+ - ftgl: 2.4.0
+ - giflib: 6.1.3
+ - gl2ps: 1.4.2
+ - libmathtext: 2016
+ - libpng: 1.6.59
+ - libjpeg-turbo: 3.2.0
+ - libtiff: 4.7.26
+ - openssl: 3.5.9
+ - openui5: 1.152.0
+ - pcre: now pcre2, version 10.47
+ - rendercore: 2.3
+ - xrootd: 6.2.0
+ - xxhash: 0.8.3

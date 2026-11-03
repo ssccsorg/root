@@ -480,15 +480,12 @@ set(Python3_FIND_FRAMEWORK LAST)
 
 # Even if we don't build PyROOT, one still need python executable to run some scripts
 list(APPEND python_components Interpreter)
-if(pyroot AND NOT (tpython OR tmva-pymva))
+if(pyroot AND NOT tpython)
   # We have to only look for the Python development module in order to be able to build ROOT with a pip backend
   # In particular, it is forbidden to link against libPython.so, see https://peps.python.org/pep-0513/#libpythonx-y-so-1
   list(APPEND python_components Development.Module)
-elseif(tpython OR tmva-pymva)
+elseif(tpython)
   list(APPEND python_components Development)
-endif()
-if(tmva-pymva)
-  list(APPEND python_components NumPy)
 endif()
 find_package(Python3 3.11 COMPONENTS ${python_components})
 
@@ -1027,16 +1024,9 @@ if(tmva)
   else()
     set(tmva-cudnn OFF CACHE BOOL "Disabled because 'tmva-gpu' unavailable (${tmva-cudnn_description})" FORCE)
   endif()
-  if(tmva-pymva)
-    if(NOT Python3_NumPy_FOUND OR NOT Python3_Development_FOUND)
-      message(SEND_ERROR "TMVA: numpy python package or Python development package not found and tmva-pymva component required"
-                          " (python executable: ${Python3_EXECUTABLE})")
-    endif()
-  endif()
 else()
   set(tmva-gpu   OFF CACHE BOOL "Disabled because 'tmva' is disabled (${tmva-gpu_description})"   FORCE)
   set(tmva-cudnn OFF CACHE BOOL "Disabled because 'tmva' is disabled (${tmva-cudnn_description})"  FORCE)
-  set(tmva-pymva OFF CACHE BOOL "Disabled because 'tmva' is disabled (${tmva-pymva_description})" FORCE)
 endif(tmva)
 
 #---Check for PyROOT---------------------------------------------------------------------
@@ -1103,17 +1093,26 @@ if (testing OR testsupport)
       message(SEND_ERROR "Missing installation of GTest subcomponent ${LIBNAME}")
     endif()
   endforeach()
-  # Starting from cmake 3.23, the GTest targets will have stable names.
-  # ROOT was updated to use those, but for older CMake versions, we have to declare the aliases:
-  foreach(LIBNAME gtest_main gmock_main gtest gmock)
-    if(NOT TARGET GTest::${LIBNAME} AND TARGET ${LIBNAME})
-      add_library(GTest::${LIBNAME} ALIAS ${LIBNAME})
-    endif()
-  endforeach()
 endif()
 
 #------------------------------------------------------------------------------------
-if(http)
+
+if(builtin_jsroot)
+  ROOT_CHECK_CONNECTION("builtin_jsroot=OFF")
+  if (NO_CONNECTION)
+    message(SEND_ERROR "builtin_jsroot=ON requires internet connection, check it or disable feature")
+    list(APPEND HOTFIX_BUILD_FLAGS -Dbuiltin_jsroot=OFF)
+  endif()
+  add_subdirectory(builtins/jsroot)
+  set(JSROOT_CUSTOM_LOCATION "")
+elseif(http OR webgui)
+  message(WARNING "Without builtin_jsroot option http and webgui components are not working offline")
+  set(JSROOT_CUSTOM_LOCATION "https://root.cern/js/7.12.0/")
+endif()
+
+
+#------------------------------------------------------------------------------------
+if(http AND builtin_jsroot)
   if(builtin_mathjax)
     ROOT_CHECK_CONNECTION("builtin_mathjax=OFF")
     if (NO_CONNECTION)
@@ -1128,26 +1127,17 @@ endif()
 
 #------------------------------------------------------------------------------------
 if(webgui)
-  if(NOT "$ENV{OPENUI5DIR}" STREQUAL "" AND EXISTS "$ENV{OPENUI5DIR}/resources/sap-ui-core.js")
-     # create symbolic link on existing openui5 installation
-     # should be used only for debug purposes to be able try different openui5 version
-     # cannot be used for installation purposes
-     message(STATUS "openui5 - use from $ENV{OPENUI5DIR}, only for debug purposes")
-     file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/ui5)
-     execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink
-        $ENV{OPENUI5DIR} ${CMAKE_BINARY_DIR}/ui5/distribution)
-  else()
-    if(builtin_openui5)
-      ROOT_CHECK_CONNECTION("builtin_openui5=OFF")
-      if (NO_CONNECTION)
-         message(SEND_ERROR "builtin_openui5=ON requires internet connection, check it or disable feature")
-         list(APPEND HOTFIX_BUILD_FLAGS -Dbuiltin_openui5=OFF)
-      endif()
-      add_subdirectory(builtins/openui5)
-    else()
-      message(SEND_ERROR "Without builtin_openui5 option most of webgui components will not work, either disable webgui or enable builtin_openui5")
-      list(APPEND HOTFIX_BUILD_FLAGS -Dbuiltin_openui5=ON)
+  if(builtin_openui5)
+    ROOT_CHECK_CONNECTION("builtin_openui5=OFF")
+    if (NO_CONNECTION)
+      message(SEND_ERROR "builtin_openui5=ON requires internet connection, check it or disable feature")
+      list(APPEND HOTFIX_BUILD_FLAGS -Dbuiltin_openui5=OFF)
     endif()
+    add_subdirectory(builtins/openui5)
+    set(OPENUI5_CUSTOM_LOCATION "")
+  else()
+    message(WARNING "Without builtin_openui5 option webgui components will not work offline")
+    set(OPENUI5_CUSTOM_LOCATION "https://sdk.openui5.org/1.152.0/")
   endif()
   add_subdirectory(builtins/rendercore)
 endif()

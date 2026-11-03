@@ -2677,6 +2677,7 @@ TObject *TASImage::Clone(const char *newname) const
    if (newname)
       newimg->SetName(newname);
    newimg->CloneImageData(*this);
+   newimg->fEditable = kFALSE;
    return newimg;
 }
 
@@ -6353,12 +6354,12 @@ void TASImage::FromGLBuffer(UChar_t* buf, UInt_t w, UInt_t h)
 ////////////////////////////////////////////////////////////////////////////////
 /// Creates an image from a RGBA buffer
 
-void TASImage::FromBitmap(const UChar_t *buf, UInt_t width, UInt_t height)
+void TASImage::FromBitmap(const UChar_t *buf, UInt_t width, UInt_t height, const UChar_t *mask)
 {
    DestroyImage();
    DestroyScaledImage();
 
-   fImage = bitmap2asimage(const_cast<unsigned char *>(buf), width, height, 0, nullptr);
+   fImage = bitmap2asimage(const_cast<unsigned char *>(buf), width, height, 0, const_cast<unsigned char *>(mask));
 }
 
 
