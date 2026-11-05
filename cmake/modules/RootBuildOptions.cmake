@@ -151,7 +151,6 @@ ROOT_BUILD_OPTION(mathmore OFF "Build libMathMore extended math library (require
 ROOT_BUILD_OPTION(memory_termination OFF "Free internal ROOT memory before process termination (experimental, used for leak checking)")
 ROOT_BUILD_OPTION(minuit2_mpi OFF "Enable support for MPI in Minuit2")
 ROOT_BUILD_OPTION(minuit2_omp OFF "Enable support for OpenMP in Minuit2")
-ROOT_BUILD_OPTION(mpi OFF "Enable support for Message Passing Interface (MPI)")
 ROOT_BUILD_OPTION(opengl ON "Enable support for OpenGL (requires libGL and libGLU)")
 ROOT_BUILD_OPTION(pyroot ON "Enable support for automatic Python bindings (PyROOT)")
 ROOT_BUILD_OPTION(pythia8 OFF "Enable support for Pythia 8.x [GPL]")
@@ -201,6 +200,23 @@ option(asan "Build ROOT with address sanitizer instrumentation (see core/sanitiz
 option(_wheel_build "ROOT is being packaged as a wheel, do not install .dist-info metadata" OFF)
 
 set(gcctoolchain "" CACHE PATH "Set path to GCC toolchain used to build llvm/clang")
+
+# The source archives of the builtin_* options are downloaded during the build,
+# into ROOT_DOWNLOAD_DIR: it is passed as DOWNLOAD_DIR to the ExternalProject_Add
+# call of each archive builtin. An archive that is already there, named as on
+# the CERN mirror (${lcgpackages}/<archive>, the first URL listed by each
+# builtin), is checked against URL_HASH and not downloaded again. This allows to
+# build ROOT without network access: point ROOT_DOWNLOAD_DIR to a directory with
+# the pre-downloaded archives, or copy them into the default location. When the
+# directory already contains archives, the internet connectivity check in
+# SearchInstalledSoftware.cmake is skipped.
+set(ROOT_DOWNLOAD_DIR "${CMAKE_BINARY_DIR}/download" CACHE PATH
+    "Directory the source archives of the builtin_* packages are downloaded to; archives already present are used as they are without downloading")
+if(NOT ROOT_DOWNLOAD_DIR)
+  message(FATAL_ERROR "ROOT_DOWNLOAD_DIR must not be empty")
+elseif(EXISTS "${ROOT_DOWNLOAD_DIR}" AND NOT IS_DIRECTORY "${ROOT_DOWNLOAD_DIR}")
+  message(FATAL_ERROR "ROOT_DOWNLOAD_DIR is not a directory: ${ROOT_DOWNLOAD_DIR}")
+endif()
 
 if(all AND minimal)
   message(FATAL_ERROR "The 'all' and 'minimal' options are mutually exclusive")
@@ -381,7 +397,7 @@ foreach(opt afdsmgrd afs alien bonjour builtin_afterimage builtin_davix builtin_
         ldap memstat minuit2 monalisa oracle proof pyroot-python2 pyroot_legacy
         pythia6 pythia6_nolink python qt qtgsi qt5web rfio ruby sapdb srp table
         tcmalloc vmc xproofd mysql odbc pgsql builtin_cppzmq builtin_zeromq
-        r rpath tmva-rmva vc veccore tmva-pymva)
+        r rpath tmva-rmva vc veccore tmva-pymva mpi)
   if(${opt})
     message(FATAL_ERROR ">>> '${opt}' is no longer part of ROOT ${ROOT_VERSION} build options.")
   endif()
@@ -394,7 +410,7 @@ foreach(opt roofit_multiprocess shadowpw)
   endif()
 endforeach()
 
-foreach(opt mpi r)
+foreach(opt r)
   if(${opt})
     message(DEPRECATION ">>> The option '${opt}' is deprecated and will be removed in the next release of ROOT. Please contact root-dev@cern.ch should you still need it.")
   endif()

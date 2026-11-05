@@ -60,7 +60,9 @@ endif()
 
 ExternalProject_Add(BUILTIN_FTGL
   PREFIX ${ROOT_FTGL_PREFIX}
+  DOWNLOAD_DIR ${ROOT_DOWNLOAD_DIR}
   URL ${lcgpackages}/ftgl-${ROOT_FTGL_VERSION}.tar.gz
+      https://github.com/frankheckenbach/ftgl/archive/refs/tags/v${ROOT_FTGL_VERSION}.tar.gz
   URL_HASH SHA256=${ROOT_FTGL_HASH}
   ${ROOT_FTGL_PATCH_COMMAND}
 

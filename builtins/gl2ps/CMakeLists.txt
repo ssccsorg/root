@@ -37,7 +37,9 @@ endif()
 ExternalProject_Add(
   BUILTIN_GL2PS
   PREFIX ${ROOT_GL2PS_PREFIX}
+  DOWNLOAD_DIR ${ROOT_DOWNLOAD_DIR}
   URL ${lcgpackages}/gl2ps-${ROOT_GL2PS_VERSION}.tgz
+      https://geuz.org/gl2ps/src/gl2ps-${ROOT_GL2PS_VERSION}.tgz
   URL_HASH SHA256=${ROOT_GL2PS_HASH}
   ${GL2PS_PATCH_COMMAND}
   CMAKE_ARGS -G ${CMAKE_GENERATOR}

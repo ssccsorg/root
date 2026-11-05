@@ -20,11 +20,20 @@
 #          - TRUE: No internet connection was found or the download failed.
 # Note: if the value of NO_CONNECTION is already FALSE, when calling the
 #       macro, the connection check will not run again.
+# Note: if ROOT_DOWNLOAD_DIR already contains archives, the check is skipped:
+#       the archives of the builtins are taken from there, so the build is
+#       expected to work without network access (see RootBuildOptions.cmake).
 #----------------------------------------------------------------------------
 macro(ROOT_CHECK_CONNECTION option)
   # Do something only if connection check is not already done
   if(NOT DEFINED NO_CONNECTION)
-    if(NOT check_connection)
+    file(GLOB _root_downloaded_archives
+         "${ROOT_DOWNLOAD_DIR}/*.tar.gz" "${ROOT_DOWNLOAD_DIR}/*.tgz"
+         "${ROOT_DOWNLOAD_DIR}/*.tar.bz2" "${ROOT_DOWNLOAD_DIR}/*.zip")
+    if(_root_downloaded_archives)
+      message(STATUS "ROOT_DOWNLOAD_DIR already contains archives, skipping the internet connectivity check")
+      set(NO_CONNECTION FALSE)
+    elseif(NOT check_connection)
       # If the connection check is disabled, just assume there is internet
       # connection
       set(NO_CONNECTION FALSE)
@@ -51,6 +60,7 @@ macro(ROOT_CHECK_CONNECTION option)
         set(NO_CONNECTION TRUE)
       endif()
     endif()
+    unset(_root_downloaded_archives)
   endif()
 endmacro()
 
@@ -1059,16 +1069,6 @@ if(tpython)
     endif()
   endif()
 
-endif()
-
-#---Check for MPI---------------------------------------------------------------------
-if (mpi)
-  message(STATUS "Looking for MPI")
-  find_package(MPI)
-  if(NOT MPI_FOUND)
-    message(SEND_ERROR "MPI not found. Ensure that the installation of MPI is in the CMAKE_PREFIX_PATH."
-      " Example: CMAKE_PREFIX_PATH=<MPI_install_path> (e.g. \"/usr/local/mpich\"). Or disable option 'mpi'")
-  endif()
 endif()
 
 #---Check for googletest---------------------------------------------------------------
