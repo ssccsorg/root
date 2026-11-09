@@ -5843,12 +5843,18 @@ void TClass::SetCurrentStreamerInfo(TVirtualStreamerInfo *info)
 
 size_t TClass::GetClassAlignment() const
 {
-   if (fAlignment != 0)
-      return fAlignment;
-   if ((fState < kEmulated && !fCollectionProxy) || Property() & (kIsNamespace | kIsEnum))
+   auto alignment = fAlignment.load(std::memory_order_relaxed);
+   if (alignment != 0)
+      return alignment;
+   if (fState < kEmulated && !fCollectionProxy)
       return 0;
    if (HasInterpreterInfo()) {
-      return gCling->ClassInfo_AlignOf(GetClassInfo());
+      if (Property() & (kIsNamespace | kIsEnum))
+         return 0;
+      alignment = gCling->ClassInfo_AlignOf(GetClassInfo());
+      if (alignment != 0)
+         fAlignment.store(alignment, std::memory_order_relaxed);
+      return alignment;
    }
    if (fCollectionProxy) {
       // If the collection proxy has a dictionary, it will have return earlier,
@@ -5868,9 +5874,15 @@ size_t TClass::GetClassAlignment() const
 
 Int_t TClass::Size() const
 {
-   if (fSizeof!=-1) return fSizeof;
+   auto size = fSizeof.load(std::memory_order_relaxed);
+   if (size != -1) return size;
    if (fCollectionProxy) return fCollectionProxy->Sizeof();
-   if (HasInterpreterInfo()) return gCling->ClassInfo_Size(GetClassInfo());
+   if (HasInterpreterInfo()) {
+      size = gCling->ClassInfo_Size(GetClassInfo());
+      if (size >= 0)
+         fSizeof.store(size, std::memory_order_relaxed);
+      return size;
+   }
    return GetStreamerInfo()->GetSize();
 }
 
