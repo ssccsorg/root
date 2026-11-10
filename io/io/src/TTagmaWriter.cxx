@@ -194,28 +194,45 @@ bool TTagmaWriter::ReadStore(const char *path, TTagmaStore::Layout *layout, TTag
       return reject("no path or output");
 
    const std::uint64_t size = FileSize(path);
-   if (size < TTagmaHeader::kSize)
+   if (size < TTagmaHeader::kLegacySize)
       return reject("the store is shorter than its descriptor");
 
    std::FILE *in = std::fopen(path, "rb");
    if (in == nullptr)
       return reject("cannot open the store");
 
-   const std::uint64_t descriptorOffset = size - TTagmaHeader::kSize;
-   std::array<unsigned char, TTagmaHeader::kSize> bytes{};
-   if (Seek(in, descriptorOffset) != 0 || std::fread(bytes.data(), 1, bytes.size(), in) != bytes.size()) {
-      std::fclose(in);
-      return reject("cannot read the descriptor");
-   }
-
+   // The descriptor ends the file and its magic opens the block, so the sizes this
+   // build reads are tried newest first: a legacy block read at the larger size
+   // starts past the magic and is skipped, and a candidate whose magic matches is
+   // parsed at the size that found it, so a refusal names the real reason.
    TTagmaHeader header;
-   if (!TTagmaHeader::Parse(bytes.data(), bytes.size(), &header, why)) {
-      std::fclose(in);
-      return false;
+   std::uint64_t descriptorBytes = 0;
+   for (const std::size_t candidate : {TTagmaHeader::kSize, TTagmaHeader::kLegacySize}) {
+      if (size < candidate)
+         continue;
+      std::array<unsigned char, TTagmaHeader::kSize> bytes{};
+      if (Seek(in, size - candidate) != 0 || std::fread(bytes.data(), 1, candidate, in) != candidate) {
+         std::fclose(in);
+         return reject("cannot read the descriptor");
+      }
+      if (std::memcmp(bytes.data(), TTagmaHeader::kMagic.data(), TTagmaHeader::kMagic.size()) != 0)
+         continue;
+      std::string parseWhy;
+      if (!TTagmaHeader::Parse(bytes.data(), candidate, &header, &parseWhy)) {
+         std::fclose(in);
+         return reject(parseWhy);
+      }
+      descriptorBytes = candidate;
+      break;
    }
-   // A block-compressed store ends with the same descriptor at a higher version;
-   // it is read through TTagmaBlockSource, not as a plain store.
-   if (header.fVersion != TTagmaHeader::kVersion) {
+   if (descriptorBytes == 0) {
+      std::fclose(in);
+      return reject("the store carries no coordinate descriptor");
+   }
+   const std::uint64_t descriptorOffset = size - descriptorBytes;
+   // A block-compressed store ends with the same descriptor at the compressed
+   // version; it is read through TTagmaBlockSource, not as a plain store.
+   if (TTagmaHeader::IsCompressed(header.fVersion)) {
       std::fclose(in);
       return reject("the store is block-compressed");
    }
@@ -256,7 +273,7 @@ bool TTagmaWriter::ReadStore(const char *path, TTagmaStore::Layout *layout, TTag
    const std::uint64_t payload = records * header.fRecordSize;
    if (payload > max - header.fDataSize || payload + header.fDataSize > max - header.fFieldTableBytes)
       return reject("the descriptor names a store larger than uint64");
-   const std::uint64_t expected = payload + header.fDataSize + header.fFieldTableBytes + TTagmaHeader::kSize;
+   const std::uint64_t expected = payload + header.fDataSize + header.fFieldTableBytes + descriptorBytes;
    if (expected != size)
       return reject("the descriptor disagrees with the store size");
 

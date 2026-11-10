@@ -82,6 +82,8 @@ std::array<unsigned char, TTagmaHeader::kSize> TTagmaHeader::Serialize() const
    PutLE64(bytes.data() + 48, fDataSize);
    PutLE64(bytes.data() + 56, fFieldTableBytes);
    PutLE64(bytes.data() + 64, fChecksum);
+   PutLE64(bytes.data() + 72, fLayoutKind);
+   PutLE64(bytes.data() + 80, fBlockEvents);
    return bytes;
 }
 
@@ -92,13 +94,18 @@ bool TTagmaHeader::Parse(const unsigned char *bytes, std::size_t len, TTagmaHead
          *why = reason;
       return false;
    };
-   if (bytes == nullptr || out == nullptr || len < kSize)
-      return reject("the descriptor is shorter than its fixed block");
+   if (bytes == nullptr || out == nullptr || len < 12)
+      return reject("the descriptor is shorter than its header");
    if (std::memcmp(bytes, kMagic.data(), kMagic.size()) != 0)
       return reject("the store carries no coordinate descriptor");
    const std::uint32_t version = GetLE32(bytes + 8);
-   if (version != kVersion && version != kCompressedVersion)
+   if (!IsKnown(version))
       return reject("unknown descriptor version " + std::to_string(version));
+   // The version decides the block, so a block read at a size its version does
+   // not fill is refused rather than parsed from the wrong offsets.
+   const std::size_t needed = SizeOf(version);
+   if (len < needed)
+      return reject("the descriptor is shorter than its fixed block");
 
    TTagmaHeader header;
    header.fVersion = version;
@@ -110,8 +117,16 @@ bool TTagmaHeader::Parse(const unsigned char *bytes, std::size_t len, TTagmaHead
    header.fDataSize = GetLE64(bytes + 48);
    header.fFieldTableBytes = GetLE64(bytes + 56);
    header.fChecksum = GetLE64(bytes + 64);
+   if (needed == kSize) {
+      header.fLayoutKind = GetLE64(bytes + 72);
+      header.fBlockEvents = GetLE64(bytes + 80);
+   }
    if (header.fRunMax == 0 || header.fLumiMax == 0 || header.fEventMax == 0 || header.fRecordSize == 0)
       return reject("the descriptor names a zero axis or a zero record size");
+   if (header.fLayoutKind != kEventMajorLayout)
+      return reject("the store declares a layout this build cannot address");
+   if (header.fBlockEvents != 0)
+      return reject("an event-major store carries a block length");
    *out = header;
    return true;
 }

@@ -27,6 +27,12 @@
 // the field table of fFieldTableBytes bytes immediately before it. The
 // checksum covers the field table, the part of the store that has to agree
 // with the payload the store addresses.
+//
+// The block grew once. Versions 1 and 2 are the descriptor an earlier build
+// wrote, without the layout fields and kLegacySize bytes long; versions 3 and 4
+// carry them and are kSize. The magic opens the block, so a reader that tries
+// the sizes this build reads, newest first, tells the generations apart without
+// a sidecar and without reading the version first.
 
 #include "ROOT/TTagmaStore.hxx"
 
@@ -40,14 +46,52 @@ namespace ROOT {
 class TTagmaHeader {
 public:
    static constexpr std::array<unsigned char, 8> kMagic = {'T', 'A', 'G', 'M', 'A', 'S', 'T', '0'};
-   static constexpr std::uint32_t kVersion = 1;
-   // A block-compressed store carries the same descriptor with this version, so
-   // a reader that expects a plain store rejects it and the decompressing source
-   // recognizes it.
-   static constexpr std::uint32_t kCompressedVersion = 2;
+   // The descriptor this build writes carries the layout fields and is kSize
+   // bytes. Version 3 is the plain store and version 4 the block-compressed one,
+   // so a reader that expects the plain form rejects the compressed one and the
+   // decompressing source recognizes it, as the earlier pair did.
+   static constexpr std::uint32_t kVersion = 3;
+   static constexpr std::uint32_t kCompressedVersion = 4;
+   // The versions an earlier build wrote, which this one still reads: the same
+   // descriptor without the layout fields, and kLegacySize bytes.
+   static constexpr std::uint32_t kLegacyVersion = 1;
+   static constexpr std::uint32_t kLegacyCompressedVersion = 2;
    // magic (8) + version (4) + reserved (4) + run, lumi, event, record, data,
-   // field table, checksum (7 * 8).
-   static constexpr std::size_t kSize = 72;
+   // field table, checksum, layout kind, block events (9 * 8).
+   static constexpr std::size_t kSize = 88;
+   // The block an earlier build wrote: the same descriptor without the layout
+   // fields, ending at the checksum.
+   static constexpr std::size_t kLegacySize = 72;
+
+   // The event-major layout every earlier store has: one index record per event
+   // and its packed slice after it. A store that declares another kind is
+   // refused, because the address arithmetic here cannot reach it.
+   static constexpr std::uint64_t kEventMajorLayout = 0;
+
+   // True when the version is one this build reads.
+   static constexpr bool IsKnown(std::uint32_t version)
+   {
+      return version == kVersion || version == kCompressedVersion || version == kLegacyVersion ||
+             version == kLegacyCompressedVersion;
+   }
+
+   // True when the version marks a block-compressed store.
+   static constexpr bool IsCompressed(std::uint32_t version)
+   {
+      return version == kCompressedVersion || version == kLegacyCompressedVersion;
+   }
+
+   // The bytes a descriptor of this version occupies, or 0 when the version is
+   // not one this build reads. A reader locates the block by trying kSize and
+   // kLegacySize at the end of the file, because the magic tells the two apart.
+   static constexpr std::size_t SizeOf(std::uint32_t version)
+   {
+      if (version == kVersion || version == kCompressedVersion)
+         return kSize;
+      if (version == kLegacyVersion || version == kLegacyCompressedVersion)
+         return kLegacySize;
+      return 0;
+   }
 
    std::uint32_t fVersion = kVersion;  // kVersion, or kCompressedVersion for a block-compressed store
    std::uint32_t fBlockShift = 0;      // log2 of a block-compressed store's block size
@@ -58,6 +102,8 @@ public:
    std::uint64_t fDataSize = 0;        // bytes of the packed data region
    std::uint64_t fFieldTableBytes = 0; // bytes of the field table that precede the descriptor
    std::uint64_t fChecksum = 0;        // FNV-1a of the field table bytes
+   std::uint64_t fLayoutKind = kEventMajorLayout; // how the data region is laid out across events
+   std::uint64_t fBlockEvents = 0;     // events per columnar block, 0 for no block division
 
    // The layout the descriptor names.
    TTagmaStore::Layout Layout() const;
@@ -66,12 +112,15 @@ public:
    // carries of the field table.
    static std::uint64_t Checksum(const void *bytes, std::size_t len);
 
-   // The descriptor as the kSize bytes a store ends with, little-endian.
+   // The descriptor as the kSize bytes a store ends with, little-endian, for the
+   // version it carries. A legacy version is read, never written here.
    std::array<unsigned char, kSize> Serialize() const;
 
-   // Parses a descriptor from exactly kSize bytes. Returns false, with the
-   // reason in `why`, on a bad magic, an unknown version, a zero axis or
-   // record size, or a short block.
+   // Parses a descriptor from the bytes of its block. `len` is the block size the
+   // caller tried, so a legacy block and the current one are both accepted and a
+   // version that needs more bytes than it was given is refused. Returns false,
+   // with the reason in `why`, on a bad magic, an unknown version, a short block,
+   // a zero axis or record size, or a layout this build cannot address.
    static bool Parse(const unsigned char *bytes, std::size_t len, TTagmaHeader *out, std::string *why = nullptr);
 };
 

@@ -160,6 +160,26 @@ T ReadAt(const std::vector<char> &bytes, std::size_t offset)
    return value;
 }
 
+void PutLE32(unsigned char *bytes, std::uint32_t value)
+{
+   for (int i = 0; i < 4; ++i)
+      bytes[i] = static_cast<unsigned char>((value >> (8 * i)) & 0xffu);
+}
+
+void PutLE64(unsigned char *bytes, std::uint64_t value)
+{
+   for (int i = 0; i < 8; ++i)
+      bytes[i] = static_cast<unsigned char>((value >> (8 * i)) & 0xffu);
+}
+
+void WriteFile(const std::vector<char> &bytes)
+{
+   FILE *out = std::fopen(kStorePath, "wb");
+   ASSERT_NE(out, nullptr);
+   ASSERT_EQ(std::fwrite(bytes.data(), 1, bytes.size(), out), bytes.size());
+   std::fclose(out);
+}
+
 } // namespace
 
 TEST(TTagmaWriter, LaysOutTheIndexAndDataRegions)
@@ -322,6 +342,13 @@ TEST(TTagmaWriter, DescriptorMakesTheStoreSelfDescribing)
    EXPECT_EQ(layout.fDataSize, dataSize);
    EXPECT_EQ(read.Text(), table);
 
+   // The block declares its generation and the event-major layout, which is what
+   // a later reader needs to tell the descriptors apart.
+   const std::size_t descriptor = bytes.size() - ROOT::TTagmaHeader::kSize;
+   EXPECT_EQ(ReadAt<std::uint32_t>(bytes, descriptor + 8), ROOT::TTagmaHeader::kVersion);
+   EXPECT_EQ(ReadAt<std::uint64_t>(bytes, descriptor + 72), ROOT::TTagmaHeader::kEventMajorLayout);
+   EXPECT_EQ(ReadAt<std::uint64_t>(bytes, descriptor + 80), 0u);
+
    std::remove(kStorePath);
 }
 
@@ -376,4 +403,74 @@ TEST(TTagmaWriter, SchemaTextRoundTripsAndRejectsGarbage)
    ROOT::TTagmaSchema unchanged = parsed;
    EXPECT_FALSE(unchanged.ParseText("Muon_pt notanumber float nMuon 4\n"));
    EXPECT_EQ(unchanged.Text(), text);
+}
+
+// A store an earlier build wrote still reads. The payload here is the store this
+// build writes and only the trailing block is replaced, so the case isolates the
+// descriptor generation rather than the layout of the data.
+TEST(TTagmaWriter, ReadsAStoreThatCarriesTheLegacyDescriptor)
+{
+   WriteStore();
+   std::vector<char> bytes = ReadFile();
+   ASSERT_GT(bytes.size(), ROOT::TTagmaHeader::kSize);
+
+   // The legacy block is the current one truncated at the checksum with the
+   // legacy version written into it, which also says the two generations agree on
+   // every field they share.
+   const std::size_t offset = bytes.size() - ROOT::TTagmaHeader::kSize;
+   std::vector<unsigned char> legacy(bytes.begin() + offset,
+                                    bytes.begin() + offset + ROOT::TTagmaHeader::kLegacySize);
+   PutLE32(legacy.data() + 8, ROOT::TTagmaHeader::kLegacyVersion);
+
+   bytes.resize(offset);
+   bytes.insert(bytes.end(), legacy.begin(), legacy.end());
+   WriteFile(bytes);
+
+   ROOT::TTagmaStore::Layout layout;
+   ROOT::TTagmaSchema read;
+   std::string why;
+   ASSERT_TRUE(ROOT::TTagmaWriter::ReadStore(kStorePath, &layout, &read, &why)) << why;
+   EXPECT_EQ(layout.fEventMax, static_cast<std::uint64_t>(kEntries));
+   EXPECT_EQ(read.Text(), MakeSchema().Text());
+
+   std::remove(kStorePath);
+}
+
+TEST(TTagmaWriter, DescriptorRefusesALayoutThisBuildCannotAddress)
+{
+   WriteStore();
+   std::vector<char> bytes = ReadFile();
+   ASSERT_GT(bytes.size(), ROOT::TTagmaHeader::kSize);
+
+   // The layout kind is the first field the current block adds after the checksum.
+   const std::size_t kindOffset = bytes.size() - ROOT::TTagmaHeader::kSize + 72;
+   PutLE64(reinterpret_cast<unsigned char *>(bytes.data()) + kindOffset, 1);
+   WriteFile(bytes);
+
+   ROOT::TTagmaStore::Layout layout;
+   ROOT::TTagmaSchema read;
+   std::string why;
+   EXPECT_FALSE(ROOT::TTagmaWriter::ReadStore(kStorePath, &layout, &read, &why));
+   EXPECT_NE(why.find("layout"), std::string::npos) << why;
+   std::remove(kStorePath);
+}
+
+TEST(TTagmaWriter, DescriptorRefusesABlockLengthInTheEventMajorLayout)
+{
+   WriteStore();
+   std::vector<char> bytes = ReadFile();
+   ASSERT_GT(bytes.size(), ROOT::TTagmaHeader::kSize);
+
+   // An event-major store has no block division, so a block length contradicts
+   // the kind the block declares.
+   const std::size_t blockOffset = bytes.size() - ROOT::TTagmaHeader::kSize + 80;
+   PutLE64(reinterpret_cast<unsigned char *>(bytes.data()) + blockOffset, 1024);
+   WriteFile(bytes);
+
+   ROOT::TTagmaStore::Layout layout;
+   ROOT::TTagmaSchema read;
+   std::string why;
+   EXPECT_FALSE(ROOT::TTagmaWriter::ReadStore(kStorePath, &layout, &read, &why));
+   EXPECT_NE(why.find("block length"), std::string::npos) << why;
+   std::remove(kStorePath);
 }
