@@ -579,6 +579,92 @@
       "crossover_basis":
          "the store's full-record cost divided by RDataFrame's marginal cost per column, (10.849 - 0.558) / 42 = 0.245 s, against 2.745 s and 1.577 s. First order from the measured points, not a fitted model."
    },
+"front_2_columnar": {
+   "tool": "tagma_make_store.C mode 1 with block_events, tagma_harness.C, tagma_scatter.C",
+   "note":
+      "Front 2 of FRONTS.md, the block-transposed data region. The same source and the same schema are written twice, once event-major and once columnar at four block lengths, so the rows differ only in the layout. These rows supersede no earlier row: they measure a layout the earlier artifacts did not carry, and no earlier row was taken on a columnar store.",
+   "commit": "5806fb2ef11",
+   "timestamp": "20261111-1130",
+   "dataset": "/Users/blackgene/Documents/nanoaod/root_shards/run_27_279966.root",
+   "dataset_note":
+      "One run of the same NanoAOD partition the phase rows use, 7,277 events, with the whole-file schema: 974 scalar fields and 406 array fields in 19 collections, index record 1,280 bytes, data region 14,368,199 bytes. The rows are a shard, so they carry the per-event cost the whole-file rows carry and not their wall time.",
+   "scan": {
+      "layer":
+         "the entry layer over every branch, the tagma_harness.C coordinate+map row, warmed, 7,277 events",
+      "rows": [
+         {
+            "layout": "event-major",
+            "wall_s": 0.365,
+            "reads_per_event": 2.0,
+            "bytes_moved": 23682759,
+            "store_bytes": 23731774
+         },
+         {
+            "layout": "block 16",
+            "wall_s": 0.433,
+            "reads_per_event": 1.19,
+            "bytes_moved": 26294999,
+            "store_bytes": 25762894
+         },
+         {
+            "layout": "block 64",
+            "wall_s": 0.431,
+            "reads_per_event": 1.05,
+            "bytes_moved": 24752167,
+            "store_bytes": 24656542
+         },
+         {
+            "layout": "block 256",
+            "wall_s": 0.433,
+            "reads_per_event": 1.01,
+            "bytes_moved": 24377015,
+            "store_bytes": 24390190
+         },
+         {
+            "layout": "block 1024",
+            "wall_s": 0.447,
+            "reads_per_event": 1.0,
+            "bytes_moved": 24340295,
+            "store_bytes": 24380350
+         }
+      ],
+      "finding":
+         "The block halves the requests of a scan, 2.00 to 1.05 per event at 64 events, and costs 1.18 times the wall time against the 1.09 to 1.11 the probe predicted. The extra copy per field is the cost, about 9 microseconds per event at 406 fields, and the block length does not move it: 1.18 to 1.22 times across 16 to 1,024 events."
+   },
+   "scatter": {
+      "layer":
+         "the entry layer over every branch, the tagma_scatter.C store entry row, 2,000 events, warmed",
+      "rows": [
+         {
+            "layout": "event-major",
+            "sequential_s": 0.101,
+            "sequential_reads": 4000,
+            "scattered_s": 0.102,
+            "scattered_reads": 4000
+         },
+         {
+            "layout": "block 16",
+            "sequential_s": 0.13,
+            "sequential_reads": 2375,
+            "scattered_s": 0.129,
+            "scattered_reads": 7943
+         },
+         {
+            "layout": "block 64",
+            "sequential_s": 0.121,
+            "sequential_reads": 2096,
+            "scattered_s": 0.132,
+            "scattered_reads": 7796
+         }
+      ],
+      "finding":
+         "The scatter claim does not survive the layout. A scattered order changes block almost every event, so each event loads a block's table entry and its whole data span: 3.90 requests per event against 2.00, and 64 slices of bytes against one. The wall time rises by 29 percent only because this shard fits the page cache."
+   },
+   "gate":
+      "the tagma_scatter.C value gate passed on the columnar store, 32 entries checked, no mismatch, so the rows read the events they claim",
+   "open":
+      "Field-level narrowing is what removes both costs, and the crossover of front 2 stays unmeasured until it lands; the same rows are owed on a store the page cache cannot hold."
+},
    "notes": [
       "The baseline is stable across the three steady-state runs, 187.0 to 188.2 s wall and 183.6 to 185.9 s cpu. The first three runs after the page cache had been disturbed measured 248.979, 202.469 and 182.609 s, so a settling cache moves the baseline by up to a third.",
       "Warming the sources is what makes the coordinate rows reproducible: 2.706, 2.722 and 2.808 s warmed against 2.793, 3.56 and 4.047 s across the unwarmed runs of the superseded artifact and the later control set.",
