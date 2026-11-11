@@ -201,6 +201,20 @@ table the same read would need the block's index region, 164 KB at 64 events, to
 find the prefix. The table is what keeps one to two requests per event under a
 scattered order.
 
+What the reader must do, and where the refusal has to move, is settled enough
+to name. The event's slice is reconstructed in the read path's own buffer: the
+runs a block holds for the enabled fields are read once when the event's block
+changes, and each event copies its share from the cached runs into the
+slice-relative positions the field copy already uses. `CopyTagmaField` therefore
+does not change, and a scan pays the run reads once per block rather than once
+per event. The block table is the only new read, one entry per block.
+
+The refusal of a columnar store stays in the readers until that path exists. A
+plain reader that accepted the layout would fill the slice buffer from offsets
+that mean something else, so relaxing `ReadStore` is the last step of the
+reader, not the first, and its size validation gains the block table when it
+does.
+
 Two things stay open. The block length, where the numbers above give 64 as the
 smallest measured point inside ten percent unless the table size matters more
 than that. And whether the columnar layout replaces the event-major one or ships
