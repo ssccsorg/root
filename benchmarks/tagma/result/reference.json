@@ -589,8 +589,7 @@
       "dataset_note":
          "One run of the same NanoAOD partition the phase rows use, 7,277 events, with the whole-file schema: 974 scalar fields and 406 array fields in 19 collections, index record 1,280 bytes, data region 14,368,199 bytes. The rows are a shard, so they carry the per-event cost the whole-file rows carry and not their wall time.",
       "scan_whole_event": {
-         "layer":
-            "the entry layer over every branch, the tagma_harness.C coordinate+map row, warmed, 7,277 events",
+         "layer": "the entry layer over every branch, the tagma_harness.C coordinate+map row, warmed, 7,277 events",
          "rows": [
             {
                "layout": "event-major",
@@ -632,8 +631,7 @@
             "The block halves the requests and costs two percent of the wall time, 0.416 against 0.408 at 64 events, where the probe predicted 1.09 to 1.11 times. The reader reorders the bytes back into the slice the field copy reads, a copy per field per event, and that copy costs about what the order saves. The block length does not move the row."
       },
       "selection": {
-         "layer":
-            "the entry layer over 2,000 events, the tagma_scatter.C rows, the value gate passing on each store",
+         "layer": "the entry layer over 2,000 events, the tagma_scatter.C rows, the value gate passing on each store",
          "rows": [
             {
                "selection": "all fields",
