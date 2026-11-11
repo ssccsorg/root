@@ -498,3 +498,81 @@ TEST(TTagmaWriter, DescriptorRefusesABlockLengthInTheEventMajorLayout)
    EXPECT_NE(why.find("block length"), std::string::npos) << why;
    std::remove(kStorePath);
 }
+
+// A columnar store reads back through its block table. The expectation is formed
+// from the schema's own offsets over the source slices, and the actual bytes are
+// located through the table, so a transposition that moved a field or lost an
+// object prefix fails here rather than in the read path.
+TEST(TTagmaWriter, ColumnarBlocksReadBackThroughTheTable)
+{
+   const ROOT::TTagmaSchema schema = MakeSchema();
+   // Four entries and three per block: one full block and one partial.
+   const std::uint64_t blockEvents = 3;
+   ROOT::TTagmaWriter writer(schema, kEntries, blockEvents);
+   ASSERT_TRUE(writer.Open(kStorePath));
+   for (int entry = 0; entry < kEntries; ++entry) {
+      char scalars[8];
+      ScalarRegion(entry, scalars);
+      const std::vector<char> slice = Slice(entry);
+      ASSERT_TRUE(writer.AddEvent(scalars, slice.data()));
+   }
+   ASSERT_TRUE(writer.Close());
+
+   const std::vector<char> bytes = ReadFile();
+   ASSERT_GT(bytes.size(), ROOT::TTagmaHeader::kSize);
+   ROOT::TTagmaHeader header;
+   std::string why;
+   ASSERT_TRUE(ROOT::TTagmaHeader::Parse(
+      reinterpret_cast<const unsigned char *>(bytes.data()) + bytes.size() - ROOT::TTagmaHeader::kSize,
+      ROOT::TTagmaHeader::kSize, &header, &why)) << why;
+   EXPECT_EQ(header.fLayoutKind, ROOT::TTagmaHeader::kColumnarBlockLayout);
+   EXPECT_EQ(header.fBlockEvents, blockEvents);
+
+   const std::uint64_t records = kEntries;
+   const std::uint64_t indexBytes = records * schema.IndexRecordSize();
+   const std::uint64_t blocks = (records + blockEvents - 1) / blockEvents;
+   const std::uint64_t fields = schema.DataFieldCount();
+   const std::uint64_t collectionCount = schema.GetCollections().size();
+   const std::uint64_t tableBytes = ROOT::TTagmaStore::BlockTableBytes(
+      blocks, fields, collectionCount, blockEvents);
+   EXPECT_EQ(bytes.size(), indexBytes + header.fDataSize + tableBytes +
+                              header.fFieldTableBytes + ROOT::TTagmaHeader::kSize);
+
+   const std::size_t tableAt = static_cast<std::size_t>(indexBytes + header.fDataSize);
+   const std::size_t entryBytes = static_cast<std::size_t>(fields * 8 + collectionCount * blockEvents * 4);
+
+   for (std::uint64_t entry = 0; entry < records; ++entry) {
+      const std::uint64_t block = entry / blockEvents;
+      const std::uint64_t within = entry % blockEvents;
+      const std::size_t recordAt = static_cast<std::size_t>(entry * schema.IndexRecordSize());
+      std::vector<std::uint64_t> counts(static_cast<std::size_t>(collectionCount), 0);
+      for (std::size_t c = 0; c < collectionCount; ++c)
+         counts[c] = schema.CountOf(c, bytes.data() + recordAt);
+      std::uint64_t base = 0;
+      std::memcpy(&base, bytes.data() + recordAt + schema.DataBaseOffset(), sizeof(base));
+
+      const std::size_t entryAt = tableAt + static_cast<std::size_t>(block) * entryBytes;
+      const std::vector<char> slice = Slice(static_cast<int>(entry));
+      std::uint64_t fieldIndex = 0;
+      for (std::size_t c = 0; c < collectionCount; ++c) {
+         const ROOT::TTagmaSchema::Collection &collection = schema.GetCollections()[c];
+         for (const ROOT::TTagmaSchema::Field &field : collection.fFields) {
+            const std::uint64_t runStart = ReadAt<std::uint64_t>(bytes, entryAt + fieldIndex * 8);
+            const std::uint32_t prefix = ReadAt<std::uint32_t>(
+               bytes, entryAt + static_cast<std::size_t>(fields * 8 + (c * blockEvents + within) * 4));
+            const std::uint64_t length = counts[c] * field.Size();
+            const std::uint64_t actual = base + runStart + prefix * field.Size();
+            const std::uint64_t expectedAt = schema.ChunkOffset(c, counts.data()) +
+                                             schema.FieldOffset(collection, field.fName, counts[c]);
+            ASSERT_LE(actual + length, bytes.size());
+            ASSERT_LE(expectedAt + length, slice.size());
+            EXPECT_EQ(std::memcmp(bytes.data() + actual, slice.data() + expectedAt,
+                                  static_cast<std::size_t>(length)),
+                      0)
+               << "event " << entry << " field " << field.fName;
+            ++fieldIndex;
+         }
+      }
+   }
+   std::remove(kStorePath);
+}

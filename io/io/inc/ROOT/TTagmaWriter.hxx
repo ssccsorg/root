@@ -51,6 +51,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 namespace ROOT {
 
@@ -69,6 +70,14 @@ public:
    // under the same conditions as the entry-count form, and when an axis is
    // zero or the record count overflows.
    TTagmaWriter(const TTagmaSchema &schema, std::uint64_t runMax, std::uint64_t lumiMax, std::uint64_t eventMax);
+
+   // A store whose collection data is transposed by field inside blocks of
+   // `blockEvents` events, so a block holds one run per field and a selection
+   // decodes only the fields it reads. The index region is unchanged: the data
+   // base each record carries is its block's data base. Throws under the same
+   // conditions as the entry-count form, and when `blockEvents` is zero or the
+   // schema carries no collection.
+   TTagmaWriter(const TTagmaSchema &schema, std::uint64_t entries, std::uint64_t blockEvents);
    ~TTagmaWriter();
 
    TTagmaWriter(const TTagmaWriter &) = delete;
@@ -115,6 +124,9 @@ public:
 
 private:
    bool WriteDescriptor();
+   // Transposes the buffered block by field, writes it, and appends its table
+   // entry. Returns true when the block is empty.
+   bool FlushBlock();
 
    TTagmaSchema fSchema;
    std::uint64_t fEntries = 0;
@@ -123,6 +135,12 @@ private:
    std::uint64_t fIndexRecordSize = 0;
    std::uint64_t fDataSize = 0;
    std::uint64_t fAdded = 0;
+   std::uint64_t fBlockEvents = 0; // 0 for the event-major data region
+   std::uint64_t fBlockBase = 0;   // data base of the block being filled
+   std::uint64_t fBlockFilled = 0; // events buffered for it
+   std::vector<char> fBlockSlices; // their slices, in event order
+   std::vector<std::uint64_t> fBlockCounts; // their object counts, collection major
+   std::vector<unsigned char> fTable;       // the block table, appended per block
    std::FILE *fFile = nullptr;
 };
 
