@@ -206,17 +206,18 @@ run: two reads and about the bytes the event's slice costs today. Without the
 table the same read would need the block's index region, 164 KB at 64 events, to
 find the prefix. The table is what keeps one to two requests per event under a
 scattered order, and that count assumes the reader takes the field's own bytes.
-The reader as it stands takes the block's, and the measured row below is what
-that costs until field-level narrowing lands.
+It cannot: the run of a field covers every event of the block, so a scattered
+read takes the block's region of that field, and the measured row below is what
+that costs.
 
 The reader exists. When the loaded entry falls in another block, the tree reads
-that block's table entry and its data bytes once, reconstructs each event of the
-block into the buffer the field copy already reads, and keeps them until another
-block is asked for. `CopyTagmaField` does not change, and a scan pays the block
-reads once per block rather than once per event. `ReadStore` accepts the kind and
-derives the table size from the block division, so a store's own descriptor
-reaches the read gate; the block source, which walks the event-major region
-directly, still refuses it.
+that block's table entry and the region the enabled fields occupy, reconstructs
+each event of the block into the buffer the field copy already reads, and keeps
+them until another block or another selection is asked for. `CopyTagmaField`
+does not change, and a scan pays the block reads once per block rather than once
+per event. `ReadStore` accepts the kind and derives the table size from the
+block division, so a store's own descriptor reaches the read gate; the block
+source, which walks the event-major region directly, still refuses it.
 
 That the reader reconstructs what the writer transposed is pinned at two layers:
 the io test rebuilds every event of a two-block fixture through the table, and
@@ -232,54 +233,67 @@ entry layer with every branch enabled, warmed.
 
 | layout | wall s | reads per event | bytes moved | store bytes |
 | :--- | ---: | ---: | ---: | ---: |
-| event-major | 0.365 | 2.00 | 23,682,759 | 23,731,774 |
-| block 16 | 0.433 | 1.19 | 26,294,999 | 25,762,894 |
-| block 64 | 0.431 | 1.05 | 24,752,167 | 24,656,542 |
-| block 256 | 0.433 | 1.01 | 24,377,015 | 24,390,190 |
-| block 1,024 | 0.447 | 1.00 | 24,340,295 | 24,380,350 |
+| event-major | 0.408 | 2.00 | 23,682,759 | 23,731,774 |
+| block 16 | 0.412 | 1.19 | 26,294,999 | 25,762,894 |
+| block 64 | 0.416 | 1.05 | 24,752,167 | 24,656,542 |
+| block 256 | 0.420 | 1.01 | 24,377,015 | 24,390,190 |
+| block 1,024 | 0.419 | 1.00 | 24,340,295 | 24,380,350 |
 
-The block halves the requests of a scan and costs a sixth of the wall time. The
-requests per event fall from 2.00 to 1.05 at 64 events and the store grows by
-3.9 percent, which is the block table, but the row moves 1.18 times against the
-1.09 to 1.11 the probe predicted. Two reasons. The reconstruction copies every
-field of the block into the slice buffer and the field copy then copies it out
-again, so an event of 406 fields pays 812 short copies where the event-major
-layout pays one span copy, and that extra copy alone is about 9 microseconds per
-event. And the block length barely matters to a scan: past 64 events the table
-shrinks and the requests fall to one, while the wall time stays between 1.18 and
-1.22 times, because the copies and not the reads are the cost.
+The block halves the requests and costs two percent of the wall time: 0.416
+against 0.408 at 64 events, where the probe predicted 1.09 to 1.11 times. The
+difference between the prediction and the result is the reader. The probe
+measured the data region in two orders, and the reader reorders the bytes back
+into the slice the field copy reads, which is a copy per field per event; that
+copy costs about as much as the order saves. The block length does not move the
+row, and it cannot: the requests fall to one per event and the copies stay.
 
-The scatter claim does not survive the layout. On the same shard, 2,000 events
-in list order, entry layer:
+A narrower selection changes the picture, and 2,000 events of the same shard
+measured through `tagma_scatter.C` show it. Reads, then bytes moved per event:
 
-| layout | sequential s | reads | scattered s | reads |
-| :--- | ---: | ---: | ---: | ---: |
-| event-major | 0.101 | 4,000 | 0.102 | 4,000 |
-| block 16 | 0.130 | 2,375 | 0.129 | 7,943 |
-| block 64 | 0.121 | 2,096 | 0.132 | 7,796 |
+| selection | layout | scan s | scan reads | scan bytes/event | scatter s | scatter reads |
+| :--- | :--- | ---: | ---: | ---: | ---: | ---: |
+| all fields | event-major | 0.112 | 4,000 | 3,261 | 0.114 | 4,000 |
+| all fields | block 64 | 0.115 | 2,096 | 3,458 | 0.127 | 7,796 |
+| `Muon_*`, 55 fields | event-major | 0.026 | 3,953 | 1,607 | 0.026 | 3,953 |
+| `Muon_*`, 55 fields | block 64 | 0.023 | 2,096 | 1,765 | 0.031 | 7,796 |
+| `Muon_pt` | event-major | 0.009 | 3,953 | 1,289 | 0.009 | 3,953 |
+| `Muon_pt` | block 64 | 0.005 | 2,096 | 1,439 | 0.011 | 7,796 |
 
+Three things follow from the rows, and the first is the one that decides the
+front. A narrow read does not move fewer bytes under the columnar layout: the
+event-major reader already reads only the span the enabled fields fall in, so
+both layouts move the same field bytes, and the columnar one adds the block
+table and the block's share of the range per event, 150 to 158 bytes at 64
+events. Second, a one-field read costs about the index record either way, 1,289
+bytes against 1,439, so neither layout can go much below 1,280 bytes per event
+while the record stays as wide as the schema makes it. Third, a scan halves its
+requests under the columnar layout, 2.00 to 1.05 per event, and takes a quarter
+less time on the narrow selections, while a scattered order pays 3.90 requests
+per event instead of 2.00 because it changes block almost every event.
+
+The scatter claim does not survive the layout, and the reason is the block span.
 A scattered order changes block almost every event, since 2,000 events over 114
-blocks rarely land two in a row in the same one, so each event loads a block's
-table entry and its whole data span. The requests per event rise from 2.00 to
-3.90 and the bytes read per event from one slice to sixty-four of them. The wall
-time rises by only 29 percent because the shard is small enough for the page
-cache to hold it; over a store that does not fit, that span is the read.
+blocks rarely land two in a row in the same one, so each event reads the
+enabled fields' region of the block: 61 MB against 3.2 MB for the whole `Muon_*`
+selection over the same events. The wall time rises by 19 percent only because
+the shard fits the page cache; over a store that does not fit, that region is
+the read.
 
-So the layout buys the narrow selection this front exists for and pays for it
-with a scattered read of a whole block per event, which the event-major order
-does not. Field-level narrowing, reading only the runs of the enabled fields and
-only the event's share of each run, is what would remove both costs at once: a
-narrow scattered read would then move the field's bytes rather than the block's,
-and it is the change that makes the crossover of this front measurable. Until
-then the two layouts answer different regimes, and the store keeps both.
+So the layout, measured on an uncompressed store, ties on a scan and loses on a
+scattered order. What it buys is one request per event on a scan and a smaller
+read per field, and what it pays is the block's bytes per scattered event. The
+premise of the front, that a narrow selection decodes only its columns, is not
+what an uncompressed store shows: the packed slice is already column pruned at
+field granularity, so the transposition reorders the same bytes. A compressed
+store is where the premise could pay, because a block of one field's run is what
+a decompressor can leave out, and that is a store this branch does not write.
 
 The block length does not move a scan past 64 events, so the smallest length
-that reaches one request per event is enough, and the smaller lengths are what a
+that reaches one request per event is enough, and a smaller length is what a
 scattered order wants, since its cost is the block's bytes. Ship beside or
 replace is settled for now: a store chooses by workload and the descriptor
-carries the kind. What stays open is the crossing point, which needs the
-field-level narrowing above, and the same rows on a store the page cache cannot
-hold.
+carries the kind. What stays open is whether a compressed columnar store turns
+the tie into a win, and the same rows on a store the page cache cannot hold.
 
 ### 3. The delivery layer
 
