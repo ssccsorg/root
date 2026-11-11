@@ -66,6 +66,8 @@ TTagmaStore::Layout TTagmaHeader::Layout() const
    layout.fEventMax = fEventMax;
    layout.fRecordSize = fRecordSize;
    layout.fDataSize = fDataSize;
+   layout.fLayoutKind = fLayoutKind;
+   layout.fBlockEvents = fBlockEvents;
    return layout;
 }
 
@@ -101,11 +103,11 @@ bool TTagmaHeader::Parse(const unsigned char *bytes, std::size_t len, TTagmaHead
    const std::uint32_t version = GetLE32(bytes + 8);
    if (!IsKnown(version))
       return reject("unknown descriptor version " + std::to_string(version));
-   // The version decides the block, so a block read at a size its version does
-   // not fill is refused rather than parsed from the wrong offsets.
+   // The version decides the block, so a block read at another length is refused
+   // rather than parsed from the wrong offsets.
    const std::size_t needed = SizeOf(version);
-   if (len < needed)
-      return reject("the descriptor is shorter than its fixed block");
+   if (len != needed)
+      return reject("the descriptor block does not match its version's size");
 
    TTagmaHeader header;
    header.fVersion = version;
@@ -123,10 +125,12 @@ bool TTagmaHeader::Parse(const unsigned char *bytes, std::size_t len, TTagmaHead
    }
    if (header.fRunMax == 0 || header.fLumiMax == 0 || header.fEventMax == 0 || header.fRecordSize == 0)
       return reject("the descriptor names a zero axis or a zero record size");
-   if (header.fLayoutKind != kEventMajorLayout)
-      return reject("the store declares a layout this build cannot address");
-   if (header.fBlockEvents != 0)
+   if (header.fLayoutKind != kEventMajorLayout && header.fLayoutKind != kColumnarBlockLayout)
+      return reject("the descriptor names a layout this build does not know");
+   if (header.fLayoutKind == kEventMajorLayout && header.fBlockEvents != 0)
       return reject("an event-major store carries a block length");
+   if (header.fLayoutKind != kEventMajorLayout && header.fBlockEvents == 0)
+      return reject("a columnar store carries no block length");
    *out = header;
    return true;
 }

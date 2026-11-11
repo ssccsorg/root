@@ -51,13 +51,21 @@ public:
       std::uint64_t fRecordSize = 0;  // bytes per index record
       std::uint64_t fDataSize = 0;    // bytes of the packed data region, 0 for
                                       // a fixed-width store
+      std::uint64_t fLayoutKind = 0;  // 0 for the event-major data region; a
+                                      // nonzero kind carries it transposed and
+                                      // the address arithmetic here cannot
+                                      // reach it
+      std::uint64_t fBlockEvents = 0; // events per columnar block, 0 when the
+                                      // data region is not blocked
    };
 
    // Validates the layout: every axis and the record size must be
    // nonzero, the record count must fit in uint64, and the total store
    // extent must fit in uint64. Violations throw std::invalid_argument
    // so that Compose and Offset can never overflow for in-bounds
-   // coordinates.
+   // coordinates. A layout kind and a block length that disagree (one of
+   // them set and the other not) are refused for the same reason: the two
+   // describe one data region.
    explicit TTagmaStore(const Layout &layout);
 
    // Compose (run, lumi, event) into the linear coordinate index.

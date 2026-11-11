@@ -64,9 +64,14 @@ public:
    static constexpr std::size_t kLegacySize = 72;
 
    // The event-major layout every earlier store has: one index record per event
-   // and its packed slice after it. A store that declares another kind is
-   // refused, because the address arithmetic here cannot reach it.
+   // and its packed slice after it. The descriptor may name another kind; the
+   // readers refuse a store their address arithmetic cannot reach, as they
+   // already refuse a compressed store a plain reader cannot read.
    static constexpr std::uint64_t kEventMajorLayout = 0;
+   // A data region transposed by field inside blocks of fBlockEvents events. The
+   // descriptor can name it, so a store that carries one is self-describing from
+   // today; no writer produces one and no reader addresses one yet.
+   static constexpr std::uint64_t kColumnarBlockLayout = 1;
 
    // True when the version is one this build reads.
    static constexpr bool IsKnown(std::uint32_t version)
@@ -116,11 +121,13 @@ public:
    // version it carries. A legacy version is read, never written here.
    std::array<unsigned char, kSize> Serialize() const;
 
-   // Parses a descriptor from the bytes of its block. `len` is the block size the
-   // caller tried, so a legacy block and the current one are both accepted and a
-   // version that needs more bytes than it was given is refused. Returns false,
-   // with the reason in `why`, on a bad magic, an unknown version, a short block,
-   // a zero axis or record size, or a layout this build cannot address.
+   // Parses a descriptor from the bytes of its block. `len` is the block the
+   // caller read, so a legacy block and the current one are both accepted at
+   // their own length and a block read at any other length is refused rather than
+   // parsed from the wrong offsets. Returns false, with the reason in `why`, on a
+   // bad magic, an unknown version, a mis-sized block, a zero axis or record
+   // size, an unknown layout kind, or a block length that disagrees with the
+   // kind.
    static bool Parse(const unsigned char *bytes, std::size_t len, TTagmaHeader *out, std::string *why = nullptr);
 };
 

@@ -150,6 +150,12 @@ bool TTagmaBlockSource::Open(const std::string &path, std::string *why)
       std::fclose(in);
       return reject("the store is not block-compressed");
    }
+   // The descriptor may name a layout this source cannot address, so the refusal
+   // belongs here rather than at the parser, as the compression refusal does.
+   if (header.fLayoutKind != TTagmaHeader::kEventMajorLayout) {
+      std::fclose(in);
+      return reject("the store carries a layout this build cannot address");
+   }
 
    fLayout = header.Layout();
    const TTagmaStore store(fLayout);

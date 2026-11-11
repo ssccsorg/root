@@ -340,6 +340,8 @@ TEST(TTagmaWriter, DescriptorMakesTheStoreSelfDescribing)
    EXPECT_EQ(layout.fEventMax, static_cast<std::uint64_t>(kEntries));
    EXPECT_EQ(layout.fRecordSize, kIndexRecordSize);
    EXPECT_EQ(layout.fDataSize, dataSize);
+   EXPECT_EQ(layout.fLayoutKind, ROOT::TTagmaHeader::kEventMajorLayout);
+   EXPECT_EQ(layout.fBlockEvents, 0u);
    EXPECT_EQ(read.Text(), table);
 
    // The block declares its generation and the event-major layout, which is what
@@ -436,22 +438,44 @@ TEST(TTagmaWriter, ReadsAStoreThatCarriesTheLegacyDescriptor)
    std::remove(kStorePath);
 }
 
-TEST(TTagmaWriter, DescriptorRefusesALayoutThisBuildCannotAddress)
+// The descriptor may name a layout this build cannot address, so the block parses
+// and the reader is where the store is refused, as with a compressed store.
+TEST(TTagmaWriter, DescriptorRefusesALayoutItCannotAddress)
 {
    WriteStore();
    std::vector<char> bytes = ReadFile();
    ASSERT_GT(bytes.size(), ROOT::TTagmaHeader::kSize);
 
-   // The layout kind is the first field the current block adds after the checksum.
-   const std::size_t kindOffset = bytes.size() - ROOT::TTagmaHeader::kSize + 72;
-   PutLE64(reinterpret_cast<unsigned char *>(bytes.data()) + kindOffset, 1);
+   const std::size_t descriptor = bytes.size() - ROOT::TTagmaHeader::kSize;
+   PutLE64(reinterpret_cast<unsigned char *>(bytes.data()) + descriptor + 72,
+           ROOT::TTagmaHeader::kColumnarBlockLayout);
+   PutLE64(reinterpret_cast<unsigned char *>(bytes.data()) + descriptor + 80, 64);
    WriteFile(bytes);
 
    ROOT::TTagmaStore::Layout layout;
    ROOT::TTagmaSchema read;
    std::string why;
    EXPECT_FALSE(ROOT::TTagmaWriter::ReadStore(kStorePath, &layout, &read, &why));
-   EXPECT_NE(why.find("layout"), std::string::npos) << why;
+   EXPECT_NE(why.find("cannot address"), std::string::npos) << why;
+   std::remove(kStorePath);
+}
+
+TEST(TTagmaWriter, DescriptorRefusesALayoutKindItDoesNotKnow)
+{
+   WriteStore();
+   std::vector<char> bytes = ReadFile();
+   ASSERT_GT(bytes.size(), ROOT::TTagmaHeader::kSize);
+
+   const std::size_t descriptor = bytes.size() - ROOT::TTagmaHeader::kSize;
+   PutLE64(reinterpret_cast<unsigned char *>(bytes.data()) + descriptor + 72, 7);
+   PutLE64(reinterpret_cast<unsigned char *>(bytes.data()) + descriptor + 80, 64);
+   WriteFile(bytes);
+
+   ROOT::TTagmaStore::Layout layout;
+   ROOT::TTagmaSchema read;
+   std::string why;
+   EXPECT_FALSE(ROOT::TTagmaWriter::ReadStore(kStorePath, &layout, &read, &why));
+   EXPECT_NE(why.find("does not know"), std::string::npos) << why;
    std::remove(kStorePath);
 }
 

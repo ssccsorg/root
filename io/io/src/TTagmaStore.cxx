@@ -89,6 +89,12 @@ TTagmaStore::TTagmaStore(const Layout &layout) : fLayout(layout)
    if (count * fLayout.fRecordSize > std::numeric_limits<std::uint64_t>::max() - fLayout.fDataSize) {
       throw std::invalid_argument("TTagmaStore: store extent overflows with the data region");
    }
+   // The kind and the block length describe one data region, so a store is either
+   // event-major with no block division or blocked with one.
+   if ((fLayout.fLayoutKind == 0) != (fLayout.fBlockEvents == 0)) {
+      throw std::invalid_argument(
+         "TTagmaStore: the layout kind and the block length disagree");
+   }
 }
 
 std::uint64_t TTagmaStore::Compose(std::uint64_t run, std::uint64_t lumi,

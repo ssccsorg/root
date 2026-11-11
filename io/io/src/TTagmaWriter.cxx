@@ -236,6 +236,12 @@ bool TTagmaWriter::ReadStore(const char *path, TTagmaStore::Layout *layout, TTag
       std::fclose(in);
       return reject("the store is block-compressed");
    }
+   // The descriptor may name a layout this build cannot address, so the refusal
+   // belongs here rather than at the parser, as the compressed refusal does.
+   if (header.fLayoutKind != TTagmaHeader::kEventMajorLayout) {
+      std::fclose(in);
+      return reject("the store carries a layout this build cannot address");
+   }
 
    // The field table sits immediately before the descriptor.
    if (header.fFieldTableBytes > descriptorOffset) {
