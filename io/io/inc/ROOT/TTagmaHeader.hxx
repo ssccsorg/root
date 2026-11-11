@@ -109,7 +109,7 @@ public:
    std::uint64_t fFieldTableBytes = 0; // bytes of the field table that precede the descriptor
    std::uint64_t fChecksum = 0;        // FNV-1a of the field table bytes
    std::uint64_t fLayoutKind = kEventMajorLayout; // how the data region is laid out across events
-   std::uint64_t fBlockEvents = 0;     // events per columnar block, 0 for no block division
+   std::uint64_t fBlockEvents = 0;                // events per columnar block, 0 for no block division
 
    // The layout the descriptor names.
    TTagmaStore::Layout Layout() const;

@@ -100,9 +100,8 @@ public:
    // field and one 32-bit object prefix per collection per event of a block, with
    // every block counted at the full block length, which is what makes the table
    // size follow from the descriptor and the schema.
-   static std::uint64_t BlockTableBytes(std::uint64_t blocks, std::uint64_t fields,
-                                        std::uint64_t collections,
-                                        std::uint64_t blockEvents);
+   static std::uint64_t
+   BlockTableBytes(std::uint64_t blocks, std::uint64_t fields, std::uint64_t collections, std::uint64_t blockEvents);
 
    // The table a columnar layout carries, read from the bytes a store holds: the
    // run start of each field inside a block, relative to the block's data base,
@@ -136,8 +135,8 @@ public:
 
       // The objects of `collection` before `eventInBlock` inside one block's
       // entry, which is the object offset of that event's values in the run.
-      std::uint32_t ObjectPrefixInEntry(const unsigned char *entry, std::uint64_t collection,
-                                        std::uint64_t eventInBlock) const
+      std::uint32_t
+      ObjectPrefixInEntry(const unsigned char *entry, std::uint64_t collection, std::uint64_t eventInBlock) const
       {
          const unsigned char *at = entry + fFields * 8 + (collection * fBlockEvents + eventInBlock) * 4;
          std::uint32_t value = 0;

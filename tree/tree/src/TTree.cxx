@@ -6290,8 +6290,7 @@ Bool_t TTree::LoadTagmaRecord(Long64_t entry, Bool_t getall)
    }
    const Bool_t sliceNeeded = firstField <= lastField;
    const Bool_t sliceCached =
-      !sliceNeeded ||
-      (fTagmaSliceSettled && fTagmaSliceFirstField == firstField && fTagmaSliceLastField == lastField);
+      !sliceNeeded || (fTagmaSliceSettled && fTagmaSliceFirstField == firstField && fTagmaSliceLastField == lastField);
    if (fTagmaRecordEntry == entry && !fTagmaRecord.empty() && sliceCached)
       return kTRUE;
    const std::uint64_t recordSize = fTagmaStore->GetLayout().fRecordSize;
@@ -6424,8 +6423,8 @@ Bool_t TTree::LoadTagmaRecord(Long64_t entry, Bool_t getall)
 /// read bound, or a read failed. The caller drops the slice buffer on a failure,
 /// so a consumer cannot read a partial reconstruction.
 
-Bool_t TTree::LoadTagmaColumnarSlice(Long64_t entry, std::uint64_t sliceBytes, std::size_t firstField,
-                                    std::size_t lastField)
+Bool_t
+TTree::LoadTagmaColumnarSlice(Long64_t entry, std::uint64_t sliceBytes, std::size_t firstField, std::size_t lastField)
 {
    const ROOT::TTagmaStore::Layout &layout = fTagmaStore->GetLayout();
    const std::uint64_t blockEvents = layout.fBlockEvents;
@@ -6474,8 +6473,7 @@ Bool_t TTree::LoadTagmaColumnarSlice(Long64_t entry, std::uint64_t sliceBytes, s
       const std::uint64_t tableAt = fTagmaStore->IndexBytes() + layout.fDataSize;
       fTagmaBlockEntry.resize(static_cast<std::size_t>(entryBytes));
       if (file->ReadBuffer(reinterpret_cast<char *>(fTagmaBlockEntry.data()),
-                           static_cast<Long64_t>(tableAt + block * entryBytes),
-                           static_cast<Int_t>(entryBytes)))
+                           static_cast<Long64_t>(tableAt + block * entryBytes), static_cast<Int_t>(entryBytes)))
          return kFALSE;
       // The enabled fields' region: from the first one's run to the run after the
       // last one, or to the end of the block. Both starts are in the table entry,
@@ -6488,10 +6486,9 @@ Bool_t TTree::LoadTagmaColumnarSlice(Long64_t entry, std::uint64_t sliceBytes, s
          return kFALSE;
       fTagmaBlockSpan = regionStart;
       fTagmaBlockData.resize(static_cast<std::size_t>(regionEnd - regionStart));
-      if (!fTagmaBlockData.empty() &&
-          file->ReadTagmaRange(reinterpret_cast<char *>(fTagmaBlockData.data()),
-                               static_cast<Long64_t>(base + regionStart),
-                               static_cast<Int_t>(fTagmaBlockData.size())) != 1)
+      if (!fTagmaBlockData.empty() && file->ReadTagmaRange(reinterpret_cast<char *>(fTagmaBlockData.data()),
+                                                           static_cast<Long64_t>(base + regionStart),
+                                                           static_cast<Int_t>(fTagmaBlockData.size())) != 1)
          return kFALSE;
       fTagmaBlock = block;
       fTagmaBlockFirstField = firstField;

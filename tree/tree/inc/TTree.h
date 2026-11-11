@@ -156,8 +156,8 @@ protected:
    Bool_t fTagmaFieldRangeValid = kFALSE;      ///<! Set when the field range below holds
    std::size_t fTagmaFirstField = 0;           ///<! First data field the enabled branches fall in
    std::size_t fTagmaLastField = 0;            ///<! Last data field the enabled branches fall in
-   std::size_t fTagmaSliceFirstField = 0;       ///<! First data field fTagmaData holds
-   std::size_t fTagmaSliceLastField = 0;        ///<! Last data field fTagmaData holds
+   std::size_t fTagmaSliceFirstField = 0;      ///<! First data field fTagmaData holds
+   std::size_t fTagmaSliceLastField = 0;       ///<! Last data field fTagmaData holds
    /// The block a columnar layout holds the loaded entry in: its table entry, the
    /// part of the block the enabled fields occupy, and the block and range they
    /// belong to. The region is read per block, not per event, and each of the
@@ -223,8 +223,8 @@ private:
    /// entry's slice of the fields `firstField`..`lastField` from it. The runs follow
    /// each other by field, so the enabled fields occupy one region of the block and
    /// that region is what is read.
-   Bool_t           LoadTagmaColumnarSlice(Long64_t entry, std::uint64_t sliceBytes, std::size_t firstField,
-                                           std::size_t lastField);
+   Bool_t
+   LoadTagmaColumnarSlice(Long64_t entry, std::uint64_t sliceBytes, std::size_t firstField, std::size_t lastField);
 
    void RegisterBranchFullName(std::pair<std::string, TBranch *> &&kv) { fNamesToBranches.insert(kv); }
    friend void ROOT::Internal::TreeUtils::TBranch__SetTree(TTree *tree, TObjArray &branches);

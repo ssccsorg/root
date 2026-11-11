@@ -130,8 +130,8 @@ int tagma_column_probe()
    for (const std::uint64_t blockEvents : {1ull, 16ull, 64ull, 256ull, 1024ull, 4096ull}) {
       const double columnar = BestColumnar(blockEvents, data);
       std::printf("tagma_column_probe: %-12s %-8llu %-9.3f %-9.1f %-8.2f\n", "columnar",
-                  static_cast<unsigned long long>(blockEvents), columnar,
-                  static_cast<double>(kBytes) / 1e6 / columnar, columnar / eventMajor);
+                  static_cast<unsigned long long>(blockEvents), columnar, static_cast<double>(kBytes) / 1e6 / columnar,
+                  columnar / eventMajor);
    }
 
    return 0;

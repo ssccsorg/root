@@ -165,8 +165,7 @@ TEST(TTagmaCompressed, OpensAStoreWrittenWithTheLegacyDescriptor)
    // legacy compressed version written into it, so the two generations agree on
    // every field they share, the block shift included.
    const std::size_t offset = bytes.size() - ROOT::TTagmaHeader::kSize;
-   std::vector<unsigned char> legacy(bytes.begin() + offset,
-                                    bytes.begin() + offset + ROOT::TTagmaHeader::kLegacySize);
+   std::vector<unsigned char> legacy(bytes.begin() + offset, bytes.begin() + offset + ROOT::TTagmaHeader::kLegacySize);
    PutLE32(legacy.data() + 8, ROOT::TTagmaHeader::kLegacyCompressedVersion);
    bytes.resize(offset);
    bytes.insert(bytes.end(), legacy.begin(), legacy.end());

@@ -92,8 +92,7 @@ TTagmaStore::TTagmaStore(const Layout &layout) : fLayout(layout)
    // The kind and the block length describe one data region, so a store is either
    // event-major with no block division or blocked with one.
    if ((fLayout.fLayoutKind == 0) != (fLayout.fBlockEvents == 0)) {
-      throw std::invalid_argument(
-         "TTagmaStore: the layout kind and the block length disagree");
+      throw std::invalid_argument("TTagmaStore: the layout kind and the block length disagree");
    }
 }
 
@@ -102,12 +101,10 @@ std::uint64_t TTagmaStore::BlockCount() const
    if (fLayout.fBlockEvents == 0)
       return 0;
    const std::uint64_t records = RecordCount();
-   return records / fLayout.fBlockEvents +
-          (records % fLayout.fBlockEvents != 0 ? 1 : 0);
+   return records / fLayout.fBlockEvents + (records % fLayout.fBlockEvents != 0 ? 1 : 0);
 }
 
-std::uint64_t TTagmaStore::BlockTableBytes(std::uint64_t blocks, std::uint64_t fields,
-                                           std::uint64_t collections,
+std::uint64_t TTagmaStore::BlockTableBytes(std::uint64_t blocks, std::uint64_t fields, std::uint64_t collections,
                                            std::uint64_t blockEvents)
 {
    const std::uint64_t max = std::numeric_limits<std::uint64_t>::max();

@@ -135,10 +135,10 @@ private:
    std::uint64_t fIndexRecordSize = 0;
    std::uint64_t fDataSize = 0;
    std::uint64_t fAdded = 0;
-   std::uint64_t fBlockEvents = 0; // 0 for the event-major data region
-   std::uint64_t fBlockBase = 0;   // data base of the block being filled
-   std::uint64_t fBlockFilled = 0; // events buffered for it
-   std::vector<char> fBlockSlices; // their slices, in event order
+   std::uint64_t fBlockEvents = 0;          // 0 for the event-major data region
+   std::uint64_t fBlockBase = 0;            // data base of the block being filled
+   std::uint64_t fBlockFilled = 0;          // events buffered for it
+   std::vector<char> fBlockSlices;          // their slices, in event order
    std::vector<std::uint64_t> fBlockCounts; // their object counts, collection major
    std::vector<unsigned char> fTable;       // the block table, appended per block
    std::FILE *fFile = nullptr;

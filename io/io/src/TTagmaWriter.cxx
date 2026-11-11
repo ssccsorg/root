@@ -174,8 +174,7 @@ bool TTagmaWriter::AddEvent(const void *scalars, const void *slice)
       if (sliceBytes > 0) {
          if (Seek(fFile, dataOffset) != 0)
             return false;
-         if (std::fwrite(slice, 1, static_cast<std::size_t>(sliceBytes), fFile) !=
-             static_cast<std::size_t>(sliceBytes))
+         if (std::fwrite(slice, 1, static_cast<std::size_t>(sliceBytes), fFile) != static_cast<std::size_t>(sliceBytes))
             return false;
       }
       fDataSize += sliceBytes;
@@ -225,11 +224,9 @@ bool TTagmaWriter::FlushBlock()
             const std::uint64_t bytes = counts[c] * field.Size();
             if (bytes == 0)
                continue;
-            const std::uint64_t from = starts[static_cast<std::size_t>(e)] +
-                                       fSchema.ChunkOffset(c, counts) +
+            const std::uint64_t from = starts[static_cast<std::size_t>(e)] + fSchema.ChunkOffset(c, counts) +
                                        fSchema.FieldOffset(collection, field.fName, counts[c]);
-            std::memcpy(transposed.data() + cursor, fBlockSlices.data() + from,
-                        static_cast<std::size_t>(bytes));
+            std::memcpy(transposed.data() + cursor, fBlockSlices.data() + from, static_cast<std::size_t>(bytes));
             cursor += bytes;
          }
       }
@@ -239,8 +236,8 @@ bool TTagmaWriter::FlushBlock()
 
    if (Seek(fFile, fBlockBase) != 0)
       return false;
-   if (total > 0 && std::fwrite(transposed.data(), 1, static_cast<std::size_t>(total), fFile) !=
-                       static_cast<std::size_t>(total))
+   if (total > 0 &&
+       std::fwrite(transposed.data(), 1, static_cast<std::size_t>(total), fFile) != static_cast<std::size_t>(total))
       return false;
 
    // The table entry: one run start per field, then one object prefix per
@@ -408,8 +405,8 @@ bool TTagmaWriter::ReadStore(const char *path, TTagmaStore::Layout *layout, TTag
    if (header.fLayoutKind == TTagmaHeader::kColumnarBlockLayout) {
       const std::uint64_t blocks = records / header.fBlockEvents + (records % header.fBlockEvents != 0 ? 1 : 0);
       try {
-         tableBytes = TTagmaStore::BlockTableBytes(blocks, parsed.DataFieldCount(),
-                                                   parsed.GetCollections().size(), header.fBlockEvents);
+         tableBytes = TTagmaStore::BlockTableBytes(blocks, parsed.DataFieldCount(), parsed.GetCollections().size(),
+                                                   header.fBlockEvents);
       } catch (const std::invalid_argument &) {
          return reject("the block table the descriptor implies is larger than uint64");
       }
@@ -417,8 +414,7 @@ bool TTagmaWriter::ReadStore(const char *path, TTagmaStore::Layout *layout, TTag
    if (payload > max - header.fDataSize || payload + header.fDataSize > max - tableBytes ||
        payload + header.fDataSize + tableBytes > max - header.fFieldTableBytes)
       return reject("the descriptor names a store larger than uint64");
-   const std::uint64_t expected =
-      payload + header.fDataSize + tableBytes + header.fFieldTableBytes + descriptorBytes;
+   const std::uint64_t expected = payload + header.fDataSize + tableBytes + header.fFieldTableBytes + descriptorBytes;
    if (expected != size)
       return reject("the descriptor disagrees with the store size");
 
@@ -435,8 +431,7 @@ TTagmaStore::Layout TTagmaWriter::GetLayout() const
    layout.fEventMax = fEntries / (fRunMax * fLumiMax);
    layout.fRecordSize = fIndexRecordSize;
    layout.fDataSize = fDataSize;
-   layout.fLayoutKind =
-      fBlockEvents != 0 ? TTagmaHeader::kColumnarBlockLayout : TTagmaHeader::kEventMajorLayout;
+   layout.fLayoutKind = fBlockEvents != 0 ? TTagmaHeader::kColumnarBlockLayout : TTagmaHeader::kEventMajorLayout;
    layout.fBlockEvents = fBlockEvents;
    return layout;
 }

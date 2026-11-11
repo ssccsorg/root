@@ -81,8 +81,7 @@ inline bool ReconstructTagmaSlice(const TTagmaSchema &schema, const TTagmaStore:
       // offset into the chunk accumulates along the field order instead of being
       // looked up by name for every field of every event.
       std::uint64_t inChunk = 0;
-      for (std::size_t f = 0; f < collection.fFields.size();
-           ++f, inChunk += count * collection.fFields[f].Size()) {
+      for (std::size_t f = 0; f < collection.fFields.size(); ++f, inChunk += count * collection.fFields[f].Size()) {
          const std::size_t fieldIndex = fieldStart + f;
          if (fieldIndex < firstField || fieldIndex > lastField)
             continue;

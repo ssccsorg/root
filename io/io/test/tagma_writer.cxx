@@ -210,20 +210,19 @@ ColumnarFixture MakeColumnarFixture()
 
    ROOT::TTagmaHeader header;
    std::string why;
-   EXPECT_TRUE(ROOT::TTagmaHeader::Parse(
-      reinterpret_cast<const unsigned char *>(fixture.fBytes.data()) + fixture.fBytes.size() -
-         ROOT::TTagmaHeader::kSize,
-      ROOT::TTagmaHeader::kSize, &header, &why)) << why;
+   EXPECT_TRUE(ROOT::TTagmaHeader::Parse(reinterpret_cast<const unsigned char *>(fixture.fBytes.data()) +
+                                            fixture.fBytes.size() - ROOT::TTagmaHeader::kSize,
+                                         ROOT::TTagmaHeader::kSize, &header, &why))
+      << why;
    fixture.fTableAt = static_cast<std::size_t>(kEntries * fixture.fSchema.IndexRecordSize() + header.fDataSize);
-   fixture.fTable = {fixture.fSchema.DataFieldCount(), fixture.fSchema.GetCollections().size(),
-                     fixture.fBlockEvents};
+   fixture.fTable = {fixture.fSchema.DataFieldCount(), fixture.fSchema.GetCollections().size(), fixture.fBlockEvents};
    return fixture;
 }
 
 // Bytes one block's data region holds: the field bytes of its events, which the
 // writer packs without a gap between runs.
-std::uint64_t BlockSpan(const ROOT::TTagmaSchema &schema, const std::vector<char> &bytes,
-                        std::uint64_t block, std::uint64_t blockEvents, std::uint64_t records)
+std::uint64_t BlockSpan(const ROOT::TTagmaSchema &schema, const std::vector<char> &bytes, std::uint64_t block,
+                        std::uint64_t blockEvents, std::uint64_t records)
 {
    const auto &collections = schema.GetCollections();
    const std::uint64_t events = std::min(blockEvents, records - block * blockEvents);
@@ -237,8 +236,8 @@ std::uint64_t BlockSpan(const ROOT::TTagmaSchema &schema, const std::vector<char
 }
 
 // The counts and the block base of one event, both read from its index record.
-std::vector<std::uint64_t> EventCounts(const ROOT::TTagmaSchema &schema, const std::vector<char> &bytes,
-                                       std::uint64_t entry)
+std::vector<std::uint64_t>
+EventCounts(const ROOT::TTagmaSchema &schema, const std::vector<char> &bytes, std::uint64_t entry)
 {
    const char *record = bytes.data() + entry * schema.IndexRecordSize();
    std::vector<std::uint64_t> counts(schema.GetCollections().size(), 0);
@@ -494,8 +493,7 @@ TEST(TTagmaWriter, ReadsAStoreThatCarriesTheLegacyDescriptor)
    // legacy version written into it, which also says the two generations agree on
    // every field they share.
    const std::size_t offset = bytes.size() - ROOT::TTagmaHeader::kSize;
-   std::vector<unsigned char> legacy(bytes.begin() + offset,
-                                    bytes.begin() + offset + ROOT::TTagmaHeader::kLegacySize);
+   std::vector<unsigned char> legacy(bytes.begin() + offset, bytes.begin() + offset + ROOT::TTagmaHeader::kLegacySize);
    PutLE32(legacy.data() + 8, ROOT::TTagmaHeader::kLegacyVersion);
 
    bytes.resize(offset);
@@ -614,9 +612,10 @@ TEST(TTagmaWriter, ColumnarBlocksReadBackThroughTheTable)
    ASSERT_GT(bytes.size(), ROOT::TTagmaHeader::kSize);
    ROOT::TTagmaHeader header;
    std::string why;
-   ASSERT_TRUE(ROOT::TTagmaHeader::Parse(
-      reinterpret_cast<const unsigned char *>(bytes.data()) + bytes.size() - ROOT::TTagmaHeader::kSize,
-      ROOT::TTagmaHeader::kSize, &header, &why)) << why;
+   ASSERT_TRUE(ROOT::TTagmaHeader::Parse(reinterpret_cast<const unsigned char *>(bytes.data()) + bytes.size() -
+                                            ROOT::TTagmaHeader::kSize,
+                                         ROOT::TTagmaHeader::kSize, &header, &why))
+      << why;
    EXPECT_EQ(header.fLayoutKind, ROOT::TTagmaHeader::kColumnarBlockLayout);
    EXPECT_EQ(header.fBlockEvents, blockEvents);
 
@@ -625,10 +624,9 @@ TEST(TTagmaWriter, ColumnarBlocksReadBackThroughTheTable)
    const std::uint64_t blocks = (records + blockEvents - 1) / blockEvents;
    const std::uint64_t fields = schema.DataFieldCount();
    const std::uint64_t collectionCount = schema.GetCollections().size();
-   const std::uint64_t tableBytes = ROOT::TTagmaStore::BlockTableBytes(
-      blocks, fields, collectionCount, blockEvents);
-   EXPECT_EQ(bytes.size(), indexBytes + header.fDataSize + tableBytes +
-                              header.fFieldTableBytes + ROOT::TTagmaHeader::kSize);
+   const std::uint64_t tableBytes = ROOT::TTagmaStore::BlockTableBytes(blocks, fields, collectionCount, blockEvents);
+   EXPECT_EQ(bytes.size(),
+             indexBytes + header.fDataSize + tableBytes + header.fFieldTableBytes + ROOT::TTagmaHeader::kSize);
 
    const std::size_t tableAt = static_cast<std::size_t>(indexBytes + header.fDataSize);
    const ROOT::TTagmaStore::BlockTable table{fields, collectionCount, blockEvents};
@@ -654,12 +652,11 @@ TEST(TTagmaWriter, ColumnarBlocksReadBackThroughTheTable)
             const std::uint32_t prefix = table.ObjectPrefix(tableBytesAt, block, c, within);
             const std::uint64_t length = counts[c] * field.Size();
             const std::uint64_t actual = base + runStart + prefix * field.Size();
-            const std::uint64_t expectedAt = schema.ChunkOffset(c, counts.data()) +
-                                             schema.FieldOffset(collection, field.fName, counts[c]);
+            const std::uint64_t expectedAt =
+               schema.ChunkOffset(c, counts.data()) + schema.FieldOffset(collection, field.fName, counts[c]);
             ASSERT_LE(actual + length, bytes.size());
             ASSERT_LE(expectedAt + length, slice.size());
-            EXPECT_EQ(std::memcmp(bytes.data() + actual, slice.data() + expectedAt,
-                                  static_cast<std::size_t>(length)),
+            EXPECT_EQ(std::memcmp(bytes.data() + actual, slice.data() + expectedAt, static_cast<std::size_t>(length)),
                       0)
                << "event " << entry << " field " << field.fName;
             ++fieldIndex;
@@ -685,8 +682,7 @@ TEST(TTagmaWriter, ReconstructsEveryColumnarSliceFromItsBlock)
       const std::uint64_t block = entry / fixture.fBlockEvents;
       const std::uint64_t within = entry % fixture.fBlockEvents;
       const std::vector<std::uint64_t> counts = EventCounts(fixture.fSchema, fixture.fBytes, entry);
-      const std::uint64_t spanBytes =
-         BlockSpan(fixture.fSchema, fixture.fBytes, block, fixture.fBlockEvents, kEntries);
+      const std::uint64_t spanBytes = BlockSpan(fixture.fSchema, fixture.fBytes, block, fixture.fBlockEvents, kEntries);
       const std::uint64_t base = EventBase(fixture.fSchema, fixture.fBytes, entry);
       const std::vector<char> expected = Slice(static_cast<int>(entry));
 
@@ -695,11 +691,9 @@ TEST(TTagmaWriter, ReconstructsEveryColumnarSliceFromItsBlock)
                                       static_cast<char>(0xff));
       ASSERT_EQ(reconstructed.size(), expected.size()) << "event " << entry;
       const unsigned char *entryAt = tableBytesAt + fixture.fTable.EntryOffset(block);
-      ASSERT_TRUE(ROOT::ReconstructTagmaSlice(fixture.fSchema, fixture.fTable, entryAt, within, counts.data(), 0,
-                                              fixture.fSchema.DataFieldCount() - 1,
-                                              reinterpret_cast<const unsigned char *>(fixture.fBytes.data()) +
-                                                 base,
-                                              0, spanBytes, reconstructed.data()))
+      ASSERT_TRUE(ROOT::ReconstructTagmaSlice(
+         fixture.fSchema, fixture.fTable, entryAt, within, counts.data(), 0, fixture.fSchema.DataFieldCount() - 1,
+         reinterpret_cast<const unsigned char *>(fixture.fBytes.data()) + base, 0, spanBytes, reconstructed.data()))
          << "event " << entry;
       EXPECT_EQ(reconstructed, expected) << "event " << entry;
    }
@@ -748,14 +742,12 @@ TEST(TTagmaWriter, ReconstructsOneFieldFromItsOwnRegion)
 
       // The field's bytes match the event's slice and every other byte keeps the
       // pattern, so the read touched nothing else.
-      const std::uint64_t chunk = fixture.fSchema.ChunkOffset(0, counts.data()) +
-                                  fixture.fSchema.FieldOffset(fixture.fSchema.GetCollections()[0], "Muon_eta",
-                                                              counts[0]);
+      const std::uint64_t chunk =
+         fixture.fSchema.ChunkOffset(0, counts.data()) +
+         fixture.fSchema.FieldOffset(fixture.fSchema.GetCollections()[0], "Muon_eta", counts[0]);
       const std::uint64_t bytes = counts[0] * fixture.fSchema.GetCollections()[0].fFields[fieldIndex].Size();
       ASSERT_LE(chunk + bytes, expected.size());
-      EXPECT_EQ(std::memcmp(reconstructed.data() + chunk, expected.data() + chunk,
-                            static_cast<std::size_t>(bytes)),
-                0)
+      EXPECT_EQ(std::memcmp(reconstructed.data() + chunk, expected.data() + chunk, static_cast<std::size_t>(bytes)), 0)
          << "event " << entry;
       for (std::size_t at = 0; at < reconstructed.size(); ++at) {
          if (at >= chunk && at < chunk + bytes)
@@ -776,8 +768,7 @@ TEST(TTagmaWriter, ReconstructRefusesARunOutsideTheBlockSpan)
    const std::uint64_t blocks = (kEntries + fixture.fBlockEvents - 1) / fixture.fBlockEvents;
    std::vector<unsigned char> table(static_cast<std::size_t>(fixture.fTable.EntryOffset(blocks)));
    std::memcpy(table.data(), fixture.fBytes.data() + fixture.fTableAt, table.size());
-   const unsigned char *original =
-      reinterpret_cast<const unsigned char *>(fixture.fBytes.data()) + fixture.fTableAt;
+   const unsigned char *original = reinterpret_cast<const unsigned char *>(fixture.fBytes.data()) + fixture.fTableAt;
 
    const std::uint64_t spanBytes = BlockSpan(fixture.fSchema, fixture.fBytes, 0, fixture.fBlockEvents, kEntries);
    const std::uint64_t base = EventBase(fixture.fSchema, fixture.fBytes, 0);
@@ -788,13 +779,13 @@ TEST(TTagmaWriter, ReconstructRefusesARunOutsideTheBlockSpan)
 
    // The first field's run of block 0, moved to the end of the span.
    PutLE64(table.data(), spanBytes);
-   EXPECT_FALSE(ROOT::ReconstructTagmaSlice(fixture.fSchema, fixture.fTable, table.data(), 0, counts.data(), 0, 2,
-                                            span, 0, spanBytes, slice.data()));
+   EXPECT_FALSE(ROOT::ReconstructTagmaSlice(fixture.fSchema, fixture.fTable, table.data(), 0, counts.data(), 0, 2, span,
+                                            0, spanBytes, slice.data()));
 
    // The same entry at the run start the writer wrote is accepted, so the refusal
    // above is the bound and not a fault in the fixture.
    PutLE64(table.data(), fixture.fTable.RunStartInEntry(original, 0));
-   EXPECT_TRUE(ROOT::ReconstructTagmaSlice(fixture.fSchema, fixture.fTable, table.data(), 0, counts.data(), 0, 2,
-                                           span, 0, spanBytes, slice.data()));
+   EXPECT_TRUE(ROOT::ReconstructTagmaSlice(fixture.fSchema, fixture.fTable, table.data(), 0, counts.data(), 0, 2, span,
+                                           0, spanBytes, slice.data()));
    std::remove(kStorePath);
 }

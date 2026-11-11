@@ -130,8 +130,7 @@ bool PayloadChecksum(const char *path, std::uint64_t bytes, std::uint64_t *sum)
 // derived from the tree, an index region of scalars, counts, and data bases,
 // and a packed data region, all through ROOT::TTagmaWriter. A nonzero
 // `blockEvents` transposes the data region into blocks of that length.
-int MakeCollectionStore(const char *url, TTree *tree, const char *out_path, Long64_t limit,
-                        std::uint64_t blockEvents)
+int MakeCollectionStore(const char *url, TTree *tree, const char *out_path, Long64_t limit, std::uint64_t blockEvents)
 {
    // Classify the leaves. A leaf bounded by a count leaf is a collection;
    // a length-one numeric leaf is a scalar.
@@ -323,8 +322,7 @@ int MakeCollectionStore(const char *url, TTree *tree, const char *out_path, Long
 }  // namespace
 
 int tagma_make_store(const char *url, const char *tree_name = "Events", const char *out_path = "tagma_store.bin",
-                     Long64_t record_size = 2560, Long64_t max_entries = -1, Int_t mode = 0,
-                     Long64_t block_events = 0)
+                     Long64_t record_size = 2560, Long64_t max_entries = -1, Int_t mode = 0, Long64_t block_events = 0)
 {
    if (mode == 0 && (record_size <= 0 || record_size % 8 != 0)) {
       std::fprintf(stderr,
@@ -365,8 +363,7 @@ int tagma_make_store(const char *url, const char *tree_name = "Events", const ch
          delete file;
          return 1;
       }
-      const int rc =
-         MakeCollectionStore(url, tree, out_path, limit, static_cast<std::uint64_t>(block_events));
+      const int rc = MakeCollectionStore(url, tree, out_path, limit, static_cast<std::uint64_t>(block_events));
       delete file;
       return rc;
    }
