@@ -45,6 +45,10 @@ public:
       bool allowExportInvalidNames = true;
       bool allowSanitizeNames = true;
       bool importNoDomainParametersAsRooConstVars = true;
+      /// Identify constant factors of HistFactory samples that are used like the inverse bin width of HistFactory
+      /// before ROOT 6.26 by their structure, and don't write them, since `histfactory_dist` implies them. Turn this
+      /// off if a workspace has such factors that are not meant as bin widths: they are then written as normfactors.
+      bool identifyLegacyBinWidthFactors = true;
    };
 
    static Config &config();
@@ -162,19 +166,20 @@ public:
    static RooFit::Detail::JSONNode &makeVariablesNode(RooFit::Detail::JSONNode &rootNode);
 
    // error handling helpers
-   class DependencyMissingError : public std::exception {
-      std::string _parent, _child, _class, _message;
+   class DependencyMissingError : public std::runtime_error {
+      std::string _parent, _child, _class;
 
    public:
       DependencyMissingError(const std::string &p, const std::string &c, const std::string &classname)
-         : _parent(p), _child(c), _class(classname)
+         : std::runtime_error("object '" + p + "' is missing dependency '" + c + "' of type '" + classname + "'"),
+           _parent(p),
+           _child(c),
+           _class(classname)
       {
-         _message = "object '" + _parent + "' is missing dependency '" + _child + "' of type '" + _class + "'";
-      };
+      }
       const std::string &parent() const { return _parent; }
       const std::string &child() const { return _child; }
       const std::string &classname() const { return _class; }
-      const char *what() const noexcept override { return _message.c_str(); }
    };
 
    template <typename... Keys_t>
