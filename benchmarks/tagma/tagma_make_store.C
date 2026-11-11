@@ -39,6 +39,7 @@
 // Usage:
 //   root -l -b -q 'tagma_make_store.C("/path/to/local.root", "Events", "tagma_store.bin", 2560)'
 //   root -l -b -q 'tagma_make_store.C("/path/to/local.root", "Events", "tagma_store.bin", 2560, 200000, 1)'
+//   root -l -b -q 'tagma_make_store.C("/path/to/local.root", "Events", "tagma_store.bin", 2560, -1, 1, 64)'
 //
 // Arguments:
 //   url           dataset source (local path or root:// URL)
@@ -48,11 +49,14 @@
 //                 used by mode 0 only
 //   max_entries   events to convert; -1 converts all
 //   mode          0 fixed-width projection, 1 collection-carrying store
+//   block_events  mode 1 only: the columnar block length, 0 for the
+//                 event-major data region
 
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -124,8 +128,10 @@ bool PayloadChecksum(const char *path, std::uint64_t bytes, std::uint64_t *sum)
 
 // Writes the collection-carrying, self-describing store (mode 1): a schema
 // derived from the tree, an index region of scalars, counts, and data bases,
-// and a packed data region, all through ROOT::TTagmaWriter.
-int MakeCollectionStore(const char *url, TTree *tree, const char *out_path, Long64_t limit)
+// and a packed data region, all through ROOT::TTagmaWriter. A nonzero
+// `blockEvents` transposes the data region into blocks of that length.
+int MakeCollectionStore(const char *url, TTree *tree, const char *out_path, Long64_t limit,
+                        std::uint64_t blockEvents)
 {
    // Classify the leaves. A leaf bounded by a count leaf is a collection;
    // a length-one numeric leaf is a scalar.
@@ -219,8 +225,12 @@ int MakeCollectionStore(const char *url, TTree *tree, const char *out_path, Long
       return 1;
    }
 
-   ROOT::TTagmaWriter writer(schema, static_cast<std::uint64_t>(limit));
-   if (!writer.Open(out_path)) {
+   // The block length selects the columnar form of the writer, so the two are
+   // built apart rather than through one constructor with a zero length.
+   const std::unique_ptr<ROOT::TTagmaWriter> writer =
+      blockEvents == 0 ? std::make_unique<ROOT::TTagmaWriter>(schema, static_cast<std::uint64_t>(limit))
+                       : std::make_unique<ROOT::TTagmaWriter>(schema, static_cast<std::uint64_t>(limit), blockEvents);
+   if (!writer->Open(out_path)) {
       std::fprintf(stderr, "tagma_make_store: cannot create %s\n", out_path);
       return 1;
    }
@@ -256,13 +266,13 @@ int MakeCollectionStore(const char *url, TTree *tree, const char *out_path, Long
          }
       }
 
-      if (!writer.AddEvent(scalarRegion.data(), slice.empty() ? nullptr : slice.data())) {
+      if (!writer->AddEvent(scalarRegion.data(), slice.empty() ? nullptr : slice.data())) {
          std::fprintf(stderr, "tagma_make_store: event %lld rejected\n", static_cast<long long>(i));
          return 1;
       }
    }
-   const std::uint64_t payload = writer.IndexBytes() + writer.DataSize();
-   if (!writer.Close()) {
+   const std::uint64_t payload = writer->IndexBytes() + writer->DataSize();
+   if (!writer->Close()) {
       std::fprintf(stderr, "tagma_make_store: cannot close %s\n", out_path);
       return 1;
    }
@@ -295,9 +305,11 @@ int MakeCollectionStore(const char *url, TTree *tree, const char *out_path, Long
    std::printf("tagma_make_store: mode=1 source=%s\n", url);
    std::printf("tagma_make_store: entries=%lld scalars=%zu collections=%zu\n", static_cast<long long>(limit),
                schema.GetScalars().size(), groups.size());
+   std::printf("tagma_make_store: layout=%s block_events=%llu\n", blockEvents == 0 ? "event-major" : "columnar",
+               static_cast<unsigned long long>(blockEvents));
    std::printf("tagma_make_store: index_record_size=%llu data_size=%llu\n",
                static_cast<unsigned long long>(schema.IndexRecordSize()),
-               static_cast<unsigned long long>(writer.DataSize()));
+               static_cast<unsigned long long>(writer->DataSize()));
    for (const ROOT::TTagmaSchema::Collection &group : groups)
       std::printf("tagma_make_store: collection %s max_count=%llu fields=%zu\n", group.fCountField.c_str(),
                   static_cast<unsigned long long>(group.fMaxCount), group.fFields.size());
@@ -311,7 +323,8 @@ int MakeCollectionStore(const char *url, TTree *tree, const char *out_path, Long
 }  // namespace
 
 int tagma_make_store(const char *url, const char *tree_name = "Events", const char *out_path = "tagma_store.bin",
-                     Long64_t record_size = 2560, Long64_t max_entries = -1, Int_t mode = 0)
+                     Long64_t record_size = 2560, Long64_t max_entries = -1, Int_t mode = 0,
+                     Long64_t block_events = 0)
 {
    if (mode == 0 && (record_size <= 0 || record_size % 8 != 0)) {
       std::fprintf(stderr,
@@ -347,9 +360,20 @@ int tagma_make_store(const char *url, const char *tree_name = "Events", const ch
    }
 
    if (mode == 1) {
-      const int rc = MakeCollectionStore(url, tree, out_path, limit);
+      if (block_events < 0) {
+         std::fprintf(stderr, "tagma_make_store: block_events cannot be negative\n");
+         delete file;
+         return 1;
+      }
+      const int rc =
+         MakeCollectionStore(url, tree, out_path, limit, static_cast<std::uint64_t>(block_events));
       delete file;
       return rc;
+   }
+   if (block_events != 0) {
+      std::fprintf(stderr, "tagma_make_store: block_events needs mode 1\n");
+      delete file;
+      return 1;
    }
 
    // The fixed-width projection: scalar leaves in tree order, up to the
