@@ -186,9 +186,13 @@ fixture's schema.
 The block length trades against the row that wins today. `tagma_column_probe.C`
 measured the data region of a whole-event read at 1.83 times the event-major
 order at 64 events per block and 5.96 times at 1,024, against a read path that is
-10 to 12 percent of the 120-second whole-event row, so the row moves by 1.09 and
-1.50 times. A smaller block costs more table and less scan, and 64 is where the
-scan loss stays inside ten percent.
+10 to 12 percent of the 120-second whole-event row, so the row moves by 1.09 to
+1.11 times at 64 and 1.50 to 1.60 at 1,024.
+
+The measurement is not monotonic in the block length: 16 events costs 2.29 times
+where 64 costs 1.83, and 256 costs 9.67 where 1,024 costs 5.96. The block length
+is therefore a measured point rather than a trend, and 64 is the smallest
+measured block whose scan loss stays inside ten percent of the row.
 
 What the table buys is the scatter claim, the store's strongest. A single-event
 read needs the block's table entry, 1,968 bytes at these values, and the field's
@@ -197,11 +201,11 @@ table the same read would need the block's index region, 164 KB at 64 events, to
 find the prefix. The table is what keeps one to two requests per event under a
 scattered order.
 
-Two things stay open. The block length, which the numbers above put at 64 unless
-the table size matters more than nine percent of the scan row. And whether the
-columnar layout replaces the event-major one or ships beside it: the descriptor
-carries the kind, so a store can choose, and the crossover measurement decides
-whether either arrangement is worth its cost.
+Two things stay open. The block length, where the numbers above give 64 as the
+smallest measured point inside ten percent unless the table size matters more
+than that. And whether the columnar layout replaces the event-major one or ships
+beside it: the descriptor carries the kind, so a store can choose, and the
+crossover measurement decides whether either arrangement is worth its cost.
 
 ### 3. The delivery layer
 
