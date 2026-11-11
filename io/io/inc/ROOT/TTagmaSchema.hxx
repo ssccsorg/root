@@ -123,6 +123,11 @@ public:
    // the object count of that collection.
    std::uint64_t FieldOffset(const Collection &collection, const std::string &fieldName, std::uint64_t count) const;
 
+   // The fields the collections carry, in the order a columnar data region holds
+   // them: collection 0's fields, then collection 1's, each in schema order. The
+   // run of one field in a block covers every event of the block.
+   std::size_t DataFieldCount() const;
+
    // Total bytes of an event's data slice for the given counts.
    std::uint64_t SliceBytes(const std::uint64_t *counts) const;
 

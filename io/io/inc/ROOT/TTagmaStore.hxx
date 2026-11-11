@@ -89,6 +89,21 @@ public:
    // Bytes of the whole store: the index region followed by the data region.
    std::uint64_t SizeBytes() const;
 
+   // True when the layout transposes the data region by field.
+   bool IsColumnar() const { return fLayout.fLayoutKind != 0; }
+
+   // The blocks a blocked layout divides the record count into, or 0 for a layout
+   // that carries no block division. The last block may be partial.
+   std::uint64_t BlockCount() const;
+
+   // Bytes a block table occupies for `blocks` blocks: one 64-bit run start per
+   // field and one 32-bit object prefix per collection per event of a block, with
+   // every block counted at the full block length, which is what makes the table
+   // size follow from the descriptor and the schema.
+   static std::uint64_t BlockTableBytes(std::uint64_t blocks, std::uint64_t fields,
+                                        std::uint64_t collections,
+                                        std::uint64_t blockEvents);
+
    // True when [offset, offset + length) lies inside the store.
    bool Covers(std::uint64_t offset, std::uint64_t length) const;
 
