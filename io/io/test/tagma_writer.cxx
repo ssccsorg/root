@@ -695,12 +695,73 @@ TEST(TTagmaWriter, ReconstructsEveryColumnarSliceFromItsBlock)
                                       static_cast<char>(0xff));
       ASSERT_EQ(reconstructed.size(), expected.size()) << "event " << entry;
       const unsigned char *entryAt = tableBytesAt + fixture.fTable.EntryOffset(block);
-      ASSERT_TRUE(ROOT::ReconstructTagmaSlice(fixture.fSchema, fixture.fTable, entryAt, within, counts.data(),
+      ASSERT_TRUE(ROOT::ReconstructTagmaSlice(fixture.fSchema, fixture.fTable, entryAt, within, counts.data(), 0,
+                                              fixture.fSchema.DataFieldCount() - 1,
                                               reinterpret_cast<const unsigned char *>(fixture.fBytes.data()) +
                                                  base,
-                                              spanBytes, reconstructed.data()))
+                                              0, spanBytes, reconstructed.data()))
          << "event " << entry;
       EXPECT_EQ(reconstructed, expected) << "event " << entry;
+   }
+   std::remove(kStorePath);
+}
+
+// A read of one field reconstructs that field and reads only its region of the
+// block, which is what makes a narrow selection cost its own columns rather than
+// the block's.
+TEST(TTagmaWriter, ReconstructsOneFieldFromItsOwnRegion)
+{
+   const ColumnarFixture fixture = MakeColumnarFixture();
+   ASSERT_FALSE(fixture.fBytes.empty());
+   ASSERT_GT(fixture.fBytes.size(), fixture.fTableAt);
+   const std::uint64_t records = kEntries;
+   const unsigned char *tableBytesAt =
+      reinterpret_cast<const unsigned char *>(fixture.fBytes.data()) + fixture.fTableAt;
+   const std::vector<std::uint64_t> allCounts = EventCounts(fixture.fSchema, fixture.fBytes, 0);
+   ASSERT_EQ(allCounts.size(), 2u);
+
+   for (std::uint64_t entry = 0; entry < records; ++entry) {
+      const std::uint64_t block = entry / fixture.fBlockEvents;
+      const std::uint64_t within = entry % fixture.fBlockEvents;
+      const std::vector<std::uint64_t> counts = EventCounts(fixture.fSchema, fixture.fBytes, entry);
+      const std::uint64_t blockBytes =
+         BlockSpan(fixture.fSchema, fixture.fBytes, block, fixture.fBlockEvents, kEntries);
+      const std::uint64_t base = EventBase(fixture.fSchema, fixture.fBytes, entry);
+      const unsigned char *entryAt = tableBytesAt + fixture.fTable.EntryOffset(block);
+
+      // The region of the second field, Muon_eta: its first run to the run of the
+      // field after it, which is the jet field's.
+      const std::size_t fieldIndex = 1;
+      const std::uint64_t start = fixture.fTable.RunStartInEntry(entryAt, fieldIndex);
+      const std::uint64_t end = fixture.fTable.RunStartInEntry(entryAt, fieldIndex + 1);
+      ASSERT_LE(start, end);
+      ASSERT_LE(end, blockBytes);
+      const std::vector<char> expected = Slice(static_cast<int>(entry));
+
+      std::vector<char> reconstructed(static_cast<std::size_t>(fixture.fSchema.SliceBytes(counts.data())),
+                                      static_cast<char>(0x5a));
+      ASSERT_TRUE(ROOT::ReconstructTagmaSlice(
+         fixture.fSchema, fixture.fTable, entryAt, within, counts.data(), fieldIndex, fieldIndex,
+         reinterpret_cast<const unsigned char *>(fixture.fBytes.data()) + base + start, start, end - start,
+         reconstructed.data()))
+         << "event " << entry;
+
+      // The field's bytes match the event's slice and every other byte keeps the
+      // pattern, so the read touched nothing else.
+      const std::uint64_t chunk = fixture.fSchema.ChunkOffset(0, counts.data()) +
+                                  fixture.fSchema.FieldOffset(fixture.fSchema.GetCollections()[0], "Muon_eta",
+                                                              counts[0]);
+      const std::uint64_t bytes = counts[0] * fixture.fSchema.GetCollections()[0].fFields[fieldIndex].Size();
+      ASSERT_LE(chunk + bytes, expected.size());
+      EXPECT_EQ(std::memcmp(reconstructed.data() + chunk, expected.data() + chunk,
+                            static_cast<std::size_t>(bytes)),
+                0)
+         << "event " << entry;
+      for (std::size_t at = 0; at < reconstructed.size(); ++at) {
+         if (at >= chunk && at < chunk + bytes)
+            continue;
+         EXPECT_EQ(reconstructed[at], static_cast<char>(0x5a)) << "event " << entry << " byte " << at;
+      }
    }
    std::remove(kStorePath);
 }
@@ -727,13 +788,13 @@ TEST(TTagmaWriter, ReconstructRefusesARunOutsideTheBlockSpan)
 
    // The first field's run of block 0, moved to the end of the span.
    PutLE64(table.data(), spanBytes);
-   EXPECT_FALSE(ROOT::ReconstructTagmaSlice(fixture.fSchema, fixture.fTable, table.data(), 0, counts.data(), span,
-                                            spanBytes, slice.data()));
+   EXPECT_FALSE(ROOT::ReconstructTagmaSlice(fixture.fSchema, fixture.fTable, table.data(), 0, counts.data(), 0, 2,
+                                            span, 0, spanBytes, slice.data()));
 
    // The same entry at the run start the writer wrote is accepted, so the refusal
    // above is the bound and not a fault in the fixture.
    PutLE64(table.data(), fixture.fTable.RunStartInEntry(original, 0));
-   EXPECT_TRUE(ROOT::ReconstructTagmaSlice(fixture.fSchema, fixture.fTable, table.data(), 0, counts.data(), span,
-                                           spanBytes, slice.data()));
+   EXPECT_TRUE(ROOT::ReconstructTagmaSlice(fixture.fSchema, fixture.fTable, table.data(), 0, counts.data(), 0, 2,
+                                           span, 0, spanBytes, slice.data()));
    std::remove(kStorePath);
 }

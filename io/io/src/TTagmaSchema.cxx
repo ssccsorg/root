@@ -246,6 +246,14 @@ std::size_t TTagmaSchema::DataFieldCount() const
    return count;
 }
 
+std::size_t TTagmaSchema::DataFieldStart(std::size_t collectionIndex) const
+{
+   std::size_t count = 0;
+   for (std::size_t c = 0; c < collectionIndex && c < fCollections.size(); ++c)
+      count += fCollections[c].fFields.size();
+   return count;
+}
+
 std::uint64_t TTagmaSchema::CountOf(std::size_t collectionIndex, const void *indexRecord) const
 {
    if (collectionIndex >= fCollections.size() || indexRecord == nullptr)

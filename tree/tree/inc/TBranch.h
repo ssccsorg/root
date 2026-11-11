@@ -259,6 +259,8 @@ public:
    Bool_t IsTagmaCollectionField() const { return fTagmaCollection >= 0; }
    /// Index of the collection this branch serves, or -1 for a scalar branch.
    Int_t GetTagmaCollection() const { return fTagmaCollection; }
+   /// Index of the field inside its collection, for a collection field branch.
+   Int_t GetTagmaField() const { return fTagmaField; }
    virtual Int_t     GetEntryExport(Long64_t entry, Int_t getall, TClonesArray *list, Int_t n);
            Int_t     GetEntryOffsetLen() const { return fEntryOffsetLen; }
            Int_t     GetEvent(Long64_t entry=0) {return GetEntry(entry);}

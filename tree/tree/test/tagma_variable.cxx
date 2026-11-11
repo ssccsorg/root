@@ -493,5 +493,28 @@ TEST(TTagmaVariable, AColumnarStoreReadsThroughTheLeaves)
          EXPECT_FLOAT_EQ(jetPtLeaf->GetValue(i), JetPt(entry, i)) << "entry " << entry;
    }
 
+   // A read of one collection moves that collection's region of the block rather
+   // than the block, and a selection that widens afterwards is not served the
+   // narrow slice. A fresh tree makes the narrow read the first fill of the slice
+   // buffer, so a reused slice would deliver bytes that were never read.
+   {
+      TTree narrow("Narrow", "Narrow");
+      narrow.SetDirectory(file);
+      narrow.SetEntries(kEntries);
+      ASSERT_TRUE(narrow.SetTagmaStore(kStorePath));
+      narrow.SetBranchStatus("*", 0);
+      UInt_t on = 0;
+      narrow.SetBranchStatus("Muon_pt", 1, &on);
+      ASSERT_EQ(on, 1u);
+      ASSERT_GT(narrow.GetEntry(3), 0);
+      EXPECT_FLOAT_EQ(narrow.GetLeaf("Muon_pt")->GetValue(0), MuonPt(3, 0));
+
+      narrow.SetBranchStatus("Jet_pt", 1, &on);
+      ASSERT_EQ(on, 1u);
+      ASSERT_GT(narrow.GetEntry(3, 1), 0);
+      EXPECT_FLOAT_EQ(narrow.GetLeaf("Jet_pt")->GetValue(0), JetPt(3, 0));
+      EXPECT_FLOAT_EQ(narrow.GetLeaf("Muon_pt")->GetValue(0), MuonPt(3, 0));
+   }
+
    delete file;
 }

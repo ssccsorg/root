@@ -128,6 +128,12 @@ public:
    // run of one field in a block covers every event of the block.
    std::size_t DataFieldCount() const;
 
+   // Index of a collection's first field in the order a columnar data region
+   // holds them, which is the number of fields the collections before it carry.
+   // The runs of one collection are contiguous, so this is also where the
+   // collection's region of a block begins.
+   std::size_t DataFieldStart(std::size_t collectionIndex) const;
+
    // Total bytes of an event's data slice for the given counts.
    std::uint64_t SliceBytes(const std::uint64_t *counts) const;
 

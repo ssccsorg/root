@@ -6199,6 +6199,9 @@ Bool_t TTree::SetTagmaSchema(const ROOT::TTagmaSchema &schema)
    fTagmaBlockEntry.clear();
    fTagmaBlockData.clear();
    fTagmaBlockLoaded = kFALSE;
+   fTagmaSliceSettled = kFALSE;
+   fTagmaSliceFirstField = 0;
+   fTagmaSliceLastField = 0;
    fTagmaSchema = schema;
    fTagmaRecordEntry = -1;
    fTagmaCountError = kFALSE;
@@ -6245,8 +6248,51 @@ Bool_t TTree::LoadTagmaRecord(Long64_t entry, Bool_t getall)
       return kFALSE;
    // The record buffer is reused for repeats, so a repeat is served without a
    // read. The slice is a separate question when nothing reads it, so a repeat
-   // only short-circuits when the entry and the slice state both match.
-   if (fTagmaRecordEntry == entry && !fTagmaRecord.empty() && (fTagmaSliceLoaded || !TagmaSliceNeeded(getall)))
+   // only short-circuits when the entry and the slice state both match. The slice
+   // state includes the field range it was read for: the branch status can change
+   // between reads, and a slice read for another range holds neither the bytes of
+   // a wider selection nor a valid answer for a narrower one.
+   //
+   // The range is memoized because every materialized branch enters this function
+   // for the same entry, so rescanning the branches here would cost the read path
+   // a scan per branch. SetBranchStatus is what changes the selection, and it
+   // invalidates the memo.
+   const std::size_t fieldCount = fTagmaSchema.DataFieldCount();
+   std::size_t firstField = 0;
+   std::size_t lastField = fieldCount == 0 ? 0 : fieldCount - 1;
+   if (getall) {
+      // Every branch, whatever its status.
+   } else if (fieldCount == 0) {
+      firstField = 1; // empty range: no field is enabled
+      lastField = 0;
+   } else {
+      if (!fTagmaFieldRangeValid) {
+         const auto &collections = fTagmaSchema.GetCollections();
+         fTagmaFirstField = fieldCount;
+         fTagmaLastField = 0;
+         for (TBranch *branch : fTagmaFieldBranches) {
+            if (branch->TestBit(kDoNotProcess))
+               continue;
+            const std::size_t collection = static_cast<std::size_t>(branch->GetTagmaCollection());
+            if (collection >= collections.size())
+               continue;
+            const std::size_t field =
+               fTagmaSchema.DataFieldStart(collection) + static_cast<std::size_t>(branch->GetTagmaField());
+            if (field < fTagmaFirstField)
+               fTagmaFirstField = field;
+            if (field > fTagmaLastField)
+               fTagmaLastField = field;
+         }
+         fTagmaFieldRangeValid = kTRUE;
+      }
+      firstField = fTagmaFirstField;
+      lastField = fTagmaLastField;
+   }
+   const Bool_t sliceNeeded = firstField <= lastField;
+   const Bool_t sliceCached =
+      !sliceNeeded ||
+      (fTagmaSliceSettled && fTagmaSliceFirstField == firstField && fTagmaSliceLastField == lastField);
+   if (fTagmaRecordEntry == entry && !fTagmaRecord.empty() && sliceCached)
       return kTRUE;
    const std::uint64_t recordSize = fTagmaStore->GetLayout().fRecordSize;
    if (recordSize == 0 || recordSize > kMaxTagmaRecordSize)
@@ -6301,54 +6347,62 @@ Bool_t TTree::LoadTagmaRecord(Long64_t entry, Bool_t getall)
          return kFALSE;
       }
       // The slice carries the collection fields, so it is read only when a
-      // collection field branch reads it. The read covers the span the enabled
-      // branches fall in: a scalar-only read stays in the index record, and a
-      // read of one collection reads that collection's chunk. That is the
-      // column pruning at collection granularity the packed layout admits.
-      fTagmaSliceLoaded = kFALSE;
-      if (sliceBytes > 0 && TagmaSliceNeeded(getall)) {
+      // collection field branch reads it. The read covers the range the enabled
+      // branches fall in, at field granularity: a scalar-only read stays in the
+      // index record, and a read of one field reads that field's bytes and no
+      // other. A field range can include a field between the enabled ones, which
+      // is the price of one contiguous read.
+      if (sliceBytes > 0 && firstField <= lastField && lastField < fieldCount) {
          if (fTagmaStore->IsColumnar()) {
             // A columnar block holds its events transposed by field, so one
             // event's values are not adjacent and the span read below cannot
-            // reach them. The block is read once and each of its events is
-            // assembled from it.
-            if (!LoadTagmaColumnarSlice(entry, sliceBytes)) {
+            // reach them. The enabled fields' region of the block is read once
+            // and each of its events is assembled from it.
+            if (!LoadTagmaColumnarSlice(entry, sliceBytes, firstField, lastField)) {
                fTagmaData.clear();
                return kFALSE;
             }
-            fTagmaSliceLoaded = kTRUE;
          } else {
-            std::size_t first = collections.size();
-            std::size_t last = 0;
-            for (TBranch *branch : fTagmaFieldBranches) {
-               if (branch->TestBit(kDoNotProcess) && !getall)
-                  continue;
-               const std::size_t collection = static_cast<std::size_t>(branch->GetTagmaCollection());
-               if (collection < first)
-                  first = collection;
-               if (collection > last)
-                  last = collection;
+            // The event-major region: from the first enabled field's bytes to the
+            // end of the last one's, which the schema resolves from the counts.
+            std::uint64_t start = 0;
+            std::uint64_t end = 0;
+            std::size_t field = 0;
+            for (std::size_t c = 0; c < collections.size(); ++c) {
+               const ROOT::TTagmaSchema::Collection &collection = collections[c];
+               const std::uint64_t chunk = fTagmaSchema.ChunkOffset(c, fTagmaCounts.data());
+               const std::uint64_t count = fTagmaCounts[c];
+               std::uint64_t inChunk = 0;
+               for (const ROOT::TTagmaSchema::Field &one : collection.fFields) {
+                  const std::uint64_t at = chunk + inChunk;
+                  if (field == firstField)
+                     start = at;
+                  if (field == lastField)
+                     end = at + count * one.Size();
+                  ++field;
+                  inChunk += count * one.Size();
+               }
             }
-            if (first <= last && last < collections.size()) {
-               const std::uint64_t start = fTagmaSchema.ChunkOffset(first, fTagmaCounts.data());
-               const std::uint64_t end = fTagmaSchema.ChunkOffset(last, fTagmaCounts.data()) +
-                                         fTagmaCounts[last] * collections[last].ElementBytes();
-               if (end > start) {
-                  std::uint64_t base = 0;
-                  std::memcpy(&base, index + fTagmaSchema.DataBaseOffset(), sizeof(base));
-                  if (fTagmaData.size() != static_cast<std::size_t>(sliceBytes))
-                     fTagmaData.resize(static_cast<std::size_t>(sliceBytes));
-                  TFile *file = fDirectory ? fDirectory->GetFile() : nullptr;
-                  if (!file || file->ReadTagmaRange(fTagmaData.data() + start, static_cast<Long64_t>(base + start),
-                                                    static_cast<Int_t>(end - start)) != 1) {
-                     fTagmaData.clear();
-                     return kFALSE;
-                  }
-                  fTagmaSliceLoaded = kTRUE;
+            if (end > start) {
+               std::uint64_t base = 0;
+               std::memcpy(&base, index + fTagmaSchema.DataBaseOffset(), sizeof(base));
+               if (fTagmaData.size() != static_cast<std::size_t>(sliceBytes))
+                  fTagmaData.resize(static_cast<std::size_t>(sliceBytes));
+               TFile *file = fDirectory ? fDirectory->GetFile() : nullptr;
+               if (!file || file->ReadTagmaRange(fTagmaData.data() + start, static_cast<Long64_t>(base + start),
+                                                 static_cast<Int_t>(end - start)) != 1) {
+                  fTagmaData.clear();
+                  return kFALSE;
                }
             }
          }
       }
+      // The question is answered for this range whether or not bytes were read,
+      // so the branches that follow this entry in the same read short-circuit
+      // instead of re-reading the record for an empty range.
+      fTagmaSliceFirstField = firstField;
+      fTagmaSliceLastField = lastField;
+      fTagmaSliceSettled = kTRUE;
    }
    fTagmaRecordEntry = entry;
    fReadEntry = entry;
@@ -6356,25 +6410,30 @@ Bool_t TTree::LoadTagmaRecord(Long64_t entry, Bool_t getall)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// Read the columnar block that holds `entry` and reconstruct the entry's data
-/// slice from it.
+/// Read the part of the columnar block that holds `entry` and reconstruct the
+/// entry's slice of the fields `firstField`..`lastField` from it.
 ///
 /// A block carries one run per field, so the run of every field covers all the
-/// events of the block and one event's values are not adjacent. The block is
-/// read once and each of its events is assembled from the run starts and the
-/// object prefixes of the block's table entry, which turns the per-event slice
-/// read of the event-major layout into one read per block.
+/// events of the block and one event's values are not adjacent. The runs follow
+/// each other by field, so the enabled fields occupy one contiguous region of the
+/// block, and that region is what this reads. It is read once per block, and each
+/// of the block's events is assembled from the run starts and the object prefixes
+/// of the block's table entry.
 ///
 /// Returns kFALSE when the geometry does not resolve, the block does not fit the
 /// read bound, or a read failed. The caller drops the slice buffer on a failure,
 /// so a consumer cannot read a partial reconstruction.
 
-Bool_t TTree::LoadTagmaColumnarSlice(Long64_t entry, std::uint64_t sliceBytes)
+Bool_t TTree::LoadTagmaColumnarSlice(Long64_t entry, std::uint64_t sliceBytes, std::size_t firstField,
+                                    std::size_t lastField)
 {
    const ROOT::TTagmaStore::Layout &layout = fTagmaStore->GetLayout();
    const std::uint64_t blockEvents = layout.fBlockEvents;
    const auto &collections = fTagmaSchema.GetCollections();
+   const std::size_t fieldCount = fTagmaSchema.DataFieldCount();
    if (blockEvents == 0 || collections.empty() || fTagmaRecord.size() <= fTagmaSchema.DataBaseOffset())
+      return kFALSE;
+   if (firstField > lastField || lastField >= fieldCount)
       return kFALSE;
    const std::uint64_t block = static_cast<std::uint64_t>(entry) / blockEvents;
    const std::uint64_t within = static_cast<std::uint64_t>(entry) % blockEvents;
@@ -6387,7 +6446,11 @@ Bool_t TTree::LoadTagmaColumnarSlice(Long64_t entry, std::uint64_t sliceBytes)
    if (!file)
       return kFALSE;
 
-   if (!fTagmaBlockLoaded || fTagmaBlock != block) {
+   // The cache holds one block and one field range, so a read that asks for
+   // another range of the same block refills it rather than serving the wrong
+   // region.
+   if (!fTagmaBlockLoaded || fTagmaBlock != block || fTagmaBlockFirstField != firstField ||
+       fTagmaBlockLastField != lastField) {
       fTagmaBlockLoaded = kFALSE;
       // Every record of a block carries the block's data base, so the record of
       // the entry being read already resolves where the block starts.
@@ -6405,6 +6468,7 @@ Bool_t TTree::LoadTagmaColumnarSlice(Long64_t entry, std::uint64_t sliceBytes)
       }
       if (end < base || end - base > kMaxTagmaRecordSize)
          return kFALSE;
+      const std::uint64_t blockBytes = end - base;
       // The table sits between the data region and the field table, past the
       // extent the store covers, so it is read as a plain range of the file.
       const std::uint64_t tableAt = fTagmaStore->IndexBytes() + layout.fDataSize;
@@ -6413,19 +6477,33 @@ Bool_t TTree::LoadTagmaColumnarSlice(Long64_t entry, std::uint64_t sliceBytes)
                            static_cast<Long64_t>(tableAt + block * entryBytes),
                            static_cast<Int_t>(entryBytes)))
          return kFALSE;
-      fTagmaBlockData.resize(static_cast<std::size_t>(end - base));
+      // The enabled fields' region: from the first one's run to the run after the
+      // last one, or to the end of the block. Both starts are in the table entry,
+      // so no count is needed.
+      const std::uint64_t regionStart = table.RunStartInEntry(fTagmaBlockEntry.data(), firstField);
+      std::uint64_t regionEnd = blockBytes;
+      if (lastField + 1 < fieldCount)
+         regionEnd = table.RunStartInEntry(fTagmaBlockEntry.data(), lastField + 1);
+      if (regionEnd < regionStart || regionEnd > blockBytes)
+         return kFALSE;
+      fTagmaBlockSpan = regionStart;
+      fTagmaBlockData.resize(static_cast<std::size_t>(regionEnd - regionStart));
       if (!fTagmaBlockData.empty() &&
-          file->ReadTagmaRange(reinterpret_cast<char *>(fTagmaBlockData.data()), static_cast<Long64_t>(base),
+          file->ReadTagmaRange(reinterpret_cast<char *>(fTagmaBlockData.data()),
+                               static_cast<Long64_t>(base + regionStart),
                                static_cast<Int_t>(fTagmaBlockData.size())) != 1)
          return kFALSE;
       fTagmaBlock = block;
+      fTagmaBlockFirstField = firstField;
+      fTagmaBlockLastField = lastField;
       fTagmaBlockLoaded = kTRUE;
    }
 
    if (fTagmaData.size() != static_cast<std::size_t>(sliceBytes))
       fTagmaData.resize(static_cast<std::size_t>(sliceBytes));
    if (!ROOT::ReconstructTagmaSlice(fTagmaSchema, table, fTagmaBlockEntry.data(), within, fTagmaCounts.data(),
-                                    fTagmaBlockData.data(), fTagmaBlockData.size(), fTagmaData.data()))
+                                    firstField, lastField, fTagmaBlockData.data(), fTagmaBlockSpan,
+                                    fTagmaBlockData.size(), fTagmaData.data()))
       return kFALSE;
    return kTRUE;
 }
@@ -9428,6 +9506,10 @@ void TTree::SetBranchStatus(const char* bname, bool status, UInt_t* found)
       Error("SetBranchStatus", "Input regexp is an empty string: no match against branch names will be attempted.");
       return;
    }
+
+   // The selection decides which fields the coordinate read path serves, so the
+   // memo of that range no longer holds.
+   fTagmaFieldRangeValid = kFALSE;
 
    TBranch *branch, *bcount, *bson;
    TLeaf *leaf, *leafcount;
