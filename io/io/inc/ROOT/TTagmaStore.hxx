@@ -118,27 +118,39 @@ public:
       // Byte offset of a block's entry inside the table.
       std::uint64_t EntryOffset(std::uint64_t block) const { return block * EntryBytes(); }
 
-      // The start of `field`'s run inside a block.
-      std::uint64_t RunStart(const unsigned char *table, std::uint64_t block, std::uint64_t field) const
+      // The start of `field`'s run inside one block's entry.
+      std::uint64_t RunStartInEntry(const unsigned char *entry, std::uint64_t field) const
       {
-         const unsigned char *at = table + EntryOffset(block) + field * 8;
+         const unsigned char *at = entry + field * 8;
          std::uint64_t value = 0;
          for (int i = 0; i < 8; ++i)
             value |= static_cast<std::uint64_t>(at[i]) << (8 * i);
          return value;
       }
 
-      // The objects of `collection` before `eventInBlock`, which is the object
-      // offset of that event's values inside the field's run.
-      std::uint32_t ObjectPrefix(const unsigned char *table, std::uint64_t block,
-                                 std::uint64_t collection, std::uint64_t eventInBlock) const
+      // The start of `field`'s run inside a block.
+      std::uint64_t RunStart(const unsigned char *table, std::uint64_t block, std::uint64_t field) const
       {
-         const unsigned char *at = table + EntryOffset(block) + fFields * 8 +
-                                   (collection * fBlockEvents + eventInBlock) * 4;
+         return RunStartInEntry(table + EntryOffset(block), field);
+      }
+
+      // The objects of `collection` before `eventInBlock` inside one block's
+      // entry, which is the object offset of that event's values in the run.
+      std::uint32_t ObjectPrefixInEntry(const unsigned char *entry, std::uint64_t collection,
+                                        std::uint64_t eventInBlock) const
+      {
+         const unsigned char *at = entry + fFields * 8 + (collection * fBlockEvents + eventInBlock) * 4;
          std::uint32_t value = 0;
          for (int i = 0; i < 4; ++i)
             value |= static_cast<std::uint32_t>(at[i]) << (8 * i);
          return value;
+      }
+
+      // The objects of `collection` before `eventInBlock` inside a block.
+      std::uint32_t ObjectPrefix(const unsigned char *table, std::uint64_t block, std::uint64_t collection,
+                                 std::uint64_t eventInBlock) const
+      {
+         return ObjectPrefixInEntry(table + EntryOffset(block), collection, eventInBlock);
       }
    };
 
