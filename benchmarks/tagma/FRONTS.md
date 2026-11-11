@@ -187,15 +187,18 @@ fixture's schema.
 
 The block length trades against the row that wins today. `tagma_column_probe.C`
 measured the data region of a whole-event read at 1.83 times the event-major
-order at 64 events per block and 5.96 times at 1,024, against a read path that is
-10 to 12 percent of the 120-second whole-event row, so it predicted the row would
-move by 1.09 to 1.11 times at 64 and 1.50 to 1.60 at 1,024. The prediction is
-about the data region alone; the reader that now exists adds a copy the probe did
-not model, and its measured row moves 1.18 times at 64, flat in the block length.
+order at 64 events per block, against a read path that is 10 to 12 percent of the
+120-second whole-event row, so it predicted the row would move by 1.09 to 1.11
+times at 64. The prediction is about the data region alone; the reader that now
+exists adds a copy the probe did not model, and its measured row moves 1.18 times
+at 64, flat in the block length.
 
 On the probe's own terms the order is not monotonic: 16 events costs 2.29 times
-where 64 costs 1.83, and 256 costs 9.67 where 1,024 costs 5.96. The block length
-is therefore a measured point rather than a trend.
+where 64 costs 1.83. The block length is therefore a measured point rather than a
+trend. Only the rows up to 64 events reproduce: a repeat of the probe on the same
+machine gave 14.07 times at 256 events and 10.56 at 1,024 where the recorded rows
+carry 9.67 and 5.96, so the two largest blocks are not quoted, and 64 is the
+length the reader was measured at.
 
 What the table buys is the scatter claim, the store's strongest. A single-event
 read needs the block's table entry, 1,968 bytes at these values, and the field's
