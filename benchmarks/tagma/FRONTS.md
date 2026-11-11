@@ -13,6 +13,7 @@ if it were the production number.
 | The read path beats the compressed baseline | `tagma_block_read.C`: compressed store 12.4 s, 572 MB/s, plain 14.6 s, against 177.4 s |
 | Compression keeps the read path and shrinks the file | 7,082,290,985 to 2,897,372,833 bytes, 2.44x |
 | A read serves only the collections a selection enables | the scalar-only harness row, 4.2 s on the plain store |
+| A columnar store reads through the same leaves | the columnar io and tree gtests |
 | The whole state reads in one or two requests whatever the order | `tagma_scatter.C` entry rows: 0.101 s scattered against 0.109 s sequential over 2,000 events, the fields delivered, against the baseline's 202.2 s |
 | A coordinate resolves a dataset without a scan | `tagma_dataset_bench.C`: a run resolves to its shard while the chain scans the run branch, 11.1 s over 38 files |
 
@@ -158,9 +159,10 @@ the selection cannot shrink it.
 
 The structural fix is to lay the data region out by column, so the events of one
 field are contiguous and a selection decodes only the columns it reads. That is
-a new store layout: the descriptor carries the layout kind and the block length
-now, and the address arithmetic, the writer, and the field copy follow. This is
-the largest open front, and the arithmetic below is what decides its shape.
+a new store layout: the descriptor carries the layout kind and the block length,
+and the address arithmetic, the writer, and the reader follow it. The field copy
+did not have to change. This is the largest open front, and the arithmetic below
+is what decides its shape.
 
 The transposition is per block, not per store. A store-wide transposition needs
 every field's total before the first byte is written, which the single-pass
@@ -201,19 +203,23 @@ table the same read would need the block's index region, 164 KB at 64 events, to
 find the prefix. The table is what keeps one to two requests per event under a
 scattered order.
 
-What the reader must do, and where the refusal has to move, is settled enough
-to name. The event's slice is reconstructed in the read path's own buffer: the
-runs a block holds for the enabled fields are read once when the event's block
-changes, and each event copies its share from the cached runs into the
-slice-relative positions the field copy already uses. `CopyTagmaField` therefore
-does not change, and a scan pays the run reads once per block rather than once
-per event. The block table is the only new read, one entry per block.
+The reader exists. When the loaded entry falls in another block, the tree reads
+that block's table entry and its data bytes once, reconstructs each event of the
+block into the buffer the field copy already reads, and keeps them until another
+block is asked for. `CopyTagmaField` does not change, and a scan pays the block
+reads once per block rather than once per event. `ReadStore` accepts the kind and
+derives the table size from the block division, so a store's own descriptor
+reaches the read gate; the block source, which walks the event-major region
+directly, still refuses it.
 
-The refusal of a columnar store stays in the readers until that path exists. A
-plain reader that accepted the layout would fill the slice buffer from offsets
-that mean something else, so relaxing `ReadStore` is the last step of the
-reader, not the first, and its size validation gains the block table when it
-does.
+That the reader reconstructs what the writer transposed is pinned at two layers:
+the io test rebuilds every event of a two-block fixture through the table, and
+the tree gate reads a columnar store through the leaves and pins that the events
+of a loaded block cost one read each. What is not measured is the cost. The block
+length still comes from the probe's estimate, 64 events at 1.09 to 1.11 times the
+whole-event row, because the whole-event row on a columnar store and the crossover
+of this front both need the fixture the workstation does not carry. Those numbers
+stay where the probe put them until a store built from it is measured.
 
 Two things stay open. The block length, where the numbers above give 64 as the
 smallest measured point inside ten percent unless the table size matters more
