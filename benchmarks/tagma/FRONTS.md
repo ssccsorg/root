@@ -157,14 +157,51 @@ it, so a block of the data region holds many events of one collection range and
 the selection cannot shrink it.
 
 The structural fix is to lay the data region out by column, so the events of one
-field are contiguous and a block holds one field, and a selection decodes only
-the columns it reads. That is a new store layout, not a flag: `TTagmaSchema`
-gains a region per field, `TTagmaStore` addresses a (field, event) offset
-instead of an event's chunk, `TTagmaWriter` writes the transposed region, and
-the field copy reads across the field's region. The addressing stays closed
-form, which is what makes the transposition affordable, and the gate is that
-the same values read back and that a two-column read touches only those
-columns' blocks. This is the largest open front.
+field are contiguous and a selection decodes only the columns it reads. That is
+a new store layout: the descriptor carries the layout kind and the block length
+now, and the address arithmetic, the writer, and the field copy follow. This is
+the largest open front, and the arithmetic below is what decides its shape.
+
+The transposition is per block, not per store. A store-wide transposition needs
+every field's total before the first byte is written, which the single-pass
+writer cannot know, so a block of B events is buffered, transposed, and
+appended. B is the one free parameter.
+
+Addressing one event's field needs two things the event-major layout does not:
+where the field's run starts, which is the block's data base plus the runs of the
+fields before it, and where the event sits inside that run, which is the prefix
+of that collection's counts over the earlier events of the block. Both follow
+from the block's object counts, and reading those counts for one event means
+reading the block's index region, B records. A block table therefore carries the
+run start per field and the prefix count per collection per event,
+`8F + 4CB` bytes per block for F collection fields and C collections, which is
+`8F/B + 4C` bytes per event.
+
+For a schema of 150 collection fields and 3 collections, a block of 64 events
+costs 30.8 bytes per event, 71 MB over the 2,314,223-event fixture, 2.4 percent
+of the 2.99 GB store; at 1,024 events the table falls to 13.2 bytes per event,
+31 MB. Those field counts are an illustration, not a measurement of the
+fixture's schema.
+
+The block length trades against the row that wins today. `tagma_column_probe.C`
+measured the data region of a whole-event read at 1.83 times the event-major
+order at 64 events per block and 5.96 times at 1,024, against a read path that is
+10 to 12 percent of the 120-second whole-event row, so the row moves by 1.09 and
+1.50 times. A smaller block costs more table and less scan, and 64 is where the
+scan loss stays inside ten percent.
+
+What the table buys is the scatter claim, the store's strongest. A single-event
+read needs the block's table entry, 1,968 bytes at these values, and the field's
+run: two reads and about the bytes the event's slice costs today. Without the
+table the same read would need the block's index region, 164 KB at 64 events, to
+find the prefix. The table is what keeps one to two requests per event under a
+scattered order.
+
+Two things stay open. The block length, which the numbers above put at 64 unless
+the table size matters more than nine percent of the scan row. And whether the
+columnar layout replaces the event-major one or ships beside it: the descriptor
+carries the kind, so a store can choose, and the crossover measurement decides
+whether either arrangement is worth its cost.
 
 ### 3. The delivery layer
 
