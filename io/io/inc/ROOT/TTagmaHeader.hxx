@@ -68,9 +68,10 @@ public:
    // readers refuse a store their address arithmetic cannot reach, as they
    // already refuse a compressed store a plain reader cannot read.
    static constexpr std::uint64_t kEventMajorLayout = 0;
-   // A data region transposed by field inside blocks of fBlockEvents events. The
-   // descriptor can name it, so a store that carries one is self-describing from
-   // today; no writer produces one and no reader addresses one yet.
+   // A data region transposed by field inside blocks of fBlockEvents events. A
+   // store that carries one addresses it through the block table of
+   // TTagmaStore::BlockTable, and a reader that only walks the event-major
+   // layout refuses it.
    static constexpr std::uint64_t kColumnarBlockLayout = 1;
 
    // True when the version is one this build reads.

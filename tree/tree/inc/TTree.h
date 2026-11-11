@@ -153,6 +153,13 @@ protected:
    std::vector<std::uint64_t> fTagmaCounts;    ///<! Object counts of the loaded entry
    Bool_t fTagmaCountError = kFALSE;           ///<! Set once when a count passes the schema bound
    Bool_t fTagmaSliceLoaded = kFALSE;          ///<! Set when the loaded entry's slice was read
+   /// The block a columnar layout holds the loaded entry in: its table entry, its
+   /// data bytes, and the block they belong to. One block is read per block, not
+   /// per event, and each of its events is reconstructed from it.
+   std::vector<unsigned char> fTagmaBlockEntry; ///<! Table entry of fTagmaBlock
+   std::vector<unsigned char> fTagmaBlockData;  ///<! Data region bytes of fTagmaBlock
+   std::uint64_t fTagmaBlock = 0;               ///<! Block fTagmaBlockEntry and fTagmaBlockData hold
+   Bool_t fTagmaBlockLoaded = kFALSE;           ///<! Set when the block cache holds fTagmaBlock
    TObjArray      fBranches;              ///<  List of Branches
    TObjArray      fLeaves;                ///<  Direct pointers to individual branch leaves
    TList         *fAliases;               ///<  List of aliases for expressions based on the tree branches.
@@ -202,6 +209,12 @@ private:
    Int_t            FlushBasketsImpl() const;
    void             MarkEventCluster();
    Long64_t         GetMedianClusterSize();
+
+   /// Reads the columnar block holding `entry` into the block cache and
+   /// reconstructs the entry's data slice from it into fTagmaData. The block
+   /// table entry, the block's run starts, and the object prefixes come from
+   /// the block's table entry, which a block shares with its events.
+   Bool_t           LoadTagmaColumnarSlice(Long64_t entry, std::uint64_t sliceBytes);
 
    void RegisterBranchFullName(std::pair<std::string, TBranch *> &&kv) { fNamesToBranches.insert(kv); }
    friend void ROOT::Internal::TreeUtils::TBranch__SetTree(TTree *tree, TObjArray &branches);

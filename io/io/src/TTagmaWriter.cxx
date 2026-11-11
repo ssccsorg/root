@@ -362,12 +362,6 @@ bool TTagmaWriter::ReadStore(const char *path, TTagmaStore::Layout *layout, TTag
       std::fclose(in);
       return reject("the store is block-compressed");
    }
-   // The descriptor may name a layout this build cannot address, so the refusal
-   // belongs here rather than at the parser, as the compressed refusal does.
-   if (header.fLayoutKind != TTagmaHeader::kEventMajorLayout) {
-      std::fclose(in);
-      return reject("the store carries a layout this build cannot address");
-   }
 
    // The field table sits immediately before the descriptor.
    if (header.fFieldTableBytes > descriptorOffset) {
@@ -403,9 +397,28 @@ bool TTagmaWriter::ReadStore(const char *path, TTagmaStore::Layout *layout, TTag
    if (records > max / header.fRecordSize)
       return reject("the descriptor names a store larger than uint64");
    const std::uint64_t payload = records * header.fRecordSize;
-   if (payload > max - header.fDataSize || payload + header.fDataSize > max - header.fFieldTableBytes)
+
+   // A columnar layout carries a block table between the data region and the
+   // field table. Its size follows from the block division and the field table
+   // rather than from the descriptor, so the reader derives it here to account
+   // for the file. A descriptor whose layout another reader refuses is still
+   // read here: the refusal belongs to the reader that walks the layout, as the
+   // compressed refusal does.
+   std::uint64_t tableBytes = 0;
+   if (header.fLayoutKind == TTagmaHeader::kColumnarBlockLayout) {
+      const std::uint64_t blocks = records / header.fBlockEvents + (records % header.fBlockEvents != 0 ? 1 : 0);
+      try {
+         tableBytes = TTagmaStore::BlockTableBytes(blocks, parsed.DataFieldCount(),
+                                                   parsed.GetCollections().size(), header.fBlockEvents);
+      } catch (const std::invalid_argument &) {
+         return reject("the block table the descriptor implies is larger than uint64");
+      }
+   }
+   if (payload > max - header.fDataSize || payload + header.fDataSize > max - tableBytes ||
+       payload + header.fDataSize + tableBytes > max - header.fFieldTableBytes)
       return reject("the descriptor names a store larger than uint64");
-   const std::uint64_t expected = payload + header.fDataSize + header.fFieldTableBytes + descriptorBytes;
+   const std::uint64_t expected =
+      payload + header.fDataSize + tableBytes + header.fFieldTableBytes + descriptorBytes;
    if (expected != size)
       return reject("the descriptor disagrees with the store size");
 

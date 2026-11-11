@@ -392,6 +392,7 @@ End_Macro
 #include "TTree.h"
 
 #include "ROOT/TIOFeatures.hxx"
+#include "ROOT/TTagmaColumn.hxx"
 #include "ROOT/TTagmaWriter.hxx"
 #include "TArrayC.h"
 #include "TBufferFile.h"
@@ -6195,6 +6196,9 @@ Bool_t TTree::SetTagmaSchema(const ROOT::TTagmaSchema &schema)
    }
    fTagmaCounts.assign(collections.size(), 0);
    fTagmaData.clear();
+   fTagmaBlockEntry.clear();
+   fTagmaBlockData.clear();
+   fTagmaBlockLoaded = kFALSE;
    fTagmaSchema = schema;
    fTagmaRecordEntry = -1;
    fTagmaCountError = kFALSE;
@@ -6224,6 +6228,12 @@ Bool_t TTree::TagmaSliceNeeded(Bool_t getall) const
 /// that drives one branch per field reads the record once. This is the entry
 /// point the materialized branches use, and through them the reader proxy,
 /// which never reaches GetEntry.
+///
+/// The data slice is read differently by layout. An event-major store keeps an
+/// event's slice in one span, so the read covers the collections the enabled
+/// branches fall in. A columnar store keeps a block's events transposed by
+/// field, so the block is read once and the entry is reconstructed from it; see
+/// LoadTagmaColumnarSlice.
 ///
 /// Returns kFALSE when no store is attached, the entry is outside the layout,
 /// the record size is out of bounds, the buffer is pinned by a schema that
@@ -6297,39 +6307,126 @@ Bool_t TTree::LoadTagmaRecord(Long64_t entry, Bool_t getall)
       // column pruning at collection granularity the packed layout admits.
       fTagmaSliceLoaded = kFALSE;
       if (sliceBytes > 0 && TagmaSliceNeeded(getall)) {
-         std::size_t first = collections.size();
-         std::size_t last = 0;
-         for (TBranch *branch : fTagmaFieldBranches) {
-            if (branch->TestBit(kDoNotProcess) && !getall)
-               continue;
-            const std::size_t collection = static_cast<std::size_t>(branch->GetTagmaCollection());
-            if (collection < first)
-               first = collection;
-            if (collection > last)
-               last = collection;
-         }
-         if (first <= last && last < collections.size()) {
-            const std::uint64_t start = fTagmaSchema.ChunkOffset(first, fTagmaCounts.data());
-            const std::uint64_t end = fTagmaSchema.ChunkOffset(last, fTagmaCounts.data()) +
-                                      fTagmaCounts[last] * collections[last].ElementBytes();
-            if (end > start) {
-               std::uint64_t base = 0;
-               std::memcpy(&base, index + fTagmaSchema.DataBaseOffset(), sizeof(base));
-               if (fTagmaData.size() != static_cast<std::size_t>(sliceBytes))
-                  fTagmaData.resize(static_cast<std::size_t>(sliceBytes));
-               TFile *file = fDirectory ? fDirectory->GetFile() : nullptr;
-               if (!file || file->ReadTagmaRange(fTagmaData.data() + start, static_cast<Long64_t>(base + start),
-                                                 static_cast<Int_t>(end - start)) != 1) {
-                  fTagmaData.clear();
-                  return kFALSE;
+         if (fTagmaStore->IsColumnar()) {
+            // A columnar block holds its events transposed by field, so one
+            // event's values are not adjacent and the span read below cannot
+            // reach them. The block is read once and each of its events is
+            // assembled from it.
+            if (!LoadTagmaColumnarSlice(entry, sliceBytes)) {
+               fTagmaData.clear();
+               return kFALSE;
+            }
+            fTagmaSliceLoaded = kTRUE;
+         } else {
+            std::size_t first = collections.size();
+            std::size_t last = 0;
+            for (TBranch *branch : fTagmaFieldBranches) {
+               if (branch->TestBit(kDoNotProcess) && !getall)
+                  continue;
+               const std::size_t collection = static_cast<std::size_t>(branch->GetTagmaCollection());
+               if (collection < first)
+                  first = collection;
+               if (collection > last)
+                  last = collection;
+            }
+            if (first <= last && last < collections.size()) {
+               const std::uint64_t start = fTagmaSchema.ChunkOffset(first, fTagmaCounts.data());
+               const std::uint64_t end = fTagmaSchema.ChunkOffset(last, fTagmaCounts.data()) +
+                                         fTagmaCounts[last] * collections[last].ElementBytes();
+               if (end > start) {
+                  std::uint64_t base = 0;
+                  std::memcpy(&base, index + fTagmaSchema.DataBaseOffset(), sizeof(base));
+                  if (fTagmaData.size() != static_cast<std::size_t>(sliceBytes))
+                     fTagmaData.resize(static_cast<std::size_t>(sliceBytes));
+                  TFile *file = fDirectory ? fDirectory->GetFile() : nullptr;
+                  if (!file || file->ReadTagmaRange(fTagmaData.data() + start, static_cast<Long64_t>(base + start),
+                                                    static_cast<Int_t>(end - start)) != 1) {
+                     fTagmaData.clear();
+                     return kFALSE;
+                  }
+                  fTagmaSliceLoaded = kTRUE;
                }
-               fTagmaSliceLoaded = kTRUE;
             }
          }
       }
    }
    fTagmaRecordEntry = entry;
    fReadEntry = entry;
+   return kTRUE;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Read the columnar block that holds `entry` and reconstruct the entry's data
+/// slice from it.
+///
+/// A block carries one run per field, so the run of every field covers all the
+/// events of the block and one event's values are not adjacent. The block is
+/// read once and each of its events is assembled from the run starts and the
+/// object prefixes of the block's table entry, which turns the per-event slice
+/// read of the event-major layout into one read per block.
+///
+/// Returns kFALSE when the geometry does not resolve, the block does not fit the
+/// read bound, or a read failed. The caller drops the slice buffer on a failure,
+/// so a consumer cannot read a partial reconstruction.
+
+Bool_t TTree::LoadTagmaColumnarSlice(Long64_t entry, std::uint64_t sliceBytes)
+{
+   const ROOT::TTagmaStore::Layout &layout = fTagmaStore->GetLayout();
+   const std::uint64_t blockEvents = layout.fBlockEvents;
+   const auto &collections = fTagmaSchema.GetCollections();
+   if (blockEvents == 0 || collections.empty() || fTagmaRecord.size() <= fTagmaSchema.DataBaseOffset())
+      return kFALSE;
+   const std::uint64_t block = static_cast<std::uint64_t>(entry) / blockEvents;
+   const std::uint64_t within = static_cast<std::uint64_t>(entry) % blockEvents;
+   const ROOT::TTagmaStore::BlockTable table{fTagmaSchema.DataFieldCount(), collections.size(), blockEvents};
+   const std::uint64_t entryBytes = table.EntryBytes();
+   if (entryBytes > kMaxTagmaRecordSize)
+      return kFALSE;
+
+   TFile *file = fDirectory ? fDirectory->GetFile() : nullptr;
+   if (!file)
+      return kFALSE;
+
+   if (!fTagmaBlockLoaded || fTagmaBlock != block) {
+      fTagmaBlockLoaded = kFALSE;
+      // Every record of a block carries the block's data base, so the record of
+      // the entry being read already resolves where the block starts.
+      std::uint64_t base = 0;
+      std::memcpy(&base, fTagmaRecord.data() + fTagmaSchema.DataBaseOffset(), sizeof(base));
+      // The block ends where the next block's data begins, and the last one ends
+      // with the data region.
+      std::uint64_t end = fTagmaStore->IndexBytes() + layout.fDataSize;
+      if ((block + 1) * blockEvents < fTagmaStore->RecordCount()) {
+         std::vector<char> next(static_cast<std::size_t>(layout.fRecordSize), 0);
+         if (GetTagmaRecord(static_cast<Long64_t>((block + 1) * blockEvents), next.data(),
+                            static_cast<Int_t>(next.size())) < 0)
+            return kFALSE;
+         std::memcpy(&end, next.data() + fTagmaSchema.DataBaseOffset(), sizeof(end));
+      }
+      if (end < base || end - base > kMaxTagmaRecordSize)
+         return kFALSE;
+      // The table sits between the data region and the field table, past the
+      // extent the store covers, so it is read as a plain range of the file.
+      const std::uint64_t tableAt = fTagmaStore->IndexBytes() + layout.fDataSize;
+      fTagmaBlockEntry.resize(static_cast<std::size_t>(entryBytes));
+      if (file->ReadBuffer(reinterpret_cast<char *>(fTagmaBlockEntry.data()),
+                           static_cast<Long64_t>(tableAt + block * entryBytes),
+                           static_cast<Int_t>(entryBytes)))
+         return kFALSE;
+      fTagmaBlockData.resize(static_cast<std::size_t>(end - base));
+      if (!fTagmaBlockData.empty() &&
+          file->ReadTagmaRange(reinterpret_cast<char *>(fTagmaBlockData.data()), static_cast<Long64_t>(base),
+                               static_cast<Int_t>(fTagmaBlockData.size())) != 1)
+         return kFALSE;
+      fTagmaBlock = block;
+      fTagmaBlockLoaded = kTRUE;
+   }
+
+   if (fTagmaData.size() != static_cast<std::size_t>(sliceBytes))
+      fTagmaData.resize(static_cast<std::size_t>(sliceBytes));
+   if (!ROOT::ReconstructTagmaSlice(fTagmaSchema, table, fTagmaBlockEntry.data(), within, fTagmaCounts.data(),
+                                    fTagmaBlockData.data(), fTagmaBlockData.size(), fTagmaData.data()))
+      return kFALSE;
    return kTRUE;
 }
 

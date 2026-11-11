@@ -512,25 +512,43 @@ TEST(TTagmaWriter, ReadsAStoreThatCarriesTheLegacyDescriptor)
    std::remove(kStorePath);
 }
 
-// The descriptor may name a layout this build cannot address, so the block parses
-// and the reader is where the store is refused, as with a compressed store.
-TEST(TTagmaWriter, DescriptorRefusesALayoutItCannotAddress)
+// A columnar store is self-describing like an event-major one: the reader that
+// addresses it accepts the descriptor and reports the block division.
+TEST(TTagmaWriter, ReadsBackAColumnarStore)
 {
-   WriteStore();
-   std::vector<char> bytes = ReadFile();
-   ASSERT_GT(bytes.size(), ROOT::TTagmaHeader::kSize);
+   const ColumnarFixture fixture = MakeColumnarFixture();
+   ASSERT_FALSE(fixture.fBytes.empty());
 
+   ROOT::TTagmaStore::Layout layout;
+   ROOT::TTagmaSchema read;
+   std::string why;
+   ASSERT_TRUE(ROOT::TTagmaWriter::ReadStore(kStorePath, &layout, &read, &why)) << why;
+   EXPECT_EQ(layout.fLayoutKind, ROOT::TTagmaHeader::kColumnarBlockLayout);
+   EXPECT_EQ(layout.fBlockEvents, fixture.fBlockEvents);
+   EXPECT_EQ(read.Text(), MakeSchema().Text());
+   std::remove(kStorePath);
+}
+
+// The block table is part of the store, and its size follows from the block
+// division rather than from the descriptor, so a block division the file does
+// not carry a table for is refused instead of read as a shorter store.
+TEST(TTagmaWriter, ColumnarDescriptorMustAccountForTheBlockTable)
+{
+   const ColumnarFixture fixture = MakeColumnarFixture();
+   ASSERT_FALSE(fixture.fBytes.empty());
+
+   // Two blocks became one, so the file carries one entry more than the
+   // descriptor implies.
+   std::vector<char> bytes = fixture.fBytes;
    const std::size_t descriptor = bytes.size() - ROOT::TTagmaHeader::kSize;
-   PutLE64(reinterpret_cast<unsigned char *>(bytes.data()) + descriptor + 72,
-           ROOT::TTagmaHeader::kColumnarBlockLayout);
-   PutLE64(reinterpret_cast<unsigned char *>(bytes.data()) + descriptor + 80, 64);
+   PutLE64(reinterpret_cast<unsigned char *>(bytes.data()) + descriptor + 80, 4);
    WriteFile(bytes);
 
    ROOT::TTagmaStore::Layout layout;
    ROOT::TTagmaSchema read;
    std::string why;
    EXPECT_FALSE(ROOT::TTagmaWriter::ReadStore(kStorePath, &layout, &read, &why));
-   EXPECT_NE(why.find("cannot address"), std::string::npos) << why;
+   EXPECT_NE(why.find("disagrees with the store size"), std::string::npos) << why;
    std::remove(kStorePath);
 }
 
