@@ -539,7 +539,9 @@ TEST(TTagmaWriter, ColumnarBlocksReadBackThroughTheTable)
                               header.fFieldTableBytes + ROOT::TTagmaHeader::kSize);
 
    const std::size_t tableAt = static_cast<std::size_t>(indexBytes + header.fDataSize);
-   const std::size_t entryBytes = static_cast<std::size_t>(fields * 8 + collectionCount * blockEvents * 4);
+   const ROOT::TTagmaStore::BlockTable table{fields, collectionCount, blockEvents};
+   EXPECT_EQ(table.EntryOffset(blocks), tableBytes);
+   const unsigned char *tableBytesAt = reinterpret_cast<const unsigned char *>(bytes.data()) + tableAt;
 
    for (std::uint64_t entry = 0; entry < records; ++entry) {
       const std::uint64_t block = entry / blockEvents;
@@ -551,15 +553,13 @@ TEST(TTagmaWriter, ColumnarBlocksReadBackThroughTheTable)
       std::uint64_t base = 0;
       std::memcpy(&base, bytes.data() + recordAt + schema.DataBaseOffset(), sizeof(base));
 
-      const std::size_t entryAt = tableAt + static_cast<std::size_t>(block) * entryBytes;
       const std::vector<char> slice = Slice(static_cast<int>(entry));
       std::uint64_t fieldIndex = 0;
       for (std::size_t c = 0; c < collectionCount; ++c) {
          const ROOT::TTagmaSchema::Collection &collection = schema.GetCollections()[c];
          for (const ROOT::TTagmaSchema::Field &field : collection.fFields) {
-            const std::uint64_t runStart = ReadAt<std::uint64_t>(bytes, entryAt + fieldIndex * 8);
-            const std::uint32_t prefix = ReadAt<std::uint32_t>(
-               bytes, entryAt + static_cast<std::size_t>(fields * 8 + (c * blockEvents + within) * 4));
+            const std::uint64_t runStart = table.RunStart(tableBytesAt, block, fieldIndex);
+            const std::uint32_t prefix = table.ObjectPrefix(tableBytesAt, block, c, within);
             const std::uint64_t length = counts[c] * field.Size();
             const std::uint64_t actual = base + runStart + prefix * field.Size();
             const std::uint64_t expectedAt = schema.ChunkOffset(c, counts.data()) +

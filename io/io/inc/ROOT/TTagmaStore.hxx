@@ -104,6 +104,44 @@ public:
                                         std::uint64_t collections,
                                         std::uint64_t blockEvents);
 
+   // The table a columnar layout carries, read from the bytes a store holds: the
+   // run start of each field inside a block, relative to the block's data base,
+   // and the objects of each collection that precede each event of the block.
+   struct BlockTable {
+      std::uint64_t fFields = 0;
+      std::uint64_t fCollections = 0;
+      std::uint64_t fBlockEvents = 0;
+
+      // Bytes one block's entry occupies.
+      std::uint64_t EntryBytes() const { return fFields * 8 + fCollections * fBlockEvents * 4; }
+
+      // Byte offset of a block's entry inside the table.
+      std::uint64_t EntryOffset(std::uint64_t block) const { return block * EntryBytes(); }
+
+      // The start of `field`'s run inside a block.
+      std::uint64_t RunStart(const unsigned char *table, std::uint64_t block, std::uint64_t field) const
+      {
+         const unsigned char *at = table + EntryOffset(block) + field * 8;
+         std::uint64_t value = 0;
+         for (int i = 0; i < 8; ++i)
+            value |= static_cast<std::uint64_t>(at[i]) << (8 * i);
+         return value;
+      }
+
+      // The objects of `collection` before `eventInBlock`, which is the object
+      // offset of that event's values inside the field's run.
+      std::uint32_t ObjectPrefix(const unsigned char *table, std::uint64_t block,
+                                 std::uint64_t collection, std::uint64_t eventInBlock) const
+      {
+         const unsigned char *at = table + EntryOffset(block) + fFields * 8 +
+                                   (collection * fBlockEvents + eventInBlock) * 4;
+         std::uint32_t value = 0;
+         for (int i = 0; i < 4; ++i)
+            value |= static_cast<std::uint32_t>(at[i]) << (8 * i);
+         return value;
+      }
+   };
+
    // True when [offset, offset + length) lies inside the store.
    bool Covers(std::uint64_t offset, std::uint64_t length) const;
 
