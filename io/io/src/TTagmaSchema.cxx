@@ -238,6 +238,22 @@ std::uint64_t TTagmaSchema::SliceBytes(const std::uint64_t *counts) const
    return bytes;
 }
 
+std::size_t TTagmaSchema::DataFieldCount() const
+{
+   std::size_t count = 0;
+   for (const Collection &collection : fCollections)
+      count += collection.fFields.size();
+   return count;
+}
+
+std::size_t TTagmaSchema::DataFieldStart(std::size_t collectionIndex) const
+{
+   std::size_t count = 0;
+   for (std::size_t c = 0; c < collectionIndex && c < fCollections.size(); ++c)
+      count += fCollections[c].fFields.size();
+   return count;
+}
+
 std::uint64_t TTagmaSchema::CountOf(std::size_t collectionIndex, const void *indexRecord) const
 {
    if (collectionIndex >= fCollections.size() || indexRecord == nullptr)

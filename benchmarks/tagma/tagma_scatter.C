@@ -65,16 +65,19 @@ void MeasureEntry(const char *order, const char *row, TFile *file, TTree &tree, 
    const Int_t calls0 = file->GetReadCalls();
    const Int_t tagma0 = file->GetTagmaReadCalls();
    const Int_t sys0 = file->GetSysReadCalls();
+   const Long64_t bytes0 = file->GetBytesRead();
    const auto start = std::chrono::steady_clock::now();
    Long64_t served = 0;
    for (Long64_t e : list)
       if (tree.GetEntry(e) > 0)
          ++served;
    const double seconds = Elapsed(start);
-   std::printf("tagma_scatter: %-10s %-18s %-8.3f s  reads=%lld tagma=%lld syscalls=%lld  served=%lld\n", order, row,
-               seconds, static_cast<long long>(file->GetReadCalls() - calls0),
+   const Long64_t bytes = file->GetBytesRead() - bytes0;
+   std::printf("tagma_scatter: %-10s %-18s %-8.3f s  reads=%lld tagma=%lld syscalls=%lld  bytes=%lld  served=%lld\n",
+               order, row, seconds, static_cast<long long>(file->GetReadCalls() - calls0),
                static_cast<long long>(file->GetTagmaReadCalls() - tagma0),
-               static_cast<long long>(file->GetSysReadCalls() - sys0), static_cast<long long>(served));
+               static_cast<long long>(file->GetSysReadCalls() - sys0), static_cast<long long>(bytes),
+               static_cast<long long>(served));
    if (served != static_cast<Long64_t>(list.size()))
       std::printf("tagma_scatter: %s served %lld of %lld\n", row, static_cast<long long>(served),
                   static_cast<long long>(list.size()));
@@ -130,7 +133,7 @@ Long64_t GateEntryLayer(const char *treePath, TTree &storeTree, const std::vecto
 } // namespace
 
 void tagma_scatter(const char *plainStore, const char *blockStore, const char *treePath, Long64_t count = 2000,
-                   UInt_t seed = 12345, Int_t cacheMB = 64)
+                   UInt_t seed = 12345, Int_t cacheMB = 64, const char *field = "")
 {
    ROOT::EnableThreadSafety();
 
@@ -189,6 +192,18 @@ void tagma_scatter(const char *plainStore, const char *blockStore, const char *t
       entryTree.SetEntries(count);
       entryTree.SetTagmaStore(mapped);
       entryOk = entryTree.SetTagmaSchema(schema);
+      // A named field narrows the row to one column, which is the selection the
+      // transposed layout is for: both layouts then read that field and nothing
+      // else, so the rows differ in the layout alone.
+      if (entryOk && field != nullptr && field[0] != '\0') {
+         UInt_t found = 0;
+         entryTree.SetBranchStatus("*", 0);
+         entryTree.SetBranchStatus(field, 1, &found);
+         if (found == 0) {
+            std::printf("tagma_scatter: %s is not a branch of the store\n", field);
+            entryOk = kFALSE;
+         }
+      }
    }
 
    auto block = std::make_shared<ROOT::TTagmaBlockSource>();
@@ -213,6 +228,8 @@ void tagma_scatter(const char *plainStore, const char *blockStore, const char *t
    // The gate runs over the scattered list, the harder order, before any row is
    // timed. A gate that does not pass skips the entry rows rather than letting
    // an unverified time stand.
+   const std::string entryLabel =
+      (field != nullptr && field[0] != '\0') ? std::string("store ") + field : std::string("store entry");
    if (entryOk && GateEntryLayer(treePath, entryTree, scattered, 32) != 0) {
       std::printf("tagma_scatter: the entry-layer rows are skipped, the gate did not pass\n");
       entryOk = kFALSE;
@@ -258,10 +275,11 @@ void tagma_scatter(const char *plainStore, const char *blockStore, const char *t
       }
 
       // The entry layer: the store behind the tree interface, with every field
-      // branch the schema materializes enabled, so the row carries the whole
-      // event and the delivery as the baseline does.
+      // branch the schema materializes enabled, unless a field was named. The
+      // whole-event rows carry the delivery as the baseline does; the narrow row
+      // carries one column.
       if (entryOk)
-         MeasureEntry(order.first.c_str(), "store entry", entryFile, entryTree, list);
+         MeasureEntry(order.first.c_str(), entryLabel.c_str(), entryFile, entryTree, list);
       if (blockOk)
          MeasureEntry(order.first.c_str(), "store block entry", blockFile, blockTree, list);
 

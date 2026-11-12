@@ -13,6 +13,7 @@ if it were the production number.
 | The read path beats the compressed baseline | `tagma_block_read.C`: compressed store 12.4 s, 572 MB/s, plain 14.6 s, against 177.4 s |
 | Compression keeps the read path and shrinks the file | 7,082,290,985 to 2,897,372,833 bytes, 2.44x |
 | A read serves only the collections a selection enables | the scalar-only harness row, 4.2 s on the plain store |
+| A columnar store reads through the same leaves | the columnar io and tree gtests |
 | The whole state reads in one or two requests whatever the order | `tagma_scatter.C` entry rows: 0.101 s scattered against 0.109 s sequential over 2,000 events, the fields delivered, against the baseline's 202.2 s |
 | A coordinate resolves a dataset without a scan | `tagma_dataset_bench.C`: a run resolves to its shard while the chain scans the run branch, 11.1 s over 38 files |
 
@@ -157,14 +158,142 @@ it, so a block of the data region holds many events of one collection range and
 the selection cannot shrink it.
 
 The structural fix is to lay the data region out by column, so the events of one
-field are contiguous and a block holds one field, and a selection decodes only
-the columns it reads. That is a new store layout, not a flag: `TTagmaSchema`
-gains a region per field, `TTagmaStore` addresses a (field, event) offset
-instead of an event's chunk, `TTagmaWriter` writes the transposed region, and
-the field copy reads across the field's region. The addressing stays closed
-form, which is what makes the transposition affordable, and the gate is that
-the same values read back and that a two-column read touches only those
-columns' blocks. This is the largest open front.
+field are contiguous and a selection decodes only the columns it reads. That is
+a new store layout: the descriptor carries the layout kind and the block length,
+and the address arithmetic, the writer, and the reader follow it. The field copy
+did not have to change. This is the largest open front, and the arithmetic below
+is what decides its shape.
+
+The transposition is per block, not per store. A store-wide transposition needs
+every field's total before the first byte is written, which the single-pass
+writer cannot know, so a block of B events is buffered, transposed, and
+appended. B is the one free parameter.
+
+Addressing one event's field needs two things the event-major layout does not:
+where the field's run starts, which is the block's data base plus the runs of the
+fields before it, and where the event sits inside that run, which is the prefix
+of that collection's counts over the earlier events of the block. Both follow
+from the block's object counts, and reading those counts for one event means
+reading the block's index region, B records. A block table therefore carries the
+run start per field and the prefix count per collection per event,
+`8F + 4CB` bytes per block for F collection fields and C collections, which is
+`8F/B + 4C` bytes per event.
+
+For a schema of 150 collection fields and 3 collections, a block of 64 events
+costs 30.8 bytes per event, 71 MB over the 2,314,223-event fixture, 2.4 percent
+of the 2.99 GB store; at 1,024 events the table falls to 13.2 bytes per event,
+31 MB. Those field counts are an illustration, not a measurement of the
+fixture's schema.
+
+The block length trades against the row that wins today. `tagma_column_probe.C`
+measured the data region of a whole-event read at 1.83 times the event-major
+order at 64 events per block, against a read path that is 10 to 12 percent of the
+120-second whole-event row, so it predicted the row would move by 1.09 to 1.11
+times at 64. The prediction is about the data region alone; the reader that now
+exists adds a copy the probe did not model, and its measured row moves 1.18 times
+at 64, flat in the block length.
+
+On the probe's own terms the order is not monotonic: 16 events costs 2.29 times
+where 64 costs 1.83. The block length is therefore a measured point rather than a
+trend. Only the rows up to 64 events reproduce: a repeat of the probe on the same
+machine gave 14.07 times at 256 events and 10.56 at 1,024 where the recorded rows
+carry 9.67 and 5.96, so the two largest blocks are not quoted, and 64 is the
+length the reader was measured at.
+
+What the table buys is the scatter claim, the store's strongest. A single-event
+read needs the block's table entry, 1,968 bytes at these values, and the field's
+run: two reads and about the bytes the event's slice costs today. Without the
+table the same read would need the block's index region, 164 KB at 64 events, to
+find the prefix. The table is what keeps one to two requests per event under a
+scattered order, and that count assumes the reader takes the field's own bytes.
+It cannot: the run of a field covers every event of the block, so a scattered
+read takes the block's region of that field, and the measured row below is what
+that costs.
+
+The reader exists. When the loaded entry falls in another block, the tree reads
+that block's table entry and the region the enabled fields occupy, reconstructs
+each event of the block into the buffer the field copy already reads, and keeps
+them until another block or another selection is asked for. `CopyTagmaField`
+does not change, and a scan pays the block reads once per block rather than once
+per event. `ReadStore` accepts the kind and derives the table size from the
+block division, so a store's own descriptor reaches the read gate; the block
+source, which walks the event-major region directly, still refuses it.
+
+That the reader reconstructs what the writer transposed is pinned at two layers:
+the io test rebuilds every event of a two-block fixture through the table, and
+the tree gate reads a columnar store through the leaves and pins that the events
+of a loaded block cost one read each.
+
+The cost is measured on a real run, `run_27_279966`, 7,277 events carrying the
+schema of the whole-file store: 974 scalars, 406 array fields in 19 collections,
+an index record of 1,280 bytes, a data region of 14,368,199 bytes.
+`tagma_make_store.C` writes the same source twice at a chosen block length, so
+the rows differ only in the layout, and the whole-event row is the harness's
+entry layer with every branch enabled, warmed.
+
+| layout | wall s | reads per event | bytes moved | store bytes |
+| :--- | ---: | ---: | ---: | ---: |
+| event-major | 0.408 | 2.00 | 23,682,759 | 23,731,774 |
+| block 16 | 0.412 | 1.19 | 26,294,999 | 25,762,894 |
+| block 64 | 0.416 | 1.05 | 24,752,167 | 24,656,542 |
+| block 256 | 0.420 | 1.01 | 24,377,015 | 24,390,190 |
+| block 1,024 | 0.419 | 1.00 | 24,340,295 | 24,380,350 |
+
+The block halves the requests and costs two percent of the wall time: 0.416
+against 0.408 at 64 events, where the probe predicted 1.09 to 1.11 times. The
+difference between the prediction and the result is the reader. The probe
+measured the data region in two orders, and the reader reorders the bytes back
+into the slice the field copy reads, which is a copy per field per event; that
+copy costs about as much as the order saves. The block length does not move the
+row, and it cannot: the requests fall to one per event and the copies stay.
+
+A narrower selection changes the picture, and 2,000 events of the same shard
+measured through `tagma_scatter.C` show it. Reads, then bytes moved per event:
+
+| selection | layout | scan s | scan reads | scan bytes/event | scatter s | scatter reads |
+| :--- | :--- | ---: | ---: | ---: | ---: | ---: |
+| all fields | event-major | 0.112 | 4,000 | 3,261 | 0.114 | 4,000 |
+| all fields | block 64 | 0.115 | 2,096 | 3,458 | 0.127 | 7,796 |
+| `Muon_*`, 55 fields | event-major | 0.026 | 3,953 | 1,607 | 0.026 | 3,953 |
+| `Muon_*`, 55 fields | block 64 | 0.023 | 2,096 | 1,765 | 0.031 | 7,796 |
+| `Muon_pt` | event-major | 0.009 | 3,953 | 1,289 | 0.009 | 3,953 |
+| `Muon_pt` | block 64 | 0.005 | 2,096 | 1,439 | 0.011 | 7,796 |
+
+Three things follow from the rows, and the first is the one that decides the
+front. A narrow read does not move fewer bytes under the columnar layout: the
+event-major reader already reads only the span the enabled fields fall in, so
+both layouts move the same field bytes, and the columnar one adds the block
+table and the block's share of the range per event, 150 to 158 bytes at 64
+events. Second, a one-field read costs about the index record either way, 1,289
+bytes against 1,439, so neither layout can go much below 1,280 bytes per event
+while the record stays as wide as the schema makes it. Third, a scan halves its
+requests under the columnar layout, 2.00 to 1.05 per event, and takes a quarter
+less time on the narrow selections, while a scattered order pays 3.90 requests
+per event instead of 2.00 because it changes block almost every event.
+
+The scatter claim does not survive the layout, and the reason is the block span.
+A scattered order changes block almost every event, since 2,000 events over 114
+blocks rarely land two in a row in the same one, so each event reads the
+enabled fields' region of the block: 61 MB against 3.2 MB for the whole `Muon_*`
+selection over the same events. The wall time rises by 19 percent only because
+the shard fits the page cache; over a store that does not fit, that region is
+the read.
+
+So the layout, measured on an uncompressed store, ties on a scan and loses on a
+scattered order. What it buys is one request per event on a scan and a smaller
+read per field, and what it pays is the block's bytes per scattered event. The
+premise of the front, that a narrow selection decodes only its columns, is not
+what an uncompressed store shows: the packed slice is already column pruned at
+field granularity, so the transposition reorders the same bytes. A compressed
+store is where the premise could pay, because a block of one field's run is what
+a decompressor can leave out, and that is a store this branch does not write.
+
+The block length does not move a scan past 64 events, so the smallest length
+that reaches one request per event is enough, and a smaller length is what a
+scattered order wants, since its cost is the block's bytes. Ship beside or
+replace is settled for now: a store chooses by workload and the descriptor
+carries the kind. What stays open is whether a compressed columnar store turns
+the tie into a win, and the same rows on a store the page cache cannot hold.
 
 ### 3. The delivery layer
 

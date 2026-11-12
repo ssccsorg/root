@@ -16,6 +16,8 @@
 
 #include "ROOT/TTagmaStore.hxx"
 
+#include "ROOT/TTagmaHeader.hxx"
+
 #include "TFile.h"
 #include "TNamed.h"
 
@@ -273,4 +275,30 @@ TEST(TTagmaStore, TFileReadBufferServesAlignedRecords)
    EXPECT_FALSE(file.ReadBuffer(buf, 0, 32));    // wrong size: ordinary path
    EXPECT_EQ(file.GetTagmaReadCalls(), 2);
    EXPECT_EQ(file.GetReadCalls(), calls0 + 5);
+}
+
+// The block geometry a columnar layout uses: the blocks round up, the last one
+// may be partial, and the table's size follows from the block length, the
+// schema's field and collection counts, and the block count, which is what keeps
+// the descriptor from needing a field of its own for it.
+TEST(TTagmaStore, ReportsTheBlockGeometryAColumnarLayoutUses)
+{
+   ROOT::TTagmaStore::Layout layout;
+   layout.fRunMax = 1;
+   layout.fLumiMax = 1;
+   layout.fEventMax = 150;
+   layout.fRecordSize = 16;
+
+   // An event-major layout has no block division.
+   EXPECT_EQ(ROOT::TTagmaStore(layout).BlockCount(), 0u);
+
+   layout.fLayoutKind = ROOT::TTagmaHeader::kColumnarBlockLayout;
+   layout.fBlockEvents = 64;
+   const ROOT::TTagmaStore store(layout);
+   EXPECT_TRUE(store.IsColumnar());
+   EXPECT_EQ(store.BlockCount(), 3u);
+
+   const std::uint64_t expected = 3u * (3u * 8u + 2u * 64u * 4u);
+   EXPECT_EQ(ROOT::TTagmaStore::BlockTableBytes(store.BlockCount(), 3, 2, 64), expected);
+   EXPECT_EQ(ROOT::TTagmaStore::BlockTableBytes(0, 3, 2, 64), 0u);
 }

@@ -151,12 +151,18 @@ void WriteStore()
 }
 
 // Writes the store with the store-side producer, so a test reads back what
-// the conversion path lays out. `layout` receives the layout the writer
+// the conversion path lays out. `blockEvents` selects the columnar block layout
+// and is 0 for the event-major one. `layout` receives the layout the writer
 // resolved, or is left alone when null.
-void WriteStoreWithWriter(ROOT::TTagmaStore::Layout *layout)
+void WriteStoreWithWriter(ROOT::TTagmaStore::Layout *layout, std::uint64_t blockEvents = 0)
 {
-   ROOT::TTagmaWriter writer(MakeSchema(), kEntries);
-   ASSERT_TRUE(writer.Open(kStorePath));
+   const ROOT::TTagmaSchema schema = MakeSchema();
+   // The block length selects the columnar form of the writer, so the two are
+   // built apart rather than through one constructor with a zero length.
+   const std::unique_ptr<ROOT::TTagmaWriter> writer =
+      blockEvents == 0 ? std::make_unique<ROOT::TTagmaWriter>(schema, kEntries)
+                       : std::make_unique<ROOT::TTagmaWriter>(schema, kEntries, blockEvents);
+   ASSERT_TRUE(writer->Open(kStorePath));
    for (int entry = 0; entry < kEntries; ++entry) {
       char scalars[kDataBaseOffset] = {};
       std::memcpy(scalars + 0, &kMuonCount[entry], sizeof(kMuonCount[entry]));
@@ -172,11 +178,11 @@ void WriteStoreWithWriter(ROOT::TTagmaStore::Layout *layout)
          append(MuonEta(entry, i));
       for (std::uint32_t i = 0; i < kJetCount[entry]; ++i)
          append(JetPt(entry, i));
-      ASSERT_TRUE(writer.AddEvent(scalars, slice.data())) << "entry " << entry;
+      ASSERT_TRUE(writer->AddEvent(scalars, slice.data())) << "entry " << entry;
    }
-   ASSERT_TRUE(writer.Close());
+   ASSERT_TRUE(writer->Close());
    if (layout != nullptr)
-      *layout = writer.GetLayout();
+      *layout = writer->GetLayout();
 }
 
 TFile *OpenStore()
@@ -424,6 +430,90 @@ TEST(TTagmaVariable, ASelfDescribingStoreReadsWithoutASidecar)
          EXPECT_FLOAT_EQ(muonPtLeaf->GetValue(i), MuonPt(entry, i)) << "entry " << entry;
       for (std::uint32_t i = 0; i < kJetCount[entry]; ++i)
          EXPECT_FLOAT_EQ(jetPtLeaf->GetValue(i), JetPt(entry, i)) << "entry " << entry;
+   }
+
+   delete file;
+}
+
+// A columnar store reads through the same leaves. A block holds its events
+// transposed by field, so the block is read once and each of its events is
+// assembled from it, which is what the layout is for.
+TEST(TTagmaVariable, AColumnarStoreReadsThroughTheLeaves)
+{
+   const std::uint64_t blockEvents = 3; // four entries: one full block, one partial
+   WriteStoreWithWriter(nullptr, blockEvents);
+
+   TFile *file = OpenStore();
+   ASSERT_NE(file, nullptr);
+   ASSERT_FALSE(file->IsZombie());
+
+   TTree tree("Events", "Events");
+   tree.SetDirectory(file);
+   tree.SetEntries(kEntries);
+   // The descriptor names the block division, so the path alone attaches it.
+   ASSERT_TRUE(tree.SetTagmaStore(kStorePath));
+   ASSERT_NE(tree.GetTagmaStore(), nullptr);
+   EXPECT_TRUE(tree.GetTagmaStore()->IsColumnar());
+   EXPECT_EQ(tree.GetTagmaStore()->GetLayout().fBlockEvents, blockEvents);
+
+   // The first entry of a block brings the block and its table entry in; the
+   // events that follow it in the same block cost the index record alone.
+   const Int_t calls0 = file->GetReadCalls();
+   ASSERT_GT(tree.GetEntry(0), 0);
+   const Int_t blockLoad = file->GetReadCalls() - calls0;
+   ASSERT_GT(blockLoad, 1);
+   ASSERT_GT(tree.GetEntry(1), 0);
+   EXPECT_EQ(file->GetReadCalls() - calls0, blockLoad + 1);
+   ASSERT_GT(tree.GetEntry(2), 0);
+   EXPECT_EQ(file->GetReadCalls() - calls0, blockLoad + 2);
+
+   // A repeat of the loaded entry costs no read.
+   const Int_t beforeRepeat = file->GetReadCalls();
+   ASSERT_GT(tree.GetEntry(2), 0);
+   EXPECT_EQ(file->GetReadCalls(), beforeRepeat);
+
+   TLeaf *nMuon = tree.GetLeaf("nMuon");
+   TLeaf *muonPtLeaf = tree.GetLeaf("Muon_pt");
+   TLeaf *muonEtaLeaf = tree.GetLeaf("Muon_eta");
+   TLeaf *jetPtLeaf = tree.GetLeaf("Jet_pt");
+   ASSERT_NE(nMuon, nullptr);
+   ASSERT_NE(muonPtLeaf, nullptr);
+   ASSERT_NE(muonEtaLeaf, nullptr);
+   ASSERT_NE(jetPtLeaf, nullptr);
+
+   for (int entry = 0; entry < kEntries; ++entry) {
+      ASSERT_GT(tree.GetEntry(entry), 0) << "entry " << entry;
+      EXPECT_EQ(nMuon->GetValue(0), kMuonCount[entry]) << "entry " << entry;
+      EXPECT_EQ(tree.GetLeaf("nJet")->GetValue(0), kJetCount[entry]);
+      for (std::uint32_t i = 0; i < kMuonCount[entry]; ++i) {
+         EXPECT_FLOAT_EQ(muonPtLeaf->GetValue(i), MuonPt(entry, i)) << "entry " << entry;
+         EXPECT_FLOAT_EQ(muonEtaLeaf->GetValue(i), MuonEta(entry, i));
+      }
+      for (std::uint32_t i = 0; i < kJetCount[entry]; ++i)
+         EXPECT_FLOAT_EQ(jetPtLeaf->GetValue(i), JetPt(entry, i)) << "entry " << entry;
+   }
+
+   // A read of one collection moves that collection's region of the block rather
+   // than the block, and a selection that widens afterwards is not served the
+   // narrow slice. A fresh tree makes the narrow read the first fill of the slice
+   // buffer, so a reused slice would deliver bytes that were never read.
+   {
+      TTree narrow("Narrow", "Narrow");
+      narrow.SetDirectory(file);
+      narrow.SetEntries(kEntries);
+      ASSERT_TRUE(narrow.SetTagmaStore(kStorePath));
+      narrow.SetBranchStatus("*", 0);
+      UInt_t on = 0;
+      narrow.SetBranchStatus("Muon_pt", 1, &on);
+      ASSERT_EQ(on, 1u);
+      ASSERT_GT(narrow.GetEntry(3), 0);
+      EXPECT_FLOAT_EQ(narrow.GetLeaf("Muon_pt")->GetValue(0), MuonPt(3, 0));
+
+      narrow.SetBranchStatus("Jet_pt", 1, &on);
+      ASSERT_EQ(on, 1u);
+      ASSERT_GT(narrow.GetEntry(3, 1), 0);
+      EXPECT_FLOAT_EQ(narrow.GetLeaf("Jet_pt")->GetValue(0), JetPt(3, 0));
+      EXPECT_FLOAT_EQ(narrow.GetLeaf("Muon_pt")->GetValue(0), MuonPt(3, 0));
    }
 
    delete file;

@@ -579,6 +579,121 @@
       "crossover_basis":
          "the store's full-record cost divided by RDataFrame's marginal cost per column, (10.849 - 0.558) / 42 = 0.245 s, against 2.745 s and 1.577 s. First order from the measured points, not a fitted model."
    },
+   "front_2_columnar": {
+      "tool": "tagma_make_store.C mode 1 with block_events, tagma_harness.C, tagma_scatter.C",
+      "note":
+         "Front 2 of FRONTS.md, the block-transposed data region, re-taken after the reader gained field-level narrowing (e28acabf2ce). These rows replace the first version of this section, which measured a reader that reconstructed every field and read a whole block: its whole-event row was 1.18 times the event-major one and its narrow rows read the block's bytes. No row outside this section is superseded.",
+      "commit": "e28acabf2ce",
+      "timestamp": "20261111-1240",
+      "dataset": "/Users/blackgene/Documents/nanoaod/root_shards/run_27_279966.root",
+      "dataset_note":
+         "One run of the same NanoAOD partition the phase rows use, 7,277 events, with the whole-file schema: 974 scalar fields and 406 array fields in 19 collections, index record 1,280 bytes, data region 14,368,199 bytes. The rows are a shard, so they carry the per-event cost the whole-file rows carry and not their wall time.",
+      "scan_whole_event": {
+         "layer": "the entry layer over every branch, the tagma_harness.C coordinate+map row, warmed, 7,277 events",
+         "rows": [
+            {
+               "layout": "event-major",
+               "wall_s": 0.408,
+               "reads_per_event": 2.0,
+               "bytes_moved": 23682759,
+               "store_bytes": 23731774
+            },
+            {
+               "layout": "block 16",
+               "wall_s": 0.412,
+               "reads_per_event": 1.19,
+               "bytes_moved": 26294999,
+               "store_bytes": 25762894
+            },
+            {
+               "layout": "block 64",
+               "wall_s": 0.416,
+               "reads_per_event": 1.05,
+               "bytes_moved": 24752167,
+               "store_bytes": 24656542
+            },
+            {
+               "layout": "block 256",
+               "wall_s": 0.42,
+               "reads_per_event": 1.01,
+               "bytes_moved": 24377015,
+               "store_bytes": 24390190
+            },
+            {
+               "layout": "block 1024",
+               "wall_s": 0.419,
+               "reads_per_event": 1.0,
+               "bytes_moved": 24340295,
+               "store_bytes": 24380350
+            }
+         ],
+         "finding":
+            "The block halves the requests and costs two percent of the wall time, 0.416 against 0.408 at 64 events, where the probe predicted 1.09 to 1.11 times. The reader reorders the bytes back into the slice the field copy reads, a copy per field per event, and that copy costs about what the order saves. The block length does not move the row."
+      },
+      "selection": {
+         "layer": "the entry layer over 2,000 events, the tagma_scatter.C rows, the value gate passing on each store",
+         "rows": [
+            {
+               "selection": "all fields",
+               "layout": "event-major",
+               "scan_s": 0.112,
+               "scan_reads": 4000,
+               "scan_bytes_per_event": 3261,
+               "scatter_s": 0.114,
+               "scatter_reads": 4000
+            },
+            {
+               "selection": "all fields",
+               "layout": "block 64",
+               "scan_s": 0.115,
+               "scan_reads": 2096,
+               "scan_bytes_per_event": 3458,
+               "scatter_s": 0.127,
+               "scatter_reads": 7796
+            },
+            {
+               "selection": "Muon_*, 55 fields",
+               "layout": "event-major",
+               "scan_s": 0.026,
+               "scan_reads": 3953,
+               "scan_bytes_per_event": 1607,
+               "scatter_s": 0.026,
+               "scatter_reads": 3953
+            },
+            {
+               "selection": "Muon_*, 55 fields",
+               "layout": "block 64",
+               "scan_s": 0.023,
+               "scan_reads": 2096,
+               "scan_bytes_per_event": 1765,
+               "scatter_s": 0.031,
+               "scatter_reads": 7796
+            },
+            {
+               "selection": "Muon_pt",
+               "layout": "event-major",
+               "scan_s": 0.009,
+               "scan_reads": 3953,
+               "scan_bytes_per_event": 1289,
+               "scatter_s": 0.009,
+               "scatter_reads": 3953
+            },
+            {
+               "selection": "Muon_pt",
+               "layout": "block 64",
+               "scan_s": 0.005,
+               "scan_reads": 2096,
+               "scan_bytes_per_event": 1439,
+               "scatter_s": 0.011,
+               "scatter_reads": 7796
+            }
+         ],
+         "finding":
+            "A narrow read does not move fewer bytes under the columnar layout: the event-major reader already reads only the span the enabled fields fall in, so both move the same field bytes and the columnar one adds the block table and the block's share, 150 to 158 bytes per event at 64 events. A one-field read costs about the 1,280-byte index record either way. A scan halves its requests under the columnar layout and takes a quarter less time on the narrow selections; a scattered order pays 3.90 requests per event instead of 2.00 because it changes block almost every event, 61 MB against 3.2 MB for the Muon_* selection."
+      },
+      "open":
+         "The premise of the front, that a narrow selection decodes only its columns, is not what an uncompressed store shows: the packed slice is already column pruned at field granularity. A compressed columnar store is where it could pay, and that store is not written here. The rows are also owed on a store the page cache cannot hold."
+   },
    "notes": [
       "The baseline is stable across the three steady-state runs, 187.0 to 188.2 s wall and 183.6 to 185.9 s cpu. The first three runs after the page cache had been disturbed measured 248.979, 202.469 and 182.609 s, so a settling cache moves the baseline by up to a third.",
       "Warming the sources is what makes the coordinate rows reproducible: 2.706, 2.722 and 2.808 s warmed against 2.793, 3.56 and 4.047 s across the unwarmed runs of the superseded artifact and the later control set.",

@@ -14,6 +14,7 @@
 // and comes back byte for byte.
 
 #include "ROOT/TTagmaBlockSource.hxx"
+#include "ROOT/TTagmaHeader.hxx"
 #include "ROOT/TTagmaSchema.hxx"
 #include "ROOT/TTagmaWriter.hxx"
 
@@ -70,6 +71,20 @@ std::vector<char> ReadFile(const char *path)
    EXPECT_EQ(std::fread(bytes.data(), 1, bytes.size(), in), bytes.size());
    std::fclose(in);
    return bytes;
+}
+
+void WriteFile(const char *path, const std::vector<char> &bytes)
+{
+   std::FILE *out = std::fopen(path, "wb");
+   ASSERT_NE(out, nullptr);
+   ASSERT_EQ(std::fwrite(bytes.data(), 1, bytes.size(), out), bytes.size());
+   std::fclose(out);
+}
+
+void PutLE32(unsigned char *bytes, std::uint32_t value)
+{
+   for (int i = 0; i < 4; ++i)
+      bytes[i] = static_cast<unsigned char>((value >> (8 * i)) & 0xffu);
 }
 
 } // namespace
@@ -129,6 +144,43 @@ TEST(TTagmaCompressed, KeepsThePlainReaderOutOfTheCompressedStore)
    ROOT::TTagmaSchema schema;
    EXPECT_FALSE(ROOT::TTagmaWriter::ReadStore(kPacked, &layout, &schema, &why));
    EXPECT_TRUE(ROOT::TTagmaWriter::ReadStore(kPlain, &layout, &schema, &why)) << why;
+
+   std::remove(kPlain);
+   std::remove(kPacked);
+}
+
+// A compressed store an earlier build wrote still opens. The blocks, the block
+// table and the field table sit where they did, so only the trailing descriptor
+// tells the generations apart.
+TEST(TTagmaCompressed, OpensAStoreWrittenWithTheLegacyDescriptor)
+{
+   WritePlain();
+   std::string why;
+   ASSERT_TRUE(ROOT::TTagmaBlockSource::Compress(kPlain, kPacked, &why)) << why;
+
+   std::vector<char> bytes = ReadFile(kPacked);
+   ASSERT_GT(bytes.size(), ROOT::TTagmaHeader::kSize);
+
+   // The legacy block is the current one truncated at the checksum with the
+   // legacy compressed version written into it, so the two generations agree on
+   // every field they share, the block shift included.
+   const std::size_t offset = bytes.size() - ROOT::TTagmaHeader::kSize;
+   std::vector<unsigned char> legacy(bytes.begin() + offset, bytes.begin() + offset + ROOT::TTagmaHeader::kLegacySize);
+   PutLE32(legacy.data() + 8, ROOT::TTagmaHeader::kLegacyCompressedVersion);
+   bytes.resize(offset);
+   bytes.insert(bytes.end(), legacy.begin(), legacy.end());
+   WriteFile(kPacked, bytes);
+
+   ROOT::TTagmaBlockSource source;
+   ASSERT_TRUE(source.Open(kPacked, &why)) << why;
+   EXPECT_EQ(source.GetLayout().fEventMax, kEntries);
+   EXPECT_GT(source.BlockCount(), 1u);
+
+   std::vector<char> whole(static_cast<std::size_t>(source.PayloadBytes()));
+   ASSERT_EQ(source.Read(whole.data(), 0, whole.size()), static_cast<std::int64_t>(whole.size()));
+   const std::vector<char> plain = ReadFile(kPlain);
+   ASSERT_FALSE(plain.empty());
+   EXPECT_EQ(std::memcmp(whole.data(), plain.data(), whole.size()), 0);
 
    std::remove(kPlain);
    std::remove(kPacked);

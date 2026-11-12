@@ -152,7 +152,23 @@ protected:
    std::vector<TBranch *> fTagmaFieldBranches; ///<!
    std::vector<std::uint64_t> fTagmaCounts;    ///<! Object counts of the loaded entry
    Bool_t fTagmaCountError = kFALSE;           ///<! Set once when a count passes the schema bound
-   Bool_t fTagmaSliceLoaded = kFALSE;          ///<! Set when the loaded entry's slice was read
+   Bool_t fTagmaSliceSettled = kFALSE;         ///<! Set when the slice question is answered for the range below
+   Bool_t fTagmaFieldRangeValid = kFALSE;      ///<! Set when the field range below holds
+   std::size_t fTagmaFirstField = 0;           ///<! First data field the enabled branches fall in
+   std::size_t fTagmaLastField = 0;            ///<! Last data field the enabled branches fall in
+   std::size_t fTagmaSliceFirstField = 0;      ///<! First data field fTagmaData holds
+   std::size_t fTagmaSliceLastField = 0;       ///<! Last data field fTagmaData holds
+   /// The block a columnar layout holds the loaded entry in: its table entry, the
+   /// part of the block the enabled fields occupy, and the block and range they
+   /// belong to. The region is read per block, not per event, and each of the
+   /// block's events is reconstructed from it.
+   std::vector<unsigned char> fTagmaBlockEntry; ///<! Table entry of fTagmaBlock
+   std::vector<unsigned char> fTagmaBlockData;  ///<! Enabled collections' region of fTagmaBlock
+   std::uint64_t fTagmaBlock = 0;               ///<! Block the cache holds
+   std::uint64_t fTagmaBlockSpan = 0;           ///<! Block offset fTagmaBlockData starts at
+   std::size_t fTagmaBlockFirstField = 0;       ///<! First data field the region holds
+   std::size_t fTagmaBlockLastField = 0;        ///<! Last data field the region holds
+   Bool_t fTagmaBlockLoaded = kFALSE;           ///<! Set when the block cache holds fTagmaBlock
    TObjArray      fBranches;              ///<  List of Branches
    TObjArray      fLeaves;                ///<  Direct pointers to individual branch leaves
    TList         *fAliases;               ///<  List of aliases for expressions based on the tree branches.
@@ -202,6 +218,13 @@ private:
    Int_t            FlushBasketsImpl() const;
    void             MarkEventCluster();
    Long64_t         GetMedianClusterSize();
+
+   /// Reads the part of the columnar block that holds `entry` and reconstructs the
+   /// entry's slice of the fields `firstField`..`lastField` from it. The runs follow
+   /// each other by field, so the enabled fields occupy one region of the block and
+   /// that region is what is read.
+   Bool_t
+   LoadTagmaColumnarSlice(Long64_t entry, std::uint64_t sliceBytes, std::size_t firstField, std::size_t lastField);
 
    void RegisterBranchFullName(std::pair<std::string, TBranch *> &&kv) { fNamesToBranches.insert(kv); }
    friend void ROOT::Internal::TreeUtils::TBranch__SetTree(TTree *tree, TObjArray &branches);
