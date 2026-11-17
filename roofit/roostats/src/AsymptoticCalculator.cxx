@@ -429,9 +429,9 @@ double EvaluateNLL(RooStats::ModelConfig const &modelConfig, RooAbsData &data, c
                 if (ROOT::Math::MinimizerOptions::DefaultStrategy() == 0 ) {
                    oocoutW(nullptr,Minimization) << "    ----> trying with strategy = 1" << std::endl;
                    minim.setStrategy(1);
-                }
-                else
+                } else {
                    tries++; // skip this trial if strategy is already 1
+                }
              }
              if (tries == 3) {
                 oocoutW(nullptr,Minimization) << "    ----> trying with improve" << std::endl;
@@ -947,6 +947,9 @@ void FillBins(const RooAbsPdf & pdf, const RooArgList &obs, RooAbsData & data, i
          double totBinVolume = binVolume * v->getBinWidth(i);
          double fval = pdf.getVal(&obstmp)*totBinVolume;
 
+         // Bins without expected events are kept with zero weight, such that
+         // the dataset has one entry per bin, like the binned likelihood
+         // optimization requires.
          if (fval*expectedEvents <= 0)
          {
             if (fval*expectedEvents < 0) {
@@ -957,8 +960,9 @@ void FillBins(const RooAbsPdf & pdf, const RooArgList &obs, RooAbsData & data, i
             else {
                oocoutW(nullptr,InputArguments)
                    << "AsymptoticCalculator::" << __func__
-                   << "(): Bin " << i << " of " << v->GetName() << " has zero expected events - skip it" << std::endl;
+                   << "(): Bin " << i << " of " << v->GetName() << " has zero expected events" << std::endl;
             }
+            data.add(obs, 0.0);
          }
          // have a cut off for overflows ??
          else {
@@ -1257,10 +1261,11 @@ RooAbsData * AsymptoticCalculator::GenerateAsimovData(const RooAbsPdf & pdf, con
    RooProdPdf observableProdPdf("observableProdPdf", "observableProdPdf", strippedPdfSet);
    const RooAbsPdf *observablePdf;
    if (prodPdf) {
-      if (strippedPdfSet.getSize() == 1)
+      if (strippedPdfSet.getSize() == 1) {
          observablePdf = dynamic_cast<const RooAbsPdf *>(strippedPdfSet.at(0));
-      else
+      } else {
          observablePdf = &observableProdPdf;
+      }
    } else {
       observablePdf = &pdf;
    }

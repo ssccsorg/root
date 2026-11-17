@@ -111,10 +111,11 @@ std::map<std::string, RooAbsPdf *> createPdfMap(const RooArgList &inPdfList, Roo
 void replaceOrAdd(RooLinkedList &lst, TObject &obj)
 {
    TObject *old = lst.FindObject(obj.GetName());
-   if (old)
+   if (old) {
       lst.Replace(old, &obj);
-   else
+   } else {
       lst.Add(&obj);
+   }
 }
 
 } // namespace
@@ -915,9 +916,9 @@ void RooSimultaneous::selectNormalization(const RooArgSet* normSet, bool /*force
 /// for interpretation of fraction coefficients. Needed here because a RooSimultaneous
 /// works like a RooAddPdf when plotted
 
-void RooSimultaneous::selectNormalizationRange(const char* normRange2, bool /*force*/)
+void RooSimultaneous::selectNormalizationRange(const char *rangeName, bool /*force*/)
 {
-  _plotCoefNormRange = RooNameReg::ptr(normRange2) ;
+   _plotCoefNormRange = RooNameReg::ptr(rangeName);
 }
 
 

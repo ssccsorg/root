@@ -97,8 +97,8 @@ protected:
    RooRealProxy pdf2;                        // Second input shape
    RooRealProxy x;                           // Observable
    RooRealProxy alpha;                       // Interpolation parameter
-   bool _cacheAlpha;                         // If true, both (x,alpha) are cached
-   mutable MorphCacheElem *_cache = nullptr; // Current morph cache element in use
+   bool _cacheAlpha = false;                 // If true, both (x,alpha) are cached
+   MorphCacheElem *_cache = nullptr;         // Current morph cache element in use
 
    double evaluate() const override;
 
